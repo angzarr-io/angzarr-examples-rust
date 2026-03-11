@@ -1,0 +1,25 @@
+# Build artifacts
+target/
+Cargo.lock
+*.rs.bk
+proto/**/*.rs
+
+# Binaries
+*/*/agg-*
+*/*/saga-*
+*/*/pmg-*
+*/*/prj-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kubernetes
+*.kubeconfig
