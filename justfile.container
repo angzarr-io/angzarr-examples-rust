@@ -4,7 +4,7 @@
 
 set shell := ["bash", "-c"]
 
-TOP := `git rev-parse --show-toplevel`
+ROOT := `git rev-parse --show-toplevel`
 
 default:
     @just --list
@@ -37,15 +37,15 @@ clean:
     rm -rf data/
 
 run: build
-    mkdir -p "{{TOP}}/examples/rust/data"
-    cd "{{TOP}}" && cargo run \
+    mkdir -p "{{ROOT}}/data"
+    cd "{{ROOT}}" && cargo run \
         --bin angzarr-standalone \
         --features standalone,sqlite \
         -- --config examples/rust/standalone.yaml
 
 run-dev: build-dev
-    mkdir -p "{{TOP}}/examples/rust/data"
-    cargo run --manifest-path "{{TOP}}/Cargo.toml" \
+    mkdir -p "{{ROOT}}/data"
+    cargo run --manifest-path "{{ROOT}}/Cargo.toml" \
         --bin angzarr-standalone \
         --features standalone,sqlite \
-        -- --config "{{TOP}}/examples/rust/standalone.yaml"
+        -- --config "{{ROOT}}/standalone.yaml"

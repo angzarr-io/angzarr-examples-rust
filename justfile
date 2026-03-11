@@ -9,7 +9,7 @@
 #
 # When running outside a devcontainer:
 #   - Builds/uses local devcontainer image with `just` pre-installed
-#   - Podman mounts justfile.container as /workspace/examples/rust/justfile
+#   - Podman mounts justfile.container as /workspace/justfile
 #
 # When running inside a devcontainer (DEVCONTAINER=true):
 #   - Commands execute directly via `just <target>`
@@ -17,13 +17,13 @@
 
 set shell := ["bash", "-c"]
 
-TOP := `git rev-parse --show-toplevel`
+ROOT := `git rev-parse --show-toplevel`
 IMAGE := "angzarr-examples-rust-dev"
 
 # Build the devcontainer image
 [private]
 _build-image:
-    podman build --network=host -t {{IMAGE}} -f "{{TOP}}/examples/rust/.devcontainer/Containerfile" "{{TOP}}/examples/rust/.devcontainer"
+    podman build --network=host -t {{IMAGE}} -f "{{ROOT}}/.devcontainer/Containerfile" "{{ROOT}}/.devcontainer"
 
 # Run just target in container (or directly if already in devcontainer)
 [private]
@@ -33,9 +33,9 @@ _container +ARGS: _build-image
         just {{ARGS}}
     else
         podman run --rm --network=host \
-            -v "{{TOP}}:/workspace:Z" \
-            -v "{{TOP}}/examples/rust/justfile.container:/workspace/examples/rust/justfile:ro" \
-            -w /workspace/examples/rust \
+            -v "{{ROOT}}:/workspace:Z" \
+            -v "{{ROOT}}/justfile.container:/workspace/justfile:ro" \
+            -w /workspace \
             -e CARGO_HOME=/workspace/.cargo-container \
             {{IMAGE}} just {{ARGS}}
     fi
