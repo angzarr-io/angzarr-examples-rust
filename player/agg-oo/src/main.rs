@@ -8,17 +8,20 @@
 
 use std::collections::HashMap;
 
-use examples_proto::{
-    Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn,
-    PlayerRegistered, PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
+use angzarr_client::proto::{
+    event_page, page_header, CommandBook, EventBook, EventPage, Notification, PageHeader,
+    RejectionNotification,
 };
-use angzarr_client::proto::{event_page, page_header, CommandBook, EventBook, EventPage, Notification, PageHeader, RejectionNotification};
+#[allow(unused_imports)]
+use angzarr_client::{aggregate, applies, handles, rejected};
 use angzarr_client::{
     event_page as make_event_page, now, pack_event, run_command_handler_server,
     CommandRejectedError, CommandResult, RejectionHandlerResponse, UnpackAny,
 };
-#[allow(unused_imports)]
-use angzarr_client::{aggregate, applies, handles, rejected};
+use examples_proto::{
+    Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn,
+    PlayerRegistered, PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
+};
 use prost_types::Any;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -349,7 +352,11 @@ impl PlayerAggregate {
 
         // Release reserved funds for this table
         let table_key = hex::encode(&table_root);
-        let reserved_amount = state.table_reservations.get(&table_key).copied().unwrap_or(0);
+        let reserved_amount = state
+            .table_reservations
+            .get(&table_key)
+            .copied()
+            .unwrap_or(0);
         let new_reserved = state.reserved_funds - reserved_amount;
         let new_available = state.bankroll - new_reserved;
 

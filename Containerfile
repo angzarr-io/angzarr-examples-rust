@@ -9,7 +9,7 @@
 #     docker build --target $target -t ghcr.io/angzarr-io/examples-rust-$target .
 #   done
 
-ARG RUST_VERSION=1.83
+ARG RUST_VERSION=1.86
 
 # ============================================================================
 # Builder - fetch deps and compile
@@ -107,6 +107,9 @@ COPY hand/saga-player/src ./hand/saga-player/src
 COPY pmg-hand-flow/src ./pmg-hand-flow/src
 COPY prj-output/src ./prj-output/src
 COPY tests/tests ./tests/tests
+
+# Force proto crate rebuild by touching build.rs (the stub build may have stale artifacts)
+RUN touch proto/build.rs
 
 # Build all binaries
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \

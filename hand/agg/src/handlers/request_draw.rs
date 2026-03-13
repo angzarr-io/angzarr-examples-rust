@@ -1,8 +1,8 @@
 //! RequestDraw command handler (Five Card Draw specific).
 
-use examples_proto::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
 use prost_types::Any;
 
 use crate::state::{HandState, PlayerHandState};
@@ -51,7 +51,7 @@ fn validate<'a>(
     }
 
     for &idx in &indices {
-        if idx < 0 || idx >= 5 {
+        if !(0..5).contains(&idx) {
             return Err(CommandRejectedError::new("Card index out of range (0-4)"));
         }
     }
@@ -74,7 +74,7 @@ fn compute(
 
     let mut new_cards = player.hole_cards.clone();
     for (i, &idx) in validated.indices.iter().enumerate() {
-        new_cards[idx as usize] = cards_drawn[i].clone();
+        new_cards[idx as usize] = cards_drawn[i];
     }
 
     DrawCompleted {

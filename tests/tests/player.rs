@@ -8,13 +8,16 @@ use agg_player::{
     handle_deposit_funds, handle_register_player, handle_release_funds, handle_reserve_funds,
     handle_withdraw_funds, rebuild_state, PlayerState,
 };
+use angzarr_client::proto::{
+    command_page, event_page, page_header, CommandBook, CommandPage, Cover, EventBook, EventPage,
+    PageHeader, Uuid,
+};
+use angzarr_client::{pack_event, try_unpack, type_matches, UnpackAny};
+use cucumber::{given, then, when, World};
 use examples_proto::{
     Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn,
     PlayerRegistered, PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
 };
-use angzarr_client::proto::{command_page, event_page, page_header, CommandBook, CommandPage, Cover, EventBook, EventPage, PageHeader, Uuid};
-use angzarr_client::{pack_event, try_unpack, type_matches, UnpackAny};
-use cucumber::{given, then, when, World};
 use prost_types::Any;
 use sha2::{Digest, Sha256};
 // docs:end:bdd_imports
@@ -529,6 +532,6 @@ fn player_state_has_available_balance(world: &mut PlayerWorld, expected: i64) {
 // docs:start:main
 #[tokio::main]
 async fn main() {
-    PlayerWorld::run("../../features/unit/player.feature").await;
+    PlayerWorld::run("features/unit/player.feature").await;
 }
 // docs:end:main

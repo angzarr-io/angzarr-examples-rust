@@ -1,8 +1,8 @@
 //! CreateTable command handler.
 
-use examples_proto::{CreateTable, TableCreated};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{CreateTable, TableCreated};
 use prost_types::Any;
 
 use crate::state::TableState;
@@ -22,13 +22,17 @@ fn validate(cmd: &CreateTable) -> CommandResult<()> {
         return Err(CommandRejectedError::new("small_blind must be positive"));
     }
     if cmd.big_blind <= 0 || cmd.big_blind < cmd.small_blind {
-        return Err(CommandRejectedError::new("big_blind must be >= small_blind"));
+        return Err(CommandRejectedError::new(
+            "big_blind must be >= small_blind",
+        ));
     }
     if cmd.min_buy_in <= 0 {
         return Err(CommandRejectedError::new("min_buy_in must be positive"));
     }
     if cmd.max_buy_in < cmd.min_buy_in {
-        return Err(CommandRejectedError::new("max_buy_in must be >= min_buy_in"));
+        return Err(CommandRejectedError::new(
+            "max_buy_in must be >= min_buy_in",
+        ));
     }
     if cmd.max_players < 2 || cmd.max_players > 10 {
         return Err(CommandRejectedError::new("max_players must be 2-10"));

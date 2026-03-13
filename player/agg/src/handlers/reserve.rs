@@ -3,9 +3,9 @@
 //! DOC: This file is referenced in docs/docs/examples/aggregates.mdx
 //!      Update documentation when making changes to handler patterns.
 
-use examples_proto::{Currency, FundsReserved, ReserveFunds};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{Currency, FundsReserved, ReserveFunds};
 use prost_types::Any;
 
 use crate::state::PlayerState;
@@ -29,7 +29,9 @@ fn validate(cmd: &ReserveFunds, state: &PlayerState) -> CommandResult<i64> {
 
     let table_key = hex::encode(&cmd.table_root);
     if state.table_reservations.contains_key(&table_key) {
-        return Err(CommandRejectedError::new("Funds already reserved for this table"));
+        return Err(CommandRejectedError::new(
+            "Funds already reserved for this table",
+        ));
     }
 
     Ok(amount)

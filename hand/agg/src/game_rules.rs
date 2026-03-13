@@ -127,7 +127,10 @@ impl GameRules for OmahaRules {
                     .collect();
                 let rank = evaluate_five(&five);
 
-                if best_rank.as_ref().is_none_or(|best| rank.score > best.score) {
+                if best_rank
+                    .as_ref()
+                    .is_none_or(|best| rank.score > best.score)
+                {
                     best_rank = Some(rank);
                 }
             }
@@ -237,11 +240,7 @@ fn evaluate_five(cards: &[&Card]) -> HandRank {
             // Royal flush
             return HandRank::new(HandRankType::RoyalFlush, 10_000_000, vec![]);
         }
-        return HandRank::new(
-            HandRankType::StraightFlush,
-            9_000_000 + high,
-            vec![high],
-        );
+        return HandRank::new(HandRankType::StraightFlush, 9_000_000 + high, vec![high]);
     }
 
     if count_pattern == [4, 1] {

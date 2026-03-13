@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use angzarr_client::proto::event_page::Payload;
+use angzarr_client::proto::EventBook;
+use angzarr_client::StateRouter;
+use angzarr_client::UnpackAny;
 use examples_proto::{
     ChipsAdded, GameVariant, HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerSatIn,
     PlayerSatOut, TableCreated, TableState as ProtoTableState,
 };
-use angzarr_client::proto::EventBook;
-use angzarr_client::StateRouter;
-use angzarr_client::UnpackAny;
 
 /// Seat state at the table.
 #[derive(Debug, Clone)]
@@ -71,12 +71,7 @@ impl TableState {
 
     /// Get next available seat.
     pub fn next_available_seat(&self) -> Option<i32> {
-        for i in 0..self.max_players {
-            if !self.seats.contains_key(&i) {
-                return Some(i);
-            }
-        }
-        None
+        (0..self.max_players).find(|i| !self.seats.contains_key(i))
     }
 }
 

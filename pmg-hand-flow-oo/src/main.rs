@@ -139,11 +139,12 @@ fn build_command<M: prost::Message>(domain: &str, root: &[u8], msg: M) -> Comman
             ..Default::default()
         }),
         pages: vec![angzarr_client::proto::CommandPage {
-            sequence_type: None,
+            header: None,
             payload: Some(angzarr_client::proto::command_page::Payload::Command(Any {
                 type_url,
                 value,
             })),
+            ..Default::default()
         }],
     }
 }

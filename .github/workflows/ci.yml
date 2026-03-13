@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  repository_dispatch:
+    types: [client-updated]  # Triggered by angzarr-client-rust on update
+  workflow_dispatch:  # Allow manual trigger
 
 env:
   CARGO_TERM_COLOR: always
@@ -36,6 +39,10 @@ jobs:
 
       - name: Export example protos from Buf registry
         run: buf export buf.build/angzarr/examples -o examples-proto
+
+      - name: Update client dependency (on dispatch)
+        if: github.event_name == 'repository_dispatch'
+        run: cargo update angzarr-client
 
       - name: Cache cargo registry
         uses: actions/cache@v4

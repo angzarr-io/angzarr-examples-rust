@@ -3,12 +3,12 @@
 //! Subscribes to player, table, and hand domain events.
 //! Writes formatted game logs to a file.
 
-use examples_proto::{
-    ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted,
-    PlayerJoined, PlayerRegistered, PotAwarded, TableCreated,
-};
 use angzarr_client::proto::{event_page, page_header, EventBook, EventPage, Projection};
 use angzarr_client::{run_projector_server, ProjectorHandler};
+use examples_proto::{
+    ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted, PlayerJoined,
+    PlayerRegistered, PotAwarded, TableCreated,
+};
 use prost::Message;
 use std::env;
 use std::fs::{File, OpenOptions};
@@ -21,10 +21,7 @@ static LOG_FILE: Mutex<Option<File>> = Mutex::new(None);
 
 fn get_log_file() -> std::io::Result<std::fs::File> {
     let path = env::var("HAND_LOG_FILE").unwrap_or_else(|_| "hand_log.txt".to_string());
-    OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
+    OpenOptions::new().create(true).append(true).open(path)
 }
 
 fn write_log(msg: &str) {
@@ -51,6 +48,7 @@ fn get_sequence(page: &EventPage) -> u32 {
 }
 
 // docs:start:projector_functional
+#[allow(clippy::result_large_err)]
 fn handle_events(events: &EventBook) -> Result<Projection, Status> {
     let cover = events.cover.as_ref();
     let domain = cover.map(|c| c.domain.as_str()).unwrap_or("");
@@ -75,10 +73,7 @@ fn handle_events(events: &EventBook) -> Result<Projection, Status> {
         seq = get_sequence(page);
 
         let type_url = &event_any.type_url;
-        let type_name = type_url
-            .rsplit('.')
-            .next()
-            .unwrap_or(type_url);
+        let type_name = type_url.rsplit('.').next().unwrap_or(type_url);
 
         let msg = format_event(domain, &root_id, type_name, &event_any.value);
         write_log(&msg);

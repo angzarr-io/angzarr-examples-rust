@@ -1,8 +1,8 @@
 //! PostBlind command handler.
 
-use examples_proto::{BlindPosted, PostBlind};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{BlindPosted, PostBlind};
 use prost_types::Any;
 
 use crate::state::{HandState, PlayerHandState};

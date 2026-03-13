@@ -3,11 +3,9 @@
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
-use examples_proto::{
-    Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit,
-};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
 use prost_types::Any;
 
 use crate::game_rules::get_rules;
@@ -121,7 +119,7 @@ fn create_deck() -> Vec<Card> {
 }
 
 /// Shuffle the deck using a seed for determinism.
-fn shuffle_deck(deck: &mut Vec<Card>, seed: &[u8]) {
+fn shuffle_deck(deck: &mut [Card], seed: &[u8]) {
     let hash = Sha256::digest(seed);
     let seed_int = u64::from_be_bytes(hash[..8].try_into().unwrap());
     let mut rng = StdRng::seed_from_u64(seed_int);

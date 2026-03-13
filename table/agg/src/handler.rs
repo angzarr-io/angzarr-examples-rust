@@ -2,7 +2,8 @@
 
 use angzarr_client::proto::{CommandBook, EventBook, Notification};
 use angzarr_client::{
-    dispatch_command, CommandHandlerDomainHandler, CommandResult, RejectionHandlerResponse, StateRouter,
+    dispatch_command, CommandHandlerDomainHandler, CommandResult, RejectionHandlerResponse,
+    StateRouter,
 };
 use prost_types::Any;
 

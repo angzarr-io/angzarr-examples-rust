@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use angzarr_client::proto::event_page::Payload;
+use angzarr_client::proto::EventBook;
+use angzarr_client::StateRouter;
+use angzarr_client::UnpackAny;
 use examples_proto::{
     ActionTaken, ActionType, BettingPhase, BettingRoundComplete, BlindPosted, Card, CardsDealt,
     CommunityCardsDealt, DrawCompleted, GameVariant, HandComplete, HandState as ProtoHandState,
     PotAwarded, ShowdownStarted,
 };
-use angzarr_client::proto::EventBook;
-use angzarr_client::StateRouter;
-use angzarr_client::UnpackAny;
 
 /// Player's state in the hand.
 #[derive(Debug, Clone, Default)]
@@ -365,7 +365,7 @@ fn apply_snapshot(snapshot: &ProtoHandState) -> HandState {
 mod tests {
     use super::*;
     use angzarr_client::pack_event;
-    use angzarr_client::proto::event_page;
+    use angzarr_client::proto::{event_page, page_header, PageHeader};
 
     #[test]
     fn test_community_cards_dealt_applies_correctly() {
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_rebuild_from_event_book() {
-        use angzarr_client::proto::{EventBook, EventPage, Cover, Uuid};
+        use angzarr_client::proto::{Cover, EventBook, EventPage, Uuid};
 
         // Create CardsDealt event first
         let cards_dealt = CardsDealt {
@@ -406,7 +406,12 @@ mod tests {
             dealer_position: 0,
             players: vec![],
             player_cards: vec![],
-            remaining_deck: (0..52).map(|i| Card { suit: i / 13, rank: i % 13 }).collect(),
+            remaining_deck: (0..52)
+                .map(|i| Card {
+                    suit: i / 13,
+                    rank: i % 13,
+                })
+                .collect(),
             dealt_at: None,
         };
 
@@ -421,22 +426,30 @@ mod tests {
         let event_book = EventBook {
             cover: Some(Cover {
                 domain: "hand".to_string(),
-                root: Some(Uuid { value: vec![1, 2, 3] }),
+                root: Some(Uuid {
+                    value: vec![1, 2, 3],
+                }),
                 ..Default::default()
             }),
             pages: vec![
                 EventPage {
-                    sequence_type: Some(page_header::SequenceType::Sequence(0)),
-                    payload: Some(event_page::Payload::Event(
-                        pack_event(&cards_dealt, "examples.CardsDealt")
-                    )),
+                    header: Some(PageHeader {
+                        sequence_type: Some(page_header::SequenceType::Sequence(0)),
+                    }),
+                    payload: Some(event_page::Payload::Event(pack_event(
+                        &cards_dealt,
+                        "examples.CardsDealt",
+                    ))),
                     created_at: None,
                 },
                 EventPage {
-                    sequence_type: Some(page_header::SequenceType::Sequence(1)),
-                    payload: Some(event_page::Payload::Event(
-                        pack_event(&community, "examples.CommunityCardsDealt")
-                    )),
+                    header: Some(PageHeader {
+                        sequence_type: Some(page_header::SequenceType::Sequence(1)),
+                    }),
+                    payload: Some(event_page::Payload::Event(pack_event(
+                        &community,
+                        "examples.CommunityCardsDealt",
+                    ))),
                     created_at: None,
                 },
             ],
@@ -446,7 +459,15 @@ mod tests {
 
         let state = rebuild_state(&event_book);
 
-        assert_eq!(state.current_phase, BettingPhase::Flop, "phase should be Flop after community dealt");
-        assert_eq!(state.community_cards.len(), 1, "should have 1 community card");
+        assert_eq!(
+            state.current_phase,
+            BettingPhase::Flop,
+            "phase should be Flop after community dealt"
+        );
+        assert_eq!(
+            state.community_cards.len(),
+            1,
+            "should have 1 community card"
+        );
     }
 }

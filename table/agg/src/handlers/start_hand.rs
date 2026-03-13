@@ -1,10 +1,10 @@
 //! StartHand command handler.
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
-use examples_proto::{HandStarted, SeatSnapshot, StartHand};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{HandStarted, SeatSnapshot, StartHand};
 use prost_types::Any;
 
 use crate::state::TableState;
@@ -17,7 +17,9 @@ fn guard(state: &TableState) -> CommandResult<()> {
         return Err(CommandRejectedError::new("Hand already in progress"));
     }
     if state.active_player_count() < 2 {
-        return Err(CommandRejectedError::new("Not enough players to start hand"));
+        return Err(CommandRejectedError::new(
+            "Not enough players to start hand",
+        ));
     }
     Ok(())
 }

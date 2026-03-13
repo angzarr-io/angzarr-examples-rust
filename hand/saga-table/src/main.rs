@@ -9,12 +9,12 @@
 //! - Idempotency checking
 //! - Delivery retry on sequence conflicts
 
-use examples_proto::{EndHand, HandComplete, PotResult};
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{
     run_saga_server, CommandRejectedError, CommandResult, SagaDomainHandler, SagaHandlerResponse,
     SagaRouter, UnpackAny,
 };
+use examples_proto::{EndHand, HandComplete, PotResult};
 use prost::Message;
 use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -43,9 +43,9 @@ impl HandTableSagaHandler {
         source: &EventBook,
         event_any: &Any,
     ) -> CommandResult<SagaHandlerResponse> {
-        let event: HandComplete = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode HandComplete: {}", e)))?;
+        let event: HandComplete = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode HandComplete: {}", e))
+        })?;
 
         // Get hand_root from source cover
         let hand_root = source
@@ -68,10 +68,7 @@ impl HandTableSagaHandler {
             .collect();
 
         // Build EndHand command
-        let end_hand = EndHand {
-            hand_root,
-            results,
-        };
+        let end_hand = EndHand { hand_root, results };
 
         let command_any = Any {
             type_url: "type.googleapis.com/examples.EndHand".to_string(),
@@ -82,7 +79,9 @@ impl HandTableSagaHandler {
             commands: vec![CommandBook {
                 cover: Some(Cover {
                     domain: "table".to_string(),
-                    root: Some(Uuid { value: event.table_root }),
+                    root: Some(Uuid {
+                        value: event.table_root,
+                    }),
                     ..Default::default()
                 }),
                 // Framework will stamp angzarr_deferred with source info

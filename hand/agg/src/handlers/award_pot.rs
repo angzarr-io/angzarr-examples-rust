@@ -1,10 +1,10 @@
 //! AwardPot command handler.
 
-use examples_proto::{
-    AwardPot, HandComplete, PlayerStackSnapshot, PotAwarded, PotWinner,
-};
 use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book_multi, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::{
+    new_event_book_multi, pack_event, CommandRejectedError, CommandResult, UnpackAny,
+};
+use examples_proto::{AwardPot, HandComplete, PlayerStackSnapshot, PotAwarded, PotWinner};
 use prost_types::Any;
 
 use crate::state::HandState;
@@ -78,7 +78,7 @@ fn compute(cmd: &AwardPot, state: &HandState) -> (PotAwarded, HandComplete) {
 
     let pot_awarded = PotAwarded {
         winners: winners.clone(),
-        awarded_at: Some(now.clone()),
+        awarded_at: Some(now),
     };
 
     let hand_complete = HandComplete {
