@@ -529,6 +529,6 @@ fn player_state_has_available_balance(world: &mut PlayerWorld, expected: i64) {
 // docs:start:main
 #[tokio::main]
 async fn main() {
-    PlayerWorld::run("../../features/unit/player.feature").await;
+    PlayerWorld::run("features/unit/player.feature").await;
 }
 // docs:end:main

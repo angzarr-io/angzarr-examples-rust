@@ -614,6 +614,6 @@ async fn main() {
                 .summarized()
                 .assert_normalized(),
         )
-        .run("../../features/unit/table.feature")
+        .run("features/unit/table.feature")
         .await;
 }
