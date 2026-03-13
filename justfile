@@ -166,11 +166,18 @@ deploy-all tag="latest": deploy-infra (deploy-apps tag)
 test-e2e:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Wait for gateway to be ready
+    echo "Waiting for gateway pod..."
+    kubectl wait --for=condition=ready pod -l app=gateway -n angzarr-test --timeout=180s || {
+        echo "Gateway pod not ready, checking status..."
+        kubectl get pods -n angzarr-test
+        exit 1
+    }
     # Port-forward gateway for tests
     kubectl port-forward -n angzarr-test svc/gateway 9084:9084 &
     PF_PID=$!
     trap "kill $PF_PID 2>/dev/null || true" EXIT
-    sleep 2
+    sleep 3
     # Run acceptance tests
     export GATEWAY_URL="http://localhost:9084"
     export ANGZARR_PROTO_ROOT="${ANGZARR_PROTO_ROOT:-angzarr-proto}"
