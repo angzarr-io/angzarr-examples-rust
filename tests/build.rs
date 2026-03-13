@@ -3,8 +3,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "acceptance-test")]
     {
         // Angzarr core protos root - from buf export
-        let angzarr_proto_root = std::env::var("ANGZARR_PROTO_ROOT")
-            .unwrap_or_else(|_| "../angzarr-proto".to_string());
+        let angzarr_proto_root =
+            std::env::var("ANGZARR_PROTO_ROOT").unwrap_or_else(|_| "../angzarr-proto".to_string());
 
         // Check if protos exist (CI exports them)
         let gateway_proto = format!("{}/angzarr/gateway.proto", angzarr_proto_root);
@@ -27,11 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tonic_build::configure()
             .build_server(false)
             .build_client(true)
-            .compile_protos_with_config(
-                config,
-                &[gateway_proto],
-                &[&angzarr_proto_root],
-            )?;
+            .compile_protos_with_config(config, &[gateway_proto], &[&angzarr_proto_root])?;
     }
 
     Ok(())
