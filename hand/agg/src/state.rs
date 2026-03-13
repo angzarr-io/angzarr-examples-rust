@@ -365,7 +365,7 @@ fn apply_snapshot(snapshot: &ProtoHandState) -> HandState {
 mod tests {
     use super::*;
     use angzarr_client::pack_event;
-    use angzarr_client::proto::{event_page, page_header};
+    use angzarr_client::proto::{event_page, page_header, PageHeader};
 
     #[test]
     fn test_community_cards_dealt_applies_correctly() {
@@ -426,14 +426,18 @@ mod tests {
             }),
             pages: vec![
                 EventPage {
-                    sequence_type: Some(page_header::SequenceType::Sequence(0)),
+                    header: Some(PageHeader {
+                        sequence_type: Some(page_header::SequenceType::Sequence(0)),
+                    }),
                     payload: Some(event_page::Payload::Event(
                         pack_event(&cards_dealt, "examples.CardsDealt")
                     )),
                     created_at: None,
                 },
                 EventPage {
-                    sequence_type: Some(page_header::SequenceType::Sequence(1)),
+                    header: Some(PageHeader {
+                        sequence_type: Some(page_header::SequenceType::Sequence(1)),
+                    }),
                     payload: Some(event_page::Payload::Event(
                         pack_event(&community, "examples.CommunityCardsDealt")
                     )),

@@ -77,7 +77,7 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use angzarr_client::proto::{event_page, page_header};
+    use angzarr_client::proto::{event_page, page_header, PageHeader};
     use prost_types::Any;
 
     /// Test that events without registered transformations pass through unchanged.
@@ -90,7 +90,9 @@ mod tests {
 
         let page = EventPage {
             payload: Some(event_page::Payload::Event(event.clone())),
-            sequence_type: Some(page_header::SequenceType::Sequence(1)),
+            header: Some(PageHeader {
+                sequence_type: Some(page_header::SequenceType::Sequence(1)),
+            }),
             created_at: None,
         };
 
@@ -114,7 +116,9 @@ mod tests {
                     type_url: format!("type.googleapis.com/examples.Event{}", i),
                     value: vec![i as u8],
                 })),
-                sequence_type: Some(page_header::SequenceType::Sequence(i)),
+                header: Some(PageHeader {
+                    sequence_type: Some(page_header::SequenceType::Sequence(i)),
+                }),
                 created_at: None,
             })
             .collect();
