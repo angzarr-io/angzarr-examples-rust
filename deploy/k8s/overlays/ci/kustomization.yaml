@@ -6,6 +6,12 @@ kind: Kustomization
 resources:
   - ../../base
 
+# Add imagePullSecrets to all deployments for pulling from ghcr.io
+patches:
+  - path: imagepullsecrets-patch.yaml
+    target:
+      kind: Deployment
+
 # Images will be patched by CI using:
 # kustomize edit set image ghcr.io/angzarr-io/examples-rust-agg-player=ghcr.io/angzarr-io/examples-rust-agg-player:pr-N-sha
 images:

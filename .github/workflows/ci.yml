@@ -173,6 +173,18 @@ jobs:
             echo "tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Create image pull secret
+        run: |
+          kubectl create namespace angzarr-test --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --namespace=angzarr-test \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl patch serviceaccount default -n angzarr-test \
+            -p '{"imagePullSecrets": [{"name": "ghcr-pull-secret"}]}' || true
+
       - name: Deploy infrastructure
         run: just deploy-infra
 
