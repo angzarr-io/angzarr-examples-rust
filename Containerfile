@@ -108,6 +108,9 @@ COPY pmg-hand-flow/src ./pmg-hand-flow/src
 COPY prj-output/src ./prj-output/src
 COPY tests/tests ./tests/tests
 
+# Force proto crate rebuild by touching build.rs (the stub build may have stale artifacts)
+RUN touch proto/build.rs
+
 # Build all binaries
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
