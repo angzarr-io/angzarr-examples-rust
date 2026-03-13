@@ -9,7 +9,7 @@
 #     docker build --target $target -t ghcr.io/angzarr-io/examples-rust-$target .
 #   done
 
-ARG RUST_VERSION=1.83
+ARG RUST_VERSION=1.86
 
 # ============================================================================
 # Builder - fetch deps and compile
