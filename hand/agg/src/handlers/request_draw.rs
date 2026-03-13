@@ -1,6 +1,6 @@
 //! RequestDraw command handler (Five Card Draw specific).
 
-use angzarr_client::proto::examples::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
+use examples_proto::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

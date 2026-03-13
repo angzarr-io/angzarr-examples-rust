@@ -3,7 +3,7 @@
 //! DOC: This file is referenced in docs/docs/examples/aggregates.mdx
 //!      Update documentation when making changes to handler patterns.
 
-use angzarr_client::proto::examples::{Currency, FundsReserved, ReserveFunds};
+use examples_proto::{Currency, FundsReserved, ReserveFunds};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

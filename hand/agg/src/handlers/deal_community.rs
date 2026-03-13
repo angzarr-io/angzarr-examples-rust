@@ -1,6 +1,6 @@
 //! DealCommunityCards command handler.
 
-use angzarr_client::proto::examples::{BettingPhase, CommunityCardsDealt, DealCommunityCards};
+use examples_proto::{BettingPhase, CommunityCardsDealt, DealCommunityCards};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

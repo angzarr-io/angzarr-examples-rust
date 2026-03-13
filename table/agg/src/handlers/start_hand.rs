@@ -2,7 +2,7 @@
 
 use sha2::{Sha256, Digest};
 
-use angzarr_client::proto::examples::{HandStarted, SeatSnapshot, StartHand};
+use examples_proto::{HandStarted, SeatSnapshot, StartHand};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

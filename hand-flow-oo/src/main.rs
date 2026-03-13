@@ -11,7 +11,7 @@
 //! - `#[handles(EventType)]` on event handler methods
 //! - `#[applies(EventType)]` on state applier methods (optional)
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, CommunityCardsDealt, HandStarted, PotAwarded,
 };
 use angzarr_client::proto::{Cover, EventBook, Uuid};

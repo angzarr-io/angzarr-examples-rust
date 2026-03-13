@@ -16,7 +16,7 @@
 //! - `#[saga(name = "...", input = "...")]` on impl blocks
 //! - `#[handles(EventType)]` on handler methods
 
-use angzarr_client::proto::examples::{DealCards, HandStarted, PlayerInHand};
+use examples_proto::{DealCards, HandStarted, PlayerInHand};
 use angzarr_client::proto::{CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{run_saga_server, CommandResult, SagaHandlerResponse};
 #[allow(unused_imports)]

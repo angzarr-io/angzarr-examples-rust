@@ -3,7 +3,7 @@
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit,
 };
 use angzarr_client::proto::{CommandBook, EventBook};

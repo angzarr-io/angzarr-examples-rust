@@ -12,7 +12,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::Mutex;
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted,
     PlayerJoined, PlayerRegistered, PotAwarded, TableCreated,
 };

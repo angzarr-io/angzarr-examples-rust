@@ -4,7 +4,7 @@
 //! to multiple different aggregates.
 
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, Uuid};
-use angzarr_client::proto::examples::{TableSettled, TransferFunds};
+use examples_proto::{TableSettled, TransferFunds};
 use angzarr_client::SagaContext;
 use prost_types::Any;
 

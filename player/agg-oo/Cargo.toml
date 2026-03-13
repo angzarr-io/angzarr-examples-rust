@@ -8,6 +8,7 @@ name = "agg-player-oo"
 path = "src/main.rs"
 
 [dependencies]
+examples-proto.workspace = true
 angzarr-client.workspace = true
 angzarr-macros.workspace = true
 tokio.workspace = true

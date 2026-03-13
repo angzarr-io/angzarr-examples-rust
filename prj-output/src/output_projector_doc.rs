@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use angzarr_client::proto::examples::{CardsDealt, FundsDeposited, PlayerRegistered};
+use examples_proto::{CardsDealt, FundsDeposited, PlayerRegistered};
 use angzarr_client::StateRouter;
 
 // docs:start:projector_oo
@@ -39,7 +39,7 @@ impl OutputProjector {
 }
 // docs:end:projector_oo
 
-fn format_cards(cards: &[angzarr_client::proto::examples::Card]) -> String {
+fn format_cards(cards: &[examples_proto::Card]) -> String {
     cards.iter().map(|c| format!("{}{}", c.rank, c.suit)).collect::<Vec<_>>().join(" ")
 }
 

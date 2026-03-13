@@ -4,7 +4,7 @@
 //! for external consumption via HTTP webhooks or Kafka.
 
 use angzarr_client::proto::CloudEvent;
-use angzarr_client::proto::examples::{
+use examples_proto::{
     FundsDeposited, PlayerRegistered, PublicFundsDeposited, PublicPlayerRegistered,
 };
 use angzarr_client::{CloudEventsProjector, CloudEventsRouter};

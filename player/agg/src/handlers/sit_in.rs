@@ -1,6 +1,6 @@
 //! SitIn command handler.
 
-use angzarr_client::proto::examples::{PlayerReturningToPlay, SitIn};
+use examples_proto::{PlayerReturningToPlay, SitIn};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

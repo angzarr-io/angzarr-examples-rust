@@ -9,7 +9,7 @@
 //! - Idempotency checking
 //! - Delivery retry on sequence conflicts
 
-use angzarr_client::proto::examples::{Currency, DepositFunds, PotAwarded};
+use examples_proto::{Currency, DepositFunds, PotAwarded};
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{
     run_saga_server, CommandRejectedError, CommandResult, SagaDomainHandler, SagaHandlerResponse,

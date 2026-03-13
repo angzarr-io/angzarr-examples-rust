@@ -1,6 +1,6 @@
 //! Rejection handlers for saga/PM compensation.
 
-use angzarr_client::proto::examples::{Currency, FundsReleased};
+use examples_proto::{Currency, FundsReleased};
 use angzarr_client::proto::{EventBook, Notification, RejectionNotification};
 use angzarr_client::router::RejectionHandlerResponse;
 use angzarr_client::{event_page, now, pack_event, CommandResult, UnpackAny};

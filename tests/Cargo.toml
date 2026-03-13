@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-angzarr-client = { path = "../../../client/rust" }
+examples-proto.workspace = true
+angzarr-client.workspace = true
 agg-player = { path = "../player/agg" }
 agg-table = { path = "../table/agg" }
 agg-hand = { path = "../hand/agg" }

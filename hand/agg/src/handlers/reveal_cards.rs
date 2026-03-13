@@ -1,6 +1,6 @@
 //! RevealCards command handler.
 
-use angzarr_client::proto::examples::{CardsMucked, CardsRevealed, HandRanking, RevealCards};
+use examples_proto::{CardsMucked, CardsRevealed, HandRanking, RevealCards};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

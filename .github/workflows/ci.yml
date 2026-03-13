@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  EXAMPLES_PROTO_ROOT: ${{ github.workspace }}/examples-proto
+
 jobs:
   build:
     name: Build & Test
@@ -17,6 +20,13 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      - name: Export example protos from Buf registry
+        run: |
+          curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o buf
+          chmod +x buf
+          sudo mv buf /usr/local/bin/
+          buf export buf.build/angzarr/examples -o examples-proto
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -27,13 +37,13 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        run: just build
+        run: cargo build --workspace
 
       - name: Test (unit)
-        run: just test-unit
+        run: cargo test --workspace
 
       - name: Lint
-        run: just lint
+        run: cargo clippy --workspace -- -D warnings
 
       - name: Format check
         run: cargo fmt --check

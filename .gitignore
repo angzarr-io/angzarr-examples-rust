@@ -2,7 +2,6 @@
 target/
 Cargo.lock
 *.rs.bk
-proto/**/*.rs
 
 # Binaries
 */*/agg-*

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn,
     PlayerRegistered, PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
 };

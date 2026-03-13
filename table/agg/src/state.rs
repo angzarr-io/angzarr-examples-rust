@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use angzarr_client::proto::event_page::Payload;
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ChipsAdded, GameVariant, HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerSatIn,
     PlayerSatOut, TableCreated, TableState as ProtoTableState,
 };

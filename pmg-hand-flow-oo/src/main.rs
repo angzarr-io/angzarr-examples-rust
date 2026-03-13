@@ -5,7 +5,7 @@
 //!
 //! Compare with the functional pattern in pmg-hand-flow/.
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     CardsDealt, DealCards, EndHand, HandComplete, HandStarted, PostBlinds,
 };
 use angzarr_client::proto::{CommandBook, Cover, EventBook, Uuid};

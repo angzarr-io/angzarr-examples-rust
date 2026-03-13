@@ -1,6 +1,6 @@
 //! AwardPot command handler.
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     AwardPot, HandComplete, PlayerStackSnapshot, PotAwarded, PotWinner,
 };
 use angzarr_client::proto::{CommandBook, EventBook};

@@ -3,7 +3,7 @@
 //! Subscribes to player, table, and hand domain events.
 //! Writes formatted game logs to a file.
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted,
     PlayerJoined, PlayerRegistered, PotAwarded, TableCreated,
 };

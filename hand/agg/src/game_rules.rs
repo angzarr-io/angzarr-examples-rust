@@ -2,7 +2,7 @@
 //!
 //! Polymorphic game rules supporting multiple poker variants.
 
-use angzarr_client::proto::examples::{BettingPhase, Card, GameVariant, HandRankType, Rank};
+use examples_proto::{BettingPhase, Card, GameVariant, HandRankType, Rank};
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -349,7 +349,7 @@ fn rank_score(ranks: &[i32]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use angzarr_client::proto::examples::Suit;
+    use examples_proto::Suit;
 
     fn card(rank: Rank, suit: Suit) -> Card {
         Card {

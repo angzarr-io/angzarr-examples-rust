@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable,
     PlayerJoined, PlayerLeft, SeatSnapshot, StartHand, TableCreated,
 };

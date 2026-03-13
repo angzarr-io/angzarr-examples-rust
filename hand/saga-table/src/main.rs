@@ -9,7 +9,7 @@
 //! - Idempotency checking
 //! - Delivery retry on sequence conflicts
 
-use angzarr_client::proto::examples::{EndHand, HandComplete, PotResult};
+use examples_proto::{EndHand, HandComplete, PotResult};
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{
     run_saga_server, CommandRejectedError, CommandResult, SagaDomainHandler, SagaHandlerResponse,

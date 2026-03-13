@@ -1,6 +1,6 @@
 //! PlayerAction command handler.
 
-use angzarr_client::proto::examples::{ActionTaken, ActionType, PlayerAction};
+use examples_proto::{ActionTaken, ActionType, PlayerAction};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

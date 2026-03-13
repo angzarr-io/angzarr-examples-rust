@@ -8,7 +8,7 @@ use agg_player::{
     handle_deposit_funds, handle_register_player, handle_release_funds, handle_reserve_funds,
     handle_withdraw_funds, rebuild_state, PlayerState,
 };
-use angzarr_client::proto::examples::{
+use examples_proto::{
     Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn,
     PlayerRegistered, PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
 };

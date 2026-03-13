@@ -1,6 +1,6 @@
 //! PostBlind command handler.
 
-use angzarr_client::proto::examples::{BlindPosted, PostBlind};
+use examples_proto::{BlindPosted, PostBlind};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use prost_types::Any;

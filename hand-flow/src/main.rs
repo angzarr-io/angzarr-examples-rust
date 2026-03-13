@@ -5,7 +5,7 @@
 //! 2. Managing hand process state machines
 //! 3. Sending commands to drive hands forward
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, CommunityCardsDealt, HandStarted, PotAwarded,
 };
 use angzarr_client::proto::{Cover, EventBook, Uuid};

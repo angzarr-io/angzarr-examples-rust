@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use angzarr_client::proto::event_page::Payload;
-use angzarr_client::proto::examples::{
+use examples_proto::{
     FundsDeposited, FundsReleased, FundsReserved, FundsTransferred, FundsWithdrawn,
     PlayerRegistered, PlayerState as ProtoPlayerState, PlayerType,
 };

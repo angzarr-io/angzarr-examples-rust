@@ -8,7 +8,7 @@
 //! - Receives events from multiple domains
 //! - Can make decisions based on accumulated state
 
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, CommunityCardsDealt, HandComplete, HandStarted,
     PotAwarded,
 };

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use agg_hand::{game_rules, handlers, state::rebuild_state};
-use angzarr_client::proto::examples::{
+use examples_proto::{
     ActionTaken, ActionType, BettingPhase, BettingRoundComplete, BlindPosted, Card, CardsDealt,
     CardsMucked, CardsRevealed, CommunityCardsDealt, DealCards, DealCommunityCards, DrawCompleted,
     GameVariant, HandRanking, HandRankType, PlayerAction, PlayerHoleCards, PlayerInHand,
@@ -27,7 +27,7 @@ fn uuid_for(seed: &str) -> Vec<u8> {
 
 /// Parse a card string like "As" (Ace of spades) to a Card.
 fn parse_card(s: &str) -> Card {
-    use angzarr_client::proto::examples::{Rank, Suit};
+    use examples_proto::{Rank, Suit};
     let s = s.trim();
     if s.len() < 2 {
         return Card::default();

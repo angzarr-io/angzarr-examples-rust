@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use agg_table::{handlers, state::rebuild_state};
-use angzarr_client::proto::examples::{
+use examples_proto::{
     CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable,
     PlayerJoined, PlayerLeft, PotResult, StartHand, TableCreated,
 };
