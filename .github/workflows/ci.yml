@@ -12,6 +12,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   EXAMPLES_PROTO_ROOT: ${{ github.workspace }}/examples-proto
+  ANGZARR_PROTO_ROOT: ${{ github.workspace }}/angzarr-proto
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/angzarr-io/examples-rust
 
@@ -37,8 +38,10 @@ jobs:
         with:
           setup_only: true
 
-      - name: Export example protos from Buf registry
-        run: buf export buf.build/angzarr/examples -o examples-proto
+      - name: Export protos from Buf registry
+        run: |
+          buf export buf.build/angzarr/examples -o examples-proto
+          buf export buf.build/angzarr/angzarr -o angzarr-proto
 
       - name: Update client dependency (on dispatch)
         if: github.event_name == 'repository_dispatch'
@@ -122,10 +125,82 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  acceptance-test:
+    name: Acceptance Tests
+    runs-on: ubuntu-latest
+    needs: build-images
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Export protos from Buf registry
+        run: |
+          buf export buf.build/angzarr/examples -o examples-proto
+          buf export buf.build/angzarr/angzarr -o angzarr-proto
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: angzarr-test
+          config: deploy/kind/cluster.yaml
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUM="${{ github.event.pull_request.number }}"
+            echo "tag=pr-${PR_NUM}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy infrastructure
+        run: just deploy-infra
+
+      - name: Deploy poker applications
+        run: just deploy-apps ${{ steps.tag.outputs.tag }}
+
+      - name: Wait for deployments
+        run: |
+          kubectl wait --for=condition=available deployment --all -n angzarr-test --timeout=300s || true
+          kubectl get pods -n angzarr-test
+
+      - name: Run acceptance tests
+        run: just test-e2e
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -n angzarr-test
+          echo ""
+          echo "=== Pod Logs ==="
+          for pod in $(kubectl get pods -n angzarr-test -o name); do
+            echo "--- $pod ---"
+            kubectl logs $pod -n angzarr-test --all-containers --tail=50 || true
+          done
+
   summary:
     name: Summary
     runs-on: ubuntu-latest
-    needs: [test, build-images]
+    needs: [test, build-images, acceptance-test]
     if: always()
     steps:
       - name: Check results
@@ -136,7 +211,8 @@ jobs:
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Images | ${{ needs.build-images.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Acceptance Tests | ${{ needs.acceptance-test.result }} |" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-images.result }}" != "success" ]; then
+          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-images.result }}" != "success" ] || [ "${{ needs.acceptance-test.result }}" != "success" ]; then
             exit 1
           fi

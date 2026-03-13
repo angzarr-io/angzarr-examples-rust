@@ -1,0 +1,23 @@
+# CI overlay - uses images from the current build
+# Image tags are set via kustomize edit set image
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Images will be patched by CI using:
+# kustomize edit set image ghcr.io/angzarr-io/examples-rust-agg-player=ghcr.io/angzarr-io/examples-rust-agg-player:pr-N-sha
+images:
+  - name: ghcr.io/angzarr-io/examples-rust-agg-player
+    newTag: latest
+  - name: ghcr.io/angzarr-io/examples-rust-agg-table
+    newTag: latest
+  - name: ghcr.io/angzarr-io/examples-rust-agg-hand
+    newTag: latest
+  - name: ghcr.io/angzarr-io/examples-rust-saga-table-hand
+    newTag: latest
+  - name: ghcr.io/angzarr-io/examples-rust-saga-hand-player
+    newTag: latest
+  - name: ghcr.io/angzarr-io/examples-rust-prj-output
+    newTag: latest

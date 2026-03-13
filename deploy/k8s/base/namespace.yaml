@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: angzarr-test
+  labels:
+    app.kubernetes.io/name: angzarr-test
