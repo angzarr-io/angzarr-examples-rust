@@ -77,7 +77,7 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use angzarr_client::proto::event_page;
+    use angzarr_client::proto::{event_page, page_header};
     use prost_types::Any;
 
     /// Test that events without registered transformations pass through unchanged.

@@ -365,7 +365,7 @@ fn apply_snapshot(snapshot: &ProtoHandState) -> HandState {
 mod tests {
     use super::*;
     use angzarr_client::pack_event;
-    use angzarr_client::proto::event_page;
+    use angzarr_client::proto::{event_page, page_header};
 
     #[test]
     fn test_community_cards_dealt_applies_correctly() {
