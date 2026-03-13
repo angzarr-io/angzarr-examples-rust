@@ -10,14 +10,16 @@
 
 use std::collections::HashMap;
 
-use examples_proto::{
-    CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable,
-    PlayerJoined, PlayerLeft, SeatSnapshot, StartHand, TableCreated,
+use angzarr_client::proto::{
+    event_page, page_header, CommandBook, EventBook, EventPage, PageHeader,
 };
-use angzarr_client::proto::{event_page, page_header, CommandBook, EventBook, EventPage, PageHeader};
-use angzarr_client::{run_command_handler_server, CommandRejectedError, CommandResult};
 #[allow(unused_imports)]
 use angzarr_client::{aggregate, applies, handles};
+use angzarr_client::{run_command_handler_server, CommandRejectedError, CommandResult};
+use examples_proto::{
+    CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable, PlayerJoined,
+    PlayerLeft, SeatSnapshot, StartHand, TableCreated,
+};
 use prost_types::Any;
 use sha2::{Digest, Sha256};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -164,7 +166,9 @@ impl TableAggregate {
             return Err(CommandRejectedError::new("small_blind must be positive"));
         }
         if cmd.big_blind < cmd.small_blind {
-            return Err(CommandRejectedError::new("big_blind must be >= small_blind"));
+            return Err(CommandRejectedError::new(
+                "big_blind must be >= small_blind",
+            ));
         }
         if cmd.max_players < 2 || cmd.max_players > 10 {
             return Err(CommandRejectedError::new("max_players must be 2-10"));

@@ -1,9 +1,9 @@
 //! Rejection handlers for saga/PM compensation.
 
-use examples_proto::{Currency, FundsReleased};
 use angzarr_client::proto::{EventBook, Notification, RejectionNotification};
 use angzarr_client::router::RejectionHandlerResponse;
 use angzarr_client::{event_page, now, pack_event, CommandResult, UnpackAny};
+use examples_proto::{Currency, FundsReleased};
 use tracing::warn;
 
 use crate::state::PlayerState;
@@ -35,12 +35,22 @@ pub fn handle_join_rejected(
         .rejected_command
         .as_ref()
         .and_then(|cmd| cmd.cover.as_ref())
-        .map(|cover| cover.root.as_ref().map(|r| r.value.clone()).unwrap_or_default())
+        .map(|cover| {
+            cover
+                .root
+                .as_ref()
+                .map(|r| r.value.clone())
+                .unwrap_or_default()
+        })
         .unwrap_or_default();
 
     // Release the funds that were reserved for this table
     let table_key = hex::encode(&table_root);
-    let reserved_amount = state.table_reservations.get(&table_key).copied().unwrap_or(0);
+    let reserved_amount = state
+        .table_reservations
+        .get(&table_key)
+        .copied()
+        .unwrap_or(0);
     let new_reserved = state.reserved_funds - reserved_amount;
     let new_available = state.bankroll - new_reserved;
 

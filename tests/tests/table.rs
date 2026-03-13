@@ -3,13 +3,17 @@
 use std::collections::HashMap;
 
 use agg_table::{handlers, state::rebuild_state};
-use examples_proto::{
-    CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable,
-    PlayerJoined, PlayerLeft, PotResult, StartHand, TableCreated,
+use angzarr_client::proto::{
+    event_page, page_header, CommandBook, Cover, EventBook, EventPage, PageHeader, Uuid,
 };
-use angzarr_client::proto::{event_page, page_header, CommandBook, Cover, EventBook, EventPage, PageHeader, Uuid};
-use angzarr_client::{pack_event, try_unpack, type_matches, type_name_from_url, CommandRejectedError, UnpackAny};
+use angzarr_client::{
+    pack_event, try_unpack, type_matches, type_name_from_url, CommandRejectedError, UnpackAny,
+};
 use cucumber::{given, then, when, World, WriterExt};
+use examples_proto::{
+    CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable, PlayerJoined,
+    PlayerLeft, PotResult, StartHand, TableCreated,
+};
 use prost::Message;
 use prost_types::Any;
 use sha2::{Digest, Sha256};
@@ -107,15 +111,17 @@ impl TableWorld {
     }
 
     fn result_event(&self) -> Option<Any> {
-        self.result.as_ref().and_then(|r: &Result<EventBook, CommandRejectedError>| {
-            r.as_ref()
-                .ok()
-                .and_then(|eb| eb.pages.first())
-                .and_then(|p| match &p.payload {
-                    Some(event_page::Payload::Event(e)) => Some(e.clone()),
-                    _ => None,
-                })
-        })
+        self.result
+            .as_ref()
+            .and_then(|r: &Result<EventBook, CommandRejectedError>| {
+                r.as_ref()
+                    .ok()
+                    .and_then(|eb| eb.pages.first())
+                    .and_then(|p| match &p.payload {
+                        Some(event_page::Payload::Event(e)) => Some(e.clone()),
+                        _ => None,
+                    })
+            })
     }
 }
 
@@ -127,7 +133,7 @@ impl TableWorld {
 fn given_no_events(world: &mut TableWorld) {
     world.events.clear();
     world.min_buy_in = 200;
-    world.max_buy_in = 2000;  // Set high enough for all test buy-ins
+    world.max_buy_in = 2000; // Set high enough for all test buy-ins
     world.max_players = 9;
 }
 
@@ -158,7 +164,9 @@ fn given_table_created(world: &mut TableWorld, table_name: String) {
         action_timeout_seconds: 30,
         created_at: None,
     };
-    world.events.push(pack_event(&event, "examples.TableCreated"));
+    world
+        .events
+        .push(pack_event(&event, "examples.TableCreated"));
 }
 
 #[given(expr = "a TableCreated event for {string} with min_buy_in {int}")]
@@ -189,7 +197,9 @@ fn given_player_joined(world: &mut TableWorld, player_id: String, seat: i32) {
         stack,
         joined_at: None,
     };
-    world.events.push(pack_event(&event, "examples.PlayerJoined"));
+    world
+        .events
+        .push(pack_event(&event, "examples.PlayerJoined"));
 }
 
 #[given(expr = "a PlayerJoined event for player {string} at seat {int} with stack {int}")]
@@ -215,7 +225,9 @@ fn given_hand_started(world: &mut TableWorld, hand_number: i64) {
         big_blind: 10,
         started_at: None,
     };
-    world.events.push(pack_event(&event, "examples.HandStarted"));
+    world
+        .events
+        .push(pack_event(&event, "examples.HandStarted"));
 }
 
 #[given(expr = "a HandStarted event for hand {int} with dealer at seat {int}")]
@@ -397,7 +409,7 @@ fn when_end_hand_with_results(world: &mut TableWorld, step: &cucumber::gherkin::
     let results: Vec<PotResult> = table
         .rows
         .iter()
-        .skip(1)  // Skip header
+        .skip(1) // Skip header
         .map(|row| {
             let player_id = &row[0];
             let change: i64 = row[1].parse().unwrap();
@@ -410,10 +422,7 @@ fn when_end_hand_with_results(world: &mut TableWorld, step: &cucumber::gherkin::
         })
         .collect();
 
-    let cmd = EndHand {
-        hand_root,
-        results,
-    };
+    let cmd = EndHand { hand_root, results };
 
     let event_book = world.event_book();
     let state = rebuild_state(&event_book);
@@ -461,10 +470,7 @@ fn then_result_is_event(world: &mut TableWorld, event_type: String) {
 #[then(expr = "the command fails with status {string}")]
 fn then_command_fails(world: &mut TableWorld, _status: String) {
     let result = world.result.as_ref().expect("No result");
-    assert!(
-        result.is_err(),
-        "Expected command to fail but it succeeded"
-    );
+    assert!(result.is_err(), "Expected command to fail but it succeeded");
 }
 
 #[then(expr = "the error message contains {string}")]
@@ -570,7 +576,11 @@ fn then_stack_change(world: &mut TableWorld, player_id: String, expected: i64) {
     let event = world.result_event().expect("No event");
     let hand_ended: HandEnded = event.unpack().expect("Failed to decode");
     let player_hex = hex::encode(world.player_root(&player_id));
-    let change = hand_ended.stack_changes.get(&player_hex).copied().unwrap_or(0);
+    let change = hand_ended
+        .stack_changes
+        .get(&player_hex)
+        .copied()
+        .unwrap_or(0);
     assert_eq!(change, expected);
 }
 

@@ -7,19 +7,21 @@
 //! - `#[projector(name = "...")]` on impl blocks
 //! - `#[projects(EventType)]` on handler methods
 
+#![allow(clippy::result_large_err)]
+
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::Mutex;
 
-use examples_proto::{
-    ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted,
-    PlayerJoined, PlayerRegistered, PotAwarded, TableCreated,
-};
 use angzarr_client::proto::Projection;
 use angzarr_client::run_projector_server;
 #[allow(unused_imports)]
 use angzarr_client::{projector, projects};
+use examples_proto::{
+    ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted, PlayerJoined,
+    PlayerRegistered, PotAwarded, TableCreated,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 static LOG_FILE: Mutex<Option<File>> = Mutex::new(None);

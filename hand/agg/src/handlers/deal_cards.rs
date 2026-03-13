@@ -3,11 +3,9 @@
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
-use examples_proto::{
-    Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit,
-};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
 use prost_types::Any;
 
 use crate::game_rules::get_rules;

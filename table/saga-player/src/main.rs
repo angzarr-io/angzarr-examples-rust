@@ -9,12 +9,12 @@
 //! - Idempotency checking
 //! - Delivery retry on sequence conflicts
 
-use examples_proto::{HandEnded, ReleaseFunds};
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{
     run_saga_server, CommandRejectedError, CommandResult, SagaDomainHandler, SagaHandlerResponse,
     SagaRouter, UnpackAny,
 };
+use examples_proto::{HandEnded, ReleaseFunds};
 use prost::Message;
 use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

@@ -1,8 +1,8 @@
 //! ReleaseFunds command handler.
 
-use examples_proto::{Currency, FundsReleased, ReleaseFunds};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{Currency, FundsReleased, ReleaseFunds};
 use prost_types::Any;
 
 use crate::state::PlayerState;
@@ -22,7 +22,9 @@ fn validate(cmd: &ReleaseFunds, state: &PlayerState) -> CommandResult<i64> {
     let table_key = hex::encode(&cmd.table_root);
     match state.table_reservations.get(&table_key) {
         Some(&amount) => Ok(amount),
-        None => Err(CommandRejectedError::new("No funds reserved for this table")),
+        None => Err(CommandRejectedError::new(
+            "No funds reserved for this table",
+        )),
     }
 }
 

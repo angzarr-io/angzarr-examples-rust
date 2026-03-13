@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use angzarr_client::proto::event_page::Payload;
+use angzarr_client::proto::EventBook;
+use angzarr_client::StateRouter;
+use angzarr_client::UnpackAny;
 use examples_proto::{
     FundsDeposited, FundsReleased, FundsReserved, FundsTransferred, FundsWithdrawn,
     PlayerRegistered, PlayerState as ProtoPlayerState, PlayerType,
 };
-use angzarr_client::proto::EventBook;
-use angzarr_client::StateRouter;
-use angzarr_client::UnpackAny;
 
 /// Player aggregate state rebuilt from events.
 #[derive(Debug, Default, Clone)]

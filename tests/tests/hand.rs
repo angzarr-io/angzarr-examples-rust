@@ -3,16 +3,18 @@
 use std::collections::HashMap;
 
 use agg_hand::{game_rules, handlers, state::rebuild_state};
-use examples_proto::{
-    ActionTaken, ActionType, BettingPhase, BettingRoundComplete, BlindPosted, Card, CardsDealt,
-    CardsMucked, CardsRevealed, CommunityCardsDealt, DealCards, DealCommunityCards, DrawCompleted,
-    GameVariant, HandRanking, HandRankType, PlayerAction, PlayerHoleCards, PlayerInHand,
-    PlayerStackSnapshot, PostBlind, PotAwarded, PotAward, RequestDraw, RevealCards,
-    ShowdownStarted, AwardPot,
+use angzarr_client::proto::{
+    event_page, page_header, CommandBook, Cover, EventBook, EventPage, PageHeader, Uuid,
 };
-use angzarr_client::proto::{event_page, page_header, CommandBook, Cover, EventBook, EventPage, PageHeader, Uuid};
 use angzarr_client::{pack_event, try_unpack, type_name_from_url, CommandRejectedError, UnpackAny};
 use cucumber::{given, then, when, World, WriterExt};
+use examples_proto::{
+    ActionTaken, ActionType, AwardPot, BettingPhase, BettingRoundComplete, BlindPosted, Card,
+    CardsDealt, CardsMucked, CardsRevealed, CommunityCardsDealt, DealCards, DealCommunityCards,
+    DrawCompleted, GameVariant, HandRankType, HandRanking, PlayerAction, PlayerHoleCards,
+    PlayerInHand, PlayerStackSnapshot, PostBlind, PotAward, PotAwarded, RequestDraw, RevealCards,
+    ShowdownStarted,
+};
 use prost::Message;
 use prost_types::Any;
 use sha2::{Digest, Sha256};
@@ -516,7 +518,11 @@ fn given_completed_betting(world: &mut HandWorld, num_players: usize) {
 #[given("a ShowdownStarted event for the hand")]
 fn given_showdown_started(world: &mut HandWorld) {
     let event = ShowdownStarted {
-        players_to_show: world.players.iter().map(|p| p.player_root.clone()).collect(),
+        players_to_show: world
+            .players
+            .iter()
+            .map(|p| p.player_root.clone())
+            .collect(),
         started_at: None,
     };
     world
@@ -622,9 +628,7 @@ fn given_showdown_hands(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
         let hole_cards = parse_cards(&row[1]);
         let community_cards = parse_cards(&row[2]);
 
-        world
-            .showdown_hole_cards
-            .insert(player_id, hole_cards);
+        world.showdown_hole_cards.insert(player_id, hole_cards);
 
         // All players share the same community cards, just take the first
         if world.showdown_community_cards.is_empty() {
@@ -633,7 +637,9 @@ fn given_showdown_hands(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
     }
 }
 
-#[given(regex = r#"a hand at showdown with player "([^"]*)" holding "([^"]*)" and community "([^"]*)""#)]
+#[given(
+    regex = r#"a hand at showdown with player "([^"]*)" holding "([^"]*)" and community "([^"]*)""#
+)]
 fn given_hand_at_showdown_with_cards(
     world: &mut HandWorld,
     player_id: String,
@@ -644,10 +650,7 @@ fn given_hand_at_showdown_with_cards(
     let community_cards = parse_cards(&community_cards_str);
 
     // Set up a 2-player hand with the specific hole cards
-    let players = vec![
-        (&player_id as &str, 0, 500i64),
-        ("player-2", 1, 500i64),
-    ];
+    let players = vec![(&player_id as &str, 0, 500i64), ("player-2", 1, 500i64)];
 
     // Create CardsDealt event with specific hole cards
     world.game_variant = GameVariant::TexasHoldem;
@@ -693,7 +696,9 @@ fn given_hand_at_showdown_with_cards(
         dealt_at: None,
         remaining_deck,
     };
-    world.events.push(pack_event(&cards_dealt, "examples.CardsDealt"));
+    world
+        .events
+        .push(pack_event(&cards_dealt, "examples.CardsDealt"));
     world.hand_number = 1;
 
     // Add blinds
@@ -709,7 +714,10 @@ fn given_hand_at_showdown_with_cards(
         stacks: vec![],
         completed_at: None,
     };
-    world.events.push(pack_event(&betting_complete, "examples.BettingRoundComplete"));
+    world.events.push(pack_event(
+        &betting_complete,
+        "examples.BettingRoundComplete",
+    ));
 
     // Deal community cards
     let community_dealt = CommunityCardsDealt {
@@ -718,14 +726,18 @@ fn given_hand_at_showdown_with_cards(
         all_community_cards: community_cards,
         dealt_at: None,
     };
-    world.events.push(pack_event(&community_dealt, "examples.CommunityCardsDealt"));
+    world
+        .events
+        .push(pack_event(&community_dealt, "examples.CommunityCardsDealt"));
 
     // Add showdown started
     let showdown_started = ShowdownStarted {
         players_to_show: vec![],
         started_at: None,
     };
-    world.events.push(pack_event(&showdown_started, "examples.ShowdownStarted"));
+    world
+        .events
+        .push(pack_event(&showdown_started, "examples.ShowdownStarted"));
 }
 
 // =============================================================================
@@ -1044,10 +1056,7 @@ fn then_result_is_an_event(world: &mut HandWorld, event_type: String) {
 #[then(expr = "the command fails with status {string}")]
 fn then_command_fails(world: &mut HandWorld, _status: String) {
     let result = world.result.as_ref().expect("No result");
-    assert!(
-        result.is_err(),
-        "Expected command to fail but it succeeded"
-    );
+    assert!(result.is_err(), "Expected command to fail but it succeeded");
 }
 
 #[then(expr = "the error message contains {string}")]

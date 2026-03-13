@@ -1,8 +1,8 @@
 //! LeaveTable command handler.
 
-use examples_proto::{LeaveTable, PlayerLeft};
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use examples_proto::{LeaveTable, PlayerLeft};
 use prost_types::Any;
 
 use crate::state::{SeatState, TableState};

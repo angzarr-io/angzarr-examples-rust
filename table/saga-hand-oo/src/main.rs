@@ -16,11 +16,11 @@
 //! - `#[saga(name = "...", input = "...")]` on impl blocks
 //! - `#[handles(EventType)]` on handler methods
 
-use examples_proto::{DealCards, HandStarted, PlayerInHand};
 use angzarr_client::proto::{CommandBook, CommandPage, Cover, EventBook, Uuid};
-use angzarr_client::{run_saga_server, CommandResult, SagaHandlerResponse};
 #[allow(unused_imports)]
 use angzarr_client::{handles, saga};
+use angzarr_client::{run_saga_server, CommandResult, SagaHandlerResponse};
+use examples_proto::{DealCards, HandStarted, PlayerInHand};
 use prost::Message;
 use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -80,7 +80,9 @@ impl TableHandSaga {
                 // Framework will stamp angzarr_deferred with source info
                 // and assign sequence on delivery
                 pages: vec![CommandPage {
-                    payload: Some(angzarr_client::proto::command_page::Payload::Command(command_any)),
+                    payload: Some(angzarr_client::proto::command_page::Payload::Command(
+                        command_any,
+                    )),
                     ..Default::default()
                 }],
             }],

@@ -1,15 +1,15 @@
 //! Player aggregate command handlers.
 
-mod register;
 mod deposit;
-mod withdraw;
-mod reserve;
-mod release;
+mod register;
 mod rejected;
+mod release;
+mod reserve;
+mod withdraw;
 
-pub use register::handle_register_player;
 pub use deposit::handle_deposit_funds;
-pub use withdraw::handle_withdraw_funds;
-pub use reserve::handle_reserve_funds;
-pub use release::handle_release_funds;
+pub use register::handle_register_player;
 pub use rejected::handle_join_rejected;
+pub use release::handle_release_funds;
+pub use reserve::handle_reserve_funds;
+pub use withdraw::handle_withdraw_funds;

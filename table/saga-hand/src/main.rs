@@ -12,12 +12,12 @@
 //! - Idempotency checking
 //! - Delivery retry on sequence conflicts
 
-use examples_proto::{DealCards, HandStarted, PlayerInHand};
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{
     run_saga_server, CommandRejectedError, CommandResult, SagaDomainHandler, SagaHandlerResponse,
     SagaRouter, UnpackAny,
 };
+use examples_proto::{DealCards, HandStarted, PlayerInHand};
 use prost::Message;
 use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -48,9 +48,9 @@ impl TableHandSagaHandler {
         _source: &EventBook,
         event_any: &Any,
     ) -> CommandResult<SagaHandlerResponse> {
-        let event: HandStarted = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode HandStarted: {}", e)))?;
+        let event: HandStarted = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode HandStarted: {}", e))
+        })?;
 
         // Convert SeatSnapshot to PlayerInHand
         let players: Vec<PlayerInHand> = event
@@ -84,7 +84,9 @@ impl TableHandSagaHandler {
             commands: vec![CommandBook {
                 cover: Some(Cover {
                     domain: "hand".to_string(),
-                    root: Some(Uuid { value: event.hand_root }),
+                    root: Some(Uuid {
+                        value: event.hand_root,
+                    }),
                     ..Default::default()
                 }),
                 // Framework will stamp angzarr_deferred with source info

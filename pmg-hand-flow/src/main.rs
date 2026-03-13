@@ -8,14 +8,14 @@
 //! - Receives events from multiple domains
 //! - Can make decisions based on accumulated state
 
-use examples_proto::{
-    ActionTaken, BlindPosted, CardsDealt, CommunityCardsDealt, HandComplete, HandStarted,
-    PotAwarded,
-};
 use angzarr_client::proto::{Cover, EventBook, Uuid};
 use angzarr_client::{
     run_process_manager_server, CommandRejectedError, CommandResult, ProcessManagerDomainHandler,
     ProcessManagerResponse, ProcessManagerRouter, UnpackAny,
+};
+use examples_proto::{
+    ActionTaken, BlindPosted, CardsDealt, CommunityCardsDealt, HandComplete, HandStarted,
+    PotAwarded,
 };
 use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -62,12 +62,7 @@ impl ProcessManagerDomainHandler<HandFlowState> for HandFlowPmHandler {
         ]
     }
 
-    fn prepare(
-        &self,
-        _trigger: &EventBook,
-        _state: &HandFlowState,
-        event: &Any,
-    ) -> Vec<Cover> {
+    fn prepare(&self, _trigger: &EventBook, _state: &HandFlowState, event: &Any) -> Vec<Cover> {
         // Declare destinations needed based on the triggering event
         if event.type_url.ends_with("HandStarted") {
             if let Ok(evt) = event.unpack::<HandStarted>() {
@@ -126,9 +121,9 @@ impl HandFlowPmHandler {
         state: &mut HandFlowState,
         event_any: &Any,
     ) -> CommandResult<ProcessManagerResponse> {
-        let event: HandStarted = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode HandStarted: {}", e)))?;
+        let event: HandStarted = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode HandStarted: {}", e))
+        })?;
 
         state.hand_root = event.hand_root;
         state.hand_number = event.hand_number;
@@ -146,9 +141,9 @@ impl HandFlowPmHandler {
         state: &mut HandFlowState,
         event_any: &Any,
     ) -> CommandResult<ProcessManagerResponse> {
-        let _event: CardsDealt = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode CardsDealt: {}", e)))?;
+        let _event: CardsDealt = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode CardsDealt: {}", e))
+        })?;
 
         state.phase = HandPhase::Blinds;
 
@@ -162,9 +157,9 @@ impl HandFlowPmHandler {
         state: &mut HandFlowState,
         event_any: &Any,
     ) -> CommandResult<ProcessManagerResponse> {
-        let _event: BlindPosted = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode BlindPosted: {}", e)))?;
+        let _event: BlindPosted = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode BlindPosted: {}", e))
+        })?;
 
         state.blinds_posted += 1;
 
@@ -182,9 +177,9 @@ impl HandFlowPmHandler {
         state: &mut HandFlowState,
         event_any: &Any,
     ) -> CommandResult<ProcessManagerResponse> {
-        let _event: ActionTaken = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode ActionTaken: {}", e)))?;
+        let _event: ActionTaken = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode ActionTaken: {}", e))
+        })?;
 
         // In a full implementation, track betting round progress
         // and advance phases when rounds complete
@@ -213,9 +208,9 @@ impl HandFlowPmHandler {
         state: &mut HandFlowState,
         event_any: &Any,
     ) -> CommandResult<ProcessManagerResponse> {
-        let _event: PotAwarded = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode PotAwarded: {}", e)))?;
+        let _event: PotAwarded = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode PotAwarded: {}", e))
+        })?;
 
         state.phase = HandPhase::Complete;
 
@@ -228,9 +223,9 @@ impl HandFlowPmHandler {
         state: &mut HandFlowState,
         event_any: &Any,
     ) -> CommandResult<ProcessManagerResponse> {
-        let _event: HandComplete = event_any
-            .unpack()
-            .map_err(|e| CommandRejectedError::new(format!("Failed to decode HandComplete: {}", e)))?;
+        let _event: HandComplete = event_any.unpack().map_err(|e| {
+            CommandRejectedError::new(format!("Failed to decode HandComplete: {}", e))
+        })?;
 
         state.phase = HandPhase::Complete;
 
