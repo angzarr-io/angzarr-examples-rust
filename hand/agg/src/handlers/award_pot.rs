@@ -78,7 +78,7 @@ fn compute(cmd: &AwardPot, state: &HandState) -> (PotAwarded, HandComplete) {
 
     let pot_awarded = PotAwarded {
         winners: winners.clone(),
-        awarded_at: Some(now.clone()),
+        awarded_at: Some(now),
     };
 
     let hand_complete = HandComplete {

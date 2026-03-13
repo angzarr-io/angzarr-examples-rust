@@ -71,12 +71,7 @@ impl TableState {
     }
 
     pub fn next_available_seat(&self) -> Option<i32> {
-        for i in 0..self.max_players {
-            if !self.seats.contains_key(&i) {
-                return Some(i);
-            }
-        }
-        None
+        (0..self.max_players).find(|i| !self.seats.contains_key(i))
     }
 }
 

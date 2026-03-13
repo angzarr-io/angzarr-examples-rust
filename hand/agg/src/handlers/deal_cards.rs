@@ -121,7 +121,7 @@ fn create_deck() -> Vec<Card> {
 }
 
 /// Shuffle the deck using a seed for determinism.
-fn shuffle_deck(deck: &mut Vec<Card>, seed: &[u8]) {
+fn shuffle_deck(deck: &mut [Card], seed: &[u8]) {
     let hash = Sha256::digest(seed);
     let seed_int = u64::from_be_bytes(hash[..8].try_into().unwrap());
     let mut rng = StdRng::seed_from_u64(seed_int);

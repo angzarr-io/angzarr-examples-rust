@@ -51,7 +51,7 @@ fn validate<'a>(
     }
 
     for &idx in &indices {
-        if idx < 0 || idx >= 5 {
+        if !(0..5).contains(&idx) {
             return Err(CommandRejectedError::new("Card index out of range (0-4)"));
         }
     }
@@ -74,7 +74,7 @@ fn compute(
 
     let mut new_cards = player.hole_cards.clone();
     for (i, &idx) in validated.indices.iter().enumerate() {
-        new_cards[idx as usize] = cards_drawn[i].clone();
+        new_cards[idx as usize] = cards_drawn[i];
     }
 
     DrawCompleted {

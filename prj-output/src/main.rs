@@ -51,6 +51,7 @@ fn get_sequence(page: &EventPage) -> u32 {
 }
 
 // docs:start:projector_functional
+#[allow(clippy::result_large_err)]
 fn handle_events(events: &EventBook) -> Result<Projection, Status> {
     let cover = events.cover.as_ref();
     let domain = cover.map(|c| c.domain.as_str()).unwrap_or("");
