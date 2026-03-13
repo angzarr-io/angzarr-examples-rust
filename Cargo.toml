@@ -24,7 +24,6 @@ members = [
 
 [workspace.dependencies]
 angzarr-client = { git = "https://github.com/angzarr-io/angzarr-client-rust" }
-angzarr-macros = { git = "https://github.com/angzarr-io/angzarr-client-rust" }
 examples-proto = { path = "proto" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 prost = "0.13"

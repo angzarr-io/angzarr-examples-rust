@@ -19,7 +19,7 @@ use examples_proto::{
 use angzarr_client::proto::Projection;
 use angzarr_client::run_projector_server;
 #[allow(unused_imports)]
-use angzarr_macros::{projector, projects};
+use angzarr_client::{projector, projects};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 static LOG_FILE: Mutex<Option<File>> = Mutex::new(None);

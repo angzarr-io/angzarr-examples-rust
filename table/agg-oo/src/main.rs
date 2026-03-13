@@ -17,7 +17,7 @@ use examples_proto::{
 use angzarr_client::proto::{event_page, page_header, CommandBook, EventBook, EventPage, PageHeader};
 use angzarr_client::{run_command_handler_server, CommandRejectedError, CommandResult};
 #[allow(unused_imports)]
-use angzarr_macros::{aggregate, applies, handles};
+use angzarr_client::{aggregate, applies, handles};
 use prost_types::Any;
 use sha2::{Digest, Sha256};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

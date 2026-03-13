@@ -20,7 +20,7 @@ use examples_proto::{DealCards, HandStarted, PlayerInHand};
 use angzarr_client::proto::{CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{run_saga_server, CommandResult, SagaHandlerResponse};
 #[allow(unused_imports)]
-use angzarr_macros::{handles, saga};
+use angzarr_client::{handles, saga};
 use prost::Message;
 use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

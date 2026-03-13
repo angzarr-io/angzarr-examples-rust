@@ -18,7 +18,7 @@ use angzarr_client::{
     CommandRejectedError, CommandResult, RejectionHandlerResponse, UnpackAny,
 };
 #[allow(unused_imports)]
-use angzarr_macros::{aggregate, applies, handles, rejected};
+use angzarr_client::{aggregate, applies, handles, rejected};
 use prost_types::Any;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

@@ -10,7 +10,7 @@ use examples_proto::{
 };
 use angzarr_client::proto::{CommandBook, Cover, EventBook, Uuid};
 use angzarr_client::{run_process_manager_server, CommandResult, ProcessManagerResponse};
-use angzarr_macros::{handles, prepares, process_manager};
+use angzarr_client::{handles, prepares, process_manager};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // docs:start:pm_state_oo

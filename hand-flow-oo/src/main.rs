@@ -19,7 +19,7 @@ use angzarr_client::{run_process_manager_server, CommandResult, ProcessManagerRe
 #[allow(unused_imports)]
 use prost::Message;
 #[allow(unused_imports)]
-use angzarr_macros::{process_manager, prepares, handles, applies};
+use angzarr_client::{process_manager, prepares, handles, applies};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// The PM's aggregate state (rebuilt from its own events).
