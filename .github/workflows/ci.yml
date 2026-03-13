@@ -158,6 +158,8 @@ jobs:
         with:
           cluster_name: angzarr-test
           config: deploy/kind/cluster.yaml
+          node_image: kindest/node:v1.31.0
+          wait: 120s
 
       - name: Generate image tag
         id: tag
