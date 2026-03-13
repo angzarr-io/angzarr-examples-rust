@@ -12,6 +12,10 @@ resources:
   - rabbitmq.yaml
   - poker-apps.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: angzarr-poker-test
-  environment: test
+# Use 'labels' instead of 'commonLabels' to avoid adding labels to selectors
+# Selectors are immutable once a deployment is created
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: angzarr-poker-test
+      environment: test
+    includeSelectors: false
