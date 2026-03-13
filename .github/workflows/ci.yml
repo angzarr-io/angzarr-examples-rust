@@ -7,6 +7,7 @@ on:
     branches: [main]
   repository_dispatch:
     types: [client-updated]  # Triggered by angzarr-client-rust on update
+  workflow_dispatch:  # Allow manual trigger
 
 env:
   CARGO_TERM_COLOR: always
