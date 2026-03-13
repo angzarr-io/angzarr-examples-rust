@@ -139,7 +139,7 @@ deploy-infra:
     echo "Waiting for postgres..."
     kubectl wait --for=condition=ready pod -l app=postgres -n angzarr-test --timeout=120s
     echo "Waiting for rabbitmq..."
-    kubectl wait --for=condition=ready pod -l app=rabbitmq -n angzarr-test --timeout=120s
+    kubectl wait --for=condition=ready pod -l app=rabbitmq -n angzarr-test --timeout=180s
 
 # Deploy poker applications
 deploy-apps tag="latest":

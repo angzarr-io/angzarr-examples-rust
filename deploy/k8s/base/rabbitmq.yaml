@@ -50,5 +50,7 @@ spec:
           readinessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "check_running"]
-            initialDelaySeconds: 10
-            periodSeconds: 5
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
