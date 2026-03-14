@@ -50,10 +50,6 @@ jobs:
         if: github.event_name == 'repository_dispatch'
         run: cargo update angzarr-client
 
-      - name: Update client dependency (on dispatch)
-        if: github.event_name == 'repository_dispatch'
-        run: cargo update angzarr-client
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -140,7 +136,12 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       images-json: ${{ steps.images.outputs.json }}
+      coordinator-version: ${{ steps.coord.outputs.version }}
     steps:
+      - name: Output coordinator version
+        id: coord
+        run: echo "version=${{ env.COORDINATOR_VERSION }}" >> $GITHUB_OUTPUT
+
       - name: Generate image tag
         id: tag
         run: |
@@ -185,8 +186,8 @@ jobs:
     with:
       # Use just-pushed example images
       example-images: ${{ needs.compute-tag.outputs.images-json }}
-      # Coordinator version (cannot use env vars in with: blocks)
-      coordinator-version: latest
+      # Coordinator version (passed via job output since env context unavailable in uses)
+      coordinator-version: ${{ needs.compute-tag.outputs.coordinator-version }}
       examples-ref: ${{ github.ref }}
 
   summary:
