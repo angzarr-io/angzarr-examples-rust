@@ -124,13 +124,19 @@ pub struct TestAuditLogger {
     pub events: std::sync::Mutex<Vec<String>>,
 }
 
-#[allow(dead_code)]
-impl TestAuditLogger {
-    pub fn new() -> Self {
+impl Default for TestAuditLogger {
+    fn default() -> Self {
         Self {
             commands: std::sync::Mutex::new(Vec::new()),
             events: std::sync::Mutex::new(Vec::new()),
         }
+    }
+}
+
+#[allow(dead_code)]
+impl TestAuditLogger {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
