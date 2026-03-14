@@ -131,6 +131,13 @@ jobs:
           kubectl patch serviceaccount default -n angzarr-test \
             -p '{"imagePullSecrets": [{"name": "ghcr-pull-secret"}]}' || true
 
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
       - name: Pull and load coordinator images
         run: |
           IMAGES='${{ steps.images.outputs.coordinators }}'
