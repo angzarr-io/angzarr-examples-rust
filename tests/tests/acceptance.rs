@@ -5,7 +5,8 @@
 
 use angzarr_client::proto::{
     command_handler_coordinator_service_client::CommandHandlerCoordinatorServiceClient,
-    CommandBook, CommandPage, CommandRequest, CommandResponse, Cover, SyncMode, Uuid as ProtoUuid,
+    command_page, page_header, CommandBook, CommandPage, CommandRequest, CommandResponse, Cover,
+    PageHeader, SyncMode, Uuid as ProtoUuid,
 };
 use examples_proto::{Currency, DepositFunds, RegisterPlayer};
 use prost::Message;
@@ -52,12 +53,15 @@ fn make_command_request(domain: &str, root: ProtoUuid, command: Any) -> CommandR
                 ..Default::default()
             }),
             pages: vec![CommandPage {
-                sequence: 0,
-                command: Some(command),
+                header: Some(PageHeader {
+                    sequence_type: Some(page_header::SequenceType::Sequence(0)),
+                }),
+                payload: Some(command_page::Payload::Command(command)),
+                ..Default::default()
             }],
             ..Default::default()
         }),
-        sync_mode: SyncMode::Sync as i32,
+        sync_mode: SyncMode::Simple as i32,
         cascade_error_mode: 0,
     }
 }
