@@ -15,8 +15,9 @@ env:
   ANGZARR_PROTO_ROOT: ${{ github.workspace }}/angzarr-proto
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/angzarr-io/examples-rust
-  # Pinned coordinator version for acceptance tests - update when releasing
-  COORDINATOR_VERSION: v0.1.0
+  # Coordinator version for acceptance tests
+  # Use 'latest' for main builds, or pin to specific version for releases
+  COORDINATOR_VERSION: latest
 
 jobs:
   test:
@@ -184,8 +185,8 @@ jobs:
     with:
       # Use just-pushed example images
       example-images: ${{ needs.compute-tag.outputs.images-json }}
-      # Pinned coordinator version (cannot use env vars in with: blocks)
-      coordinator-version: v0.1.0
+      # Coordinator version (cannot use env vars in with: blocks)
+      coordinator-version: latest
       examples-ref: ${{ github.ref }}
 
   summary:
