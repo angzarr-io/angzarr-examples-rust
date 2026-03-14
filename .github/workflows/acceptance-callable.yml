@@ -1,0 +1,204 @@
+name: Acceptance Tests (Callable)
+
+# Reusable workflow for running Kind-based acceptance tests.
+# Can be called by:
+# - This repo's CI (with just-built example images)
+# - Core repo CI (with just-built coordinator images)
+# - Client repo CI (with default images)
+
+on:
+  workflow_call:
+    inputs:
+      coordinator-images:
+        description: 'JSON object of coordinator image refs. Empty = use :latest defaults.'
+        required: false
+        default: '{}'
+        type: string
+      example-images:
+        description: 'JSON object of example image refs. Empty = build locally.'
+        required: false
+        default: '{}'
+        type: string
+      examples-ref:
+        description: 'Git ref for examples repo checkout'
+        required: false
+        default: 'main'
+        type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  EXAMPLES_PROTO_ROOT: ${{ github.workspace }}/examples-proto
+  ANGZARR_PROTO_ROOT: ${{ github.workspace }}/angzarr-proto
+
+jobs:
+  acceptance:
+    name: Kind Acceptance Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout examples repo
+        uses: actions/checkout@v4
+        with:
+          repository: angzarr-io/angzarr-examples-rust
+          ref: ${{ inputs.examples-ref }}
+
+      - name: Install tools
+        run: |
+          # Install just
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Export protos from Buf registry
+        run: |
+          buf export buf.build/angzarr/examples -o examples-proto
+          buf export buf.build/angzarr/angzarr -o angzarr-proto
+
+      - name: Parse image inputs
+        id: images
+        run: |
+          # Coordinator images - use provided or default to :latest
+          COORD='${{ inputs.coordinator-images }}'
+          if [ "$COORD" = "{}" ] || [ -z "$COORD" ]; then
+            COORD='{
+              "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:latest",
+              "saga": "ghcr.io/angzarr-io/angzarr-saga:latest",
+              "projector": "ghcr.io/angzarr-io/angzarr-projector:latest",
+              "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:latest",
+              "stream": "ghcr.io/angzarr-io/angzarr-stream:latest",
+              "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:latest"
+            }'
+          fi
+          # Compact JSON for output
+          echo "coordinators=$(echo "$COORD" | jq -c '.')" >> $GITHUB_OUTPUT
+
+          # Example images - use provided or build locally
+          EXAMPLES='${{ inputs.example-images }}'
+          if [ "$EXAMPLES" = "{}" ] || [ -z "$EXAMPLES" ]; then
+            echo "build-examples=true" >> $GITHUB_OUTPUT
+            echo "examples={}" >> $GITHUB_OUTPUT
+          else
+            echo "build-examples=false" >> $GITHUB_OUTPUT
+            echo "examples=$(echo "$EXAMPLES" | jq -c '.')" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: angzarr-test
+          config: deploy/kind/cluster.yaml
+          node_image: kindest/node:v1.31.0
+          wait: 120s
+
+      - name: Create namespace and config
+        run: |
+          kubectl create namespace angzarr-test --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f deploy/k8s/base/config.yaml
+
+      - name: Create image pull secret
+        run: |
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --namespace=angzarr-test \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl patch serviceaccount default -n angzarr-test \
+            -p '{"imagePullSecrets": [{"name": "ghcr-pull-secret"}]}' || true
+
+      - name: Pull and load coordinator images
+        run: |
+          IMAGES='${{ steps.images.outputs.coordinators }}'
+          echo "Pulling coordinator images..."
+          echo "$IMAGES" | jq -r 'to_entries[] | "\(.key): \(.value)"'
+          echo "$IMAGES" | jq -r 'to_entries[] | .value' | while read img; do
+            echo "Pulling $img..."
+            docker pull "$img"
+            kind load docker-image "$img" --name angzarr-test
+          done
+
+      - name: Build example images (if not provided)
+        if: steps.images.outputs.build-examples == 'true'
+        run: |
+          echo "Building example images locally..."
+          # Install skaffold
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+          chmod +x skaffold
+          sudo mv skaffold /usr/local/bin/
+
+          # Build without pushing
+          skaffold build --push=false --file-output=build.json
+
+          # Load into Kind
+          jq -r '.builds[].tag' build.json | while read img; do
+            echo "Loading $img into Kind..."
+            kind load docker-image "$img" --name angzarr-test
+          done
+
+      - name: Pull and load provided example images
+        if: steps.images.outputs.build-examples == 'false'
+        run: |
+          IMAGES='${{ steps.images.outputs.examples }}'
+          echo "Pulling provided example images..."
+          echo "$IMAGES" | jq -r 'to_entries[] | "\(.key): \(.value)"'
+          echo "$IMAGES" | jq -r 'to_entries[] | .value' | while read img; do
+            echo "Pulling $img..."
+            docker pull "$img"
+            kind load docker-image "$img" --name angzarr-test
+          done
+
+      - name: Deploy infrastructure
+        run: just deploy-infra
+
+      - name: Deploy applications
+        run: |
+          # Use latest tag if building locally, otherwise images are already set
+          if [ "${{ steps.images.outputs.build-examples }}" = "true" ]; then
+            just deploy-apps latest
+          else
+            # Images already loaded, deploy with default tags
+            kubectl apply -k deploy/k8s/overlays/ci
+          fi
+
+      - name: Wait for deployments
+        run: |
+          echo "Waiting for all deployments..."
+          kubectl wait --for=condition=available deployment --all -n angzarr-test --timeout=300s || {
+            echo "Some deployments not ready, showing status..."
+            kubectl get pods -n angzarr-test
+            kubectl describe pods -n angzarr-test | head -200
+          }
+          echo ""
+          echo "=== Final pod status ==="
+          kubectl get pods -n angzarr-test
+
+      - name: Run acceptance tests
+        run: just test-e2e
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -n angzarr-test -o wide
+          echo ""
+          echo "=== Recent Events ==="
+          kubectl get events -n angzarr-test --sort-by='.lastTimestamp' | tail -30
+          echo ""
+          echo "=== Pod Logs ==="
+          for pod in $(kubectl get pods -n angzarr-test -o name 2>/dev/null); do
+            echo "--- $pod ---"
+            kubectl logs $pod -n angzarr-test --all-containers --tail=50 || true
+          done
