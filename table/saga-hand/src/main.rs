@@ -25,6 +25,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 // docs:start:saga_handler
 // docs:start:saga_oo
 /// Saga handler for Table → Hand domain translation.
+#[derive(Clone)]
 struct TableHandSagaHandler;
 
 impl SagaDomainHandler for TableHandSagaHandler {

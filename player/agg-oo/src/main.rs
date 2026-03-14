@@ -59,6 +59,7 @@ impl PlayerState {
 // =============================================================================
 
 /// Player aggregate using OO-style annotations.
+#[derive(Clone)]
 pub struct PlayerAggregate;
 
 #[aggregate(domain = "player", state = PlayerState)]

@@ -102,8 +102,8 @@ dependencies = [
 
 [[package]]
 name = "angzarr-client"
-version = "0.1.1"
-source = "git+https://github.com/angzarr-io/angzarr-client-rust#54ae147ed751c1a2417d198d5ae4dabcb7714642"
+version = "0.2.0"
+source = "git+https://github.com/angzarr-io/angzarr-client-rust?tag=v0.2.1#152309fd73862522daa408597d79d607f9c6e6e0"
 dependencies = [
  "angzarr-macros",
  "async-trait",
@@ -128,7 +128,7 @@ dependencies = [
 [[package]]
 name = "angzarr-macros"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-client-rust#54ae147ed751c1a2417d198d5ae4dabcb7714642"
+source = "git+https://github.com/angzarr-io/angzarr-client-rust?tag=v0.2.1#152309fd73862522daa408597d79d607f9c6e6e0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1379,6 +1379,8 @@ dependencies = [
  "regex",
  "sha2",
  "tokio",
+ "tonic",
+ "uuid",
 ]
 
 [[package]]

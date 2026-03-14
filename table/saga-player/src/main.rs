@@ -20,6 +20,7 @@ use prost_types::Any;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Saga handler for Table → Player domain translation.
+#[derive(Clone)]
 struct TablePlayerSagaHandler;
 
 impl SagaDomainHandler for TablePlayerSagaHandler {

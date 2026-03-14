@@ -11,6 +11,7 @@ use crate::handlers;
 use crate::state::{PlayerState, STATE_ROUTER};
 
 /// Player command handler.
+#[derive(Clone)]
 pub struct PlayerHandler;
 
 impl PlayerHandler {

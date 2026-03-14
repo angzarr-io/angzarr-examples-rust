@@ -27,6 +27,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // docs:start:saga_oo
 /// Table→Hand saga using OO-style annotations.
+#[derive(Clone)]
 pub struct TableHandSaga;
 
 #[saga(name = "saga-table-hand", input = "table")]
