@@ -11,6 +11,7 @@ use crate::handlers;
 use crate::state::{HandState, STATE_ROUTER};
 
 /// Hand command handler.
+#[derive(Clone)]
 pub struct HandHandler;
 
 impl HandHandler {

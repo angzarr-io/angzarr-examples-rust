@@ -5,8 +5,48 @@
 //! - `#[handles(CommandType)]` on handler methods
 //! - `#[applies(EventType)]` on event applier methods
 //! - `#[rejected(domain = "...", command = "...")]` on rejection handlers
+//!
+//! # Dependency Injection via Higher-Order Functions (HOF)
+//!
+//! This example demonstrates IoC/Dependency Injection using:
+//! - **Trait-based abstractions** (`AuditLogger` trait)
+//! - **`into_router_factory()`** with closures that capture dependencies
+//! - **Higher-order functions** for flexible handler construction
+//!
+//! ## Why Factories and HOF Matter
+//!
+//! The factory pattern (`into_router_factory`) is **essential** for:
+//!
+//! 1. **Dependency Injection**: Closures capture external dependencies (database
+//!    pools, message queues, loggers) and inject them into handlers.
+//!
+//! 2. **Testability**: Swap production services for mocks without changing code:
+//!    ```rust,ignore
+//!    // Production
+//!    let router = Aggregate::into_router_factory(|| Aggregate::new(prod_db.clone()));
+//!
+//!    // Test
+//!    let router = Aggregate::into_router_factory(|| Aggregate::new(mock_db.clone()));
+//!    ```
+//!
+//! 3. **Per-Request State**: Each handler invocation gets a fresh instance,
+//!    enabling request-scoped dependencies or stateless handlers.
+//!
+//! 4. **Inversion of Control**: The aggregate doesn't create its dependencies -
+//!    they're injected from outside, following SOLID principles.
+//!
+//! ## Pattern Comparison
+//!
+//! | Pattern | Use Case |
+//! |---------|----------|
+//! | `into_router()` | Simple aggregates without dependencies |
+//! | `into_router_factory()` | Aggregates with injected dependencies |
+//!
+//! Always prefer `into_router_factory()` when you have external dependencies
+//! to ensure testability and maintainability.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use angzarr_client::proto::{
     event_page, page_header, CommandBook, EventBook, EventPage, Notification, PageHeader,
@@ -55,11 +95,102 @@ impl PlayerState {
 }
 
 // =============================================================================
-// Aggregate
+// Dependency Injection - Traits
 // =============================================================================
 
-/// Player aggregate using OO-style annotations.
-pub struct PlayerAggregate;
+/// Audit logging service trait - abstraction for IoC.
+pub trait AuditLogger: Send + Sync {
+    fn log_command(&self, command_type: &str, player_id: &str);
+    fn log_event(&self, event_type: &str, player_id: &str);
+}
+
+/// Production audit logger implementation.
+pub struct ProductionAuditLogger;
+
+impl AuditLogger for ProductionAuditLogger {
+    fn log_command(&self, command_type: &str, player_id: &str) {
+        info!(
+            command = command_type,
+            player = player_id,
+            "Audit: command received"
+        );
+    }
+
+    fn log_event(&self, event_type: &str, player_id: &str) {
+        info!(
+            event = event_type,
+            player = player_id,
+            "Audit: event emitted"
+        );
+    }
+}
+
+/// Test audit logger for unit testing.
+#[allow(dead_code)]
+pub struct TestAuditLogger {
+    pub commands: std::sync::Mutex<Vec<String>>,
+    pub events: std::sync::Mutex<Vec<String>>,
+}
+
+impl Default for TestAuditLogger {
+    fn default() -> Self {
+        Self {
+            commands: std::sync::Mutex::new(Vec::new()),
+            events: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl TestAuditLogger {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl AuditLogger for TestAuditLogger {
+    fn log_command(&self, command_type: &str, player_id: &str) {
+        self.commands
+            .lock()
+            .unwrap()
+            .push(format!("{}:{}", command_type, player_id));
+    }
+
+    fn log_event(&self, event_type: &str, player_id: &str) {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("{}:{}", event_type, player_id));
+    }
+}
+
+// =============================================================================
+// Aggregate with Injected Dependencies
+// =============================================================================
+
+/// Player aggregate using OO-style annotations with IoC.
+///
+/// Dependencies are injected via constructor, enabling:
+/// - Testability (inject mocks in tests)
+/// - Flexibility (swap implementations at runtime)
+/// - Separation of concerns
+///
+/// Uses trait object (`dyn AuditLogger`) for runtime polymorphism.
+pub struct PlayerAggregate {
+    audit_logger: Arc<dyn AuditLogger>,
+}
+
+impl PlayerAggregate {
+    /// Create aggregate with injected dependencies.
+    pub fn new(audit_logger: Arc<dyn AuditLogger>) -> Self {
+        Self { audit_logger }
+    }
+
+    /// Default constructor for production use.
+    pub fn production() -> Self {
+        Self::new(Arc::new(ProductionAuditLogger))
+    }
+}
 
 #[aggregate(domain = "player", state = PlayerState)]
 impl PlayerAggregate {
@@ -125,6 +256,9 @@ impl PlayerAggregate {
         state: &PlayerState,
         seq: u32,
     ) -> CommandResult<EventBook> {
+        // Use injected dependency - audit the command
+        self.audit_logger.log_command("RegisterPlayer", &cmd.email);
+
         // Guard
         if state.exists() {
             return Err(CommandRejectedError::new("Player already exists"));
@@ -432,10 +566,40 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let agg = PlayerAggregate;
-    let router = agg.into_router();
+    // ==========================================================================
+    // Dependency Injection via Factory/Higher-Order Function
+    // ==========================================================================
+    //
+    // IMPORTANT: This pattern is essential for production systems!
+    //
+    // The factory closure "closes over" external variables, capturing them
+    // for injection into handler instances. This enables:
+    //
+    // 1. IoC (Inversion of Control) - dependencies come from outside
+    // 2. Testability - swap real services for mocks
+    // 3. Configuration - inject environment-specific dependencies
+    // 4. Lifecycle management - share connections/pools across handlers
 
-    info!("Starting Player aggregate (OO pattern)");
+    // Create shared dependencies
+    let audit_logger: Arc<dyn AuditLogger> = Arc::new(ProductionAuditLogger);
+
+    // Factory closure captures dependencies and injects them.
+    // The `move` keyword transfers ownership of cloned Arcs into the closure.
+    // Each handler invocation calls the factory to get a fresh instance.
+    let router = PlayerAggregate::into_router_factory({
+        let logger = audit_logger.clone();
+        move || PlayerAggregate::new(logger.clone())
+    });
+
+    // Note: You could also inject database pools, message queues, etc:
+    // let db_pool = Arc::new(create_pool());
+    // let router = Aggregate::into_router_factory({
+    //     let db = db_pool.clone();
+    //     let logger = audit_logger.clone();
+    //     move || Aggregate::new(db.clone(), logger.clone())
+    // });
+
+    info!("Starting Player aggregate (OO pattern with IoC)");
     info!("Domain: {}", router.domain());
 
     run_command_handler_server("player", 50001, router)

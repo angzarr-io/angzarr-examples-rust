@@ -15,9 +15,10 @@ env:
   ANGZARR_PROTO_ROOT: ${{ github.workspace }}/angzarr-proto
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/angzarr-io/examples-rust
-  # Coordinator version for acceptance tests
-  # Use 'latest' for main builds, or pin to specific version for releases
-  COORDINATOR_VERSION: latest
+  # Coordinator version for acceptance tests - pin to specific release
+  COORDINATOR_VERSION: v0.1.3
+  # Opt into Node.js 24 for GitHub Actions (required after June 2026)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test:
@@ -45,10 +46,6 @@ jobs:
         run: |
           buf export buf.build/angzarr/examples -o examples-proto
           buf export buf.build/angzarr/angzarr -o angzarr-proto
-
-      - name: Update client dependency (on dispatch)
-        if: github.event_name == 'repository_dispatch'
-        run: cargo update angzarr-client
 
       - name: Update client dependency (on dispatch)
         if: github.event_name == 'repository_dispatch'
@@ -140,7 +137,12 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       images-json: ${{ steps.images.outputs.json }}
+      coordinator-version: ${{ steps.coord.outputs.version }}
     steps:
+      - name: Output coordinator version
+        id: coord
+        run: echo "version=${{ env.COORDINATOR_VERSION }}" >> $GITHUB_OUTPUT
+
       - name: Generate image tag
         id: tag
         run: |
@@ -185,9 +187,10 @@ jobs:
     with:
       # Use just-pushed example images
       example-images: ${{ needs.compute-tag.outputs.images-json }}
-      # Coordinator version (cannot use env vars in with: blocks)
-      coordinator-version: latest
+      # Coordinator version (passed via job output since env context unavailable in uses)
+      coordinator-version: ${{ needs.compute-tag.outputs.coordinator-version }}
       examples-ref: ${{ github.ref }}
+    secrets: inherit
 
   summary:
     name: Summary

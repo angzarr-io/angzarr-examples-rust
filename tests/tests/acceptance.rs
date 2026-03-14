@@ -1,9 +1,13 @@
 //! Acceptance tests for poker example applications.
 //!
 //! These tests run against a deployed Kubernetes cluster with the poker apps.
-//! The gateway URL is configured via the GATEWAY_URL environment variable.
+//! Each domain's coordinator is exposed on a separate port via Kind NodePort.
 
-use angzarr_client::proto::{CommandBook, CommandPage, Cover, Uuid as ProtoUuid};
+use angzarr_client::proto::{
+    command_handler_coordinator_service_client::CommandHandlerCoordinatorServiceClient,
+    command_page, page_header, CommandBook, CommandPage, CommandRequest, CommandResponse, Cover,
+    PageHeader, SyncMode, Uuid as ProtoUuid,
+};
 use examples_proto::{Currency, DepositFunds, RegisterPlayer};
 use prost::Message;
 use prost_types::Any;
@@ -11,15 +15,19 @@ use std::env;
 use tonic::transport::Channel;
 use uuid::Uuid;
 
-// Include the gateway service client (compiled from angzarr/gateway.proto)
-mod gateway {
-    tonic::include_proto!("angzarr");
-}
-
-use gateway::command_gateway_client::CommandGatewayClient;
-
-fn gateway_url() -> String {
-    env::var("GATEWAY_URL").unwrap_or_else(|_| "http://localhost:9084".to_string())
+/// Get coordinator URL for a specific domain
+fn coordinator_url(domain: &str) -> String {
+    let env_var = format!("{}_COORDINATOR_URL", domain.to_uppercase());
+    env::var(&env_var).unwrap_or_else(|_| {
+        // Default ports for local Kind cluster
+        let port = match domain {
+            "player" => 30001,
+            "table" => 30002,
+            "hand" => 30003,
+            _ => 30001,
+        };
+        format!("http://localhost:{}", port)
+    })
 }
 
 fn new_uuid() -> ProtoUuid {
@@ -35,51 +43,66 @@ fn pack_command<M: Message>(cmd: &M, type_name: &str) -> Any {
     }
 }
 
-fn make_command_book(domain: &str, root: ProtoUuid, command: Any) -> CommandBook {
-    CommandBook {
-        cover: Some(Cover {
-            domain: domain.to_string(),
-            root: Some(root),
-            correlation_id: Uuid::new_v4().to_string(),
+fn make_command_request(domain: &str, root: ProtoUuid, command: Any) -> CommandRequest {
+    CommandRequest {
+        command: Some(CommandBook {
+            cover: Some(Cover {
+                domain: domain.to_string(),
+                root: Some(root),
+                correlation_id: Uuid::new_v4().to_string(),
+                ..Default::default()
+            }),
+            pages: vec![CommandPage {
+                header: Some(PageHeader {
+                    sequence_type: Some(page_header::SequenceType::Sequence(0)),
+                }),
+                payload: Some(command_page::Payload::Command(command)),
+                ..Default::default()
+            }],
             ..Default::default()
         }),
-        pages: vec![CommandPage {
-            sequence: 0,
-            command: Some(command),
-        }],
-        ..Default::default()
+        sync_mode: SyncMode::Simple as i32,
+        cascade_error_mode: 0,
     }
 }
 
+async fn send_command(
+    domain: &str,
+    request: CommandRequest,
+) -> Result<CommandResponse, tonic::Status> {
+    let url = coordinator_url(domain);
+    println!("Connecting to {} coordinator at {}", domain, url);
+
+    let channel = Channel::from_shared(url.clone())
+        .expect("Invalid coordinator URL")
+        .connect()
+        .await
+        .map_err(|e| tonic::Status::unavailable(format!("Failed to connect to {}: {}", url, e)))?;
+
+    let mut client = CommandHandlerCoordinatorServiceClient::new(channel);
+    let response = client.handle_command(request).await?;
+    Ok(response.into_inner())
+}
+
 #[tokio::test]
-async fn test_gateway_health() {
-    let url = gateway_url();
-    println!("Connecting to gateway at {}", url);
+async fn test_player_coordinator_health() {
+    let url = coordinator_url("player");
+    println!("Connecting to player coordinator at {}", url);
 
     let channel = Channel::from_shared(url)
-        .expect("Invalid gateway URL")
+        .expect("Invalid coordinator URL")
         .connect()
         .await;
 
     assert!(
         channel.is_ok(),
-        "Failed to connect to gateway: {:?}",
+        "Failed to connect to player coordinator: {:?}",
         channel.err()
     );
 }
 
 #[tokio::test]
 async fn test_register_player() {
-    let url = gateway_url();
-    let channel = Channel::from_shared(url)
-        .expect("Invalid gateway URL")
-        .connect()
-        .await
-        .expect("Failed to connect to gateway");
-
-    let mut client = CommandGatewayClient::new(channel);
-
-    // Create RegisterPlayer command
     let player_id = new_uuid();
     let cmd = RegisterPlayer {
         display_name: "TestPlayer".to_string(),
@@ -87,28 +110,22 @@ async fn test_register_player() {
         player_type: 0, // Human
     };
 
-    let command_book = make_command_book(
+    let request = make_command_request(
         "player",
         player_id.clone(),
         pack_command(&cmd, "examples.RegisterPlayer"),
     );
 
-    let response = client.execute(command_book).await;
-
-    // The command should be accepted (even if the aggregate doesn't exist yet,
-    // the gateway should route it correctly)
-    match response {
-        Ok(resp) => {
-            let command_response = resp.into_inner();
-            println!("Received command response: {:?}", command_response);
-            if let Some(events) = &command_response.events {
+    match send_command("player", request).await {
+        Ok(response) => {
+            println!("Received command response: {:?}", response);
+            if let Some(events) = &response.events {
                 assert!(events.cover.is_some(), "Event book should have a cover");
             }
         }
         Err(status) => {
-            // Some errors are expected if coordinator isn't fully set up
             println!("Command returned status: {:?}", status);
-            // Don't fail on NOT_FOUND or UNAVAILABLE - these might be config issues
+            // Accept various statuses during initial setup
             assert!(
                 status.code() == tonic::Code::NotFound
                     || status.code() == tonic::Code::Unavailable
@@ -122,15 +139,6 @@ async fn test_register_player() {
 
 #[tokio::test]
 async fn test_deposit_funds() {
-    let url = gateway_url();
-    let channel = Channel::from_shared(url)
-        .expect("Invalid gateway URL")
-        .connect()
-        .await
-        .expect("Failed to connect to gateway");
-
-    let mut client = CommandGatewayClient::new(channel);
-
     // First register a player
     let player_id = new_uuid();
     let register_cmd = RegisterPlayer {
@@ -139,13 +147,15 @@ async fn test_deposit_funds() {
         player_type: 0,
     };
 
-    let _ = client
-        .execute(make_command_book(
+    let _ = send_command(
+        "player",
+        make_command_request(
             "player",
             player_id.clone(),
             pack_command(&register_cmd, "examples.RegisterPlayer"),
-        ))
-        .await;
+        ),
+    )
+    .await;
 
     // Now deposit funds
     let deposit_cmd = DepositFunds {
@@ -153,18 +163,15 @@ async fn test_deposit_funds() {
         source: "test".to_string(),
     };
 
-    let response = client
-        .execute(make_command_book(
-            "player",
-            player_id,
-            pack_command(&deposit_cmd, "examples.DepositFunds"),
-        ))
-        .await;
+    let request = make_command_request(
+        "player",
+        player_id,
+        pack_command(&deposit_cmd, "examples.DepositFunds"),
+    );
 
-    match response {
-        Ok(resp) => {
-            let command_response = resp.into_inner();
-            println!("Deposit response: {:?}", command_response);
+    match send_command("player", request).await {
+        Ok(response) => {
+            println!("Deposit response: {:?}", response);
         }
         Err(status) => {
             println!("Deposit status: {:?}", status);
@@ -184,5 +191,7 @@ async fn test_deposit_funds() {
 fn main() {
     // Run tests
     println!("Running acceptance tests...");
-    println!("Gateway URL: {}", gateway_url());
+    println!("Player coordinator: {}", coordinator_url("player"));
+    println!("Table coordinator: {}", coordinator_url("table"));
+    println!("Hand coordinator: {}", coordinator_url("hand"));
 }

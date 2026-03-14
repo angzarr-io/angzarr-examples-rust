@@ -15,6 +15,7 @@ patches:
 # Images will be patched by CI using:
 # kustomize edit set image ghcr.io/angzarr-io/examples-rust-agg-player=ghcr.io/angzarr-io/examples-rust-agg-player:pr-N-sha
 images:
+  # Example app images
   - name: ghcr.io/angzarr-io/examples-rust-agg-player
     newTag: latest
   - name: ghcr.io/angzarr-io/examples-rust-agg-table
@@ -26,4 +27,13 @@ images:
   - name: ghcr.io/angzarr-io/examples-rust-saga-hand-player
     newTag: latest
   - name: ghcr.io/angzarr-io/examples-rust-prj-output
+    newTag: latest
+  # Coordinator sidecar images (set by CI via kustomize edit set image)
+  - name: ghcr.io/angzarr-io/angzarr-aggregate
+    newTag: latest
+  - name: ghcr.io/angzarr-io/angzarr-saga
+    newTag: latest
+  - name: ghcr.io/angzarr-io/angzarr-projector
+    newTag: latest
+  - name: ghcr.io/angzarr-io/angzarr-grpc-gateway
     newTag: latest

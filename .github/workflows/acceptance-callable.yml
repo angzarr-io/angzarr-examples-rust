@@ -23,11 +23,17 @@ on:
         required: false
         default: 'main'
         type: string
+    secrets:
+      GHCR_TOKEN:
+        description: 'Token for pulling coordinator images from ghcr.io (optional, uses github.token if not provided)'
+        required: false
 
 env:
   CARGO_TERM_COLOR: always
   EXAMPLES_PROTO_ROOT: ${{ github.workspace }}/examples-proto
   ANGZARR_PROTO_ROOT: ${{ github.workspace }}/angzarr-proto
+  # Opt into Node.js 24 for GitHub Actions (required after June 2026)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   acceptance:
@@ -38,8 +44,12 @@ jobs:
         id: ref
         run: |
           REF="${{ inputs.examples-ref }}"
-          # Check if the requested ref exists
-          if git ls-remote --exit-code --heads https://github.com/angzarr-io/angzarr-examples-rust.git "$REF" >/dev/null 2>&1; then
+          # For PR refs (refs/pull/N/merge), use directly - GitHub generates these
+          if [[ "$REF" == refs/pull/* ]]; then
+            echo "ref=$REF" >> $GITHUB_OUTPUT
+            echo "Using PR ref: $REF"
+          # For branch names, verify they exist
+          elif git ls-remote --exit-code https://github.com/angzarr-io/angzarr-examples-rust.git "$REF" >/dev/null 2>&1; then
             echo "ref=$REF" >> $GITHUB_OUTPUT
             echo "Using requested ref: $REF"
           else
@@ -121,11 +131,13 @@ jobs:
           kubectl apply -f deploy/k8s/base/config.yaml
 
       - name: Create image pull secret
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
         run: |
           kubectl create secret docker-registry ghcr-pull-secret \
             --docker-server=ghcr.io \
             --docker-username=${{ github.actor }} \
-            --docker-password=${{ github.token }} \
+            --docker-password="${REGISTRY_TOKEN}" \
             --namespace=angzarr-test \
             --dry-run=client -o yaml | kubectl apply -f -
           kubectl patch serviceaccount default -n angzarr-test \
@@ -136,7 +148,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
 
       - name: Pull and load coordinator images
         run: |
@@ -183,7 +195,18 @@ jobs:
         run: just deploy-infra
 
       - name: Deploy applications
+        env:
+          COORD_VERSION: ${{ inputs.coordinator-version }}
         run: |
+          # Set coordinator sidecar image tags
+          cd deploy/k8s/overlays/ci
+          kustomize edit set image \
+            ghcr.io/angzarr-io/angzarr-aggregate:${COORD_VERSION} \
+            ghcr.io/angzarr-io/angzarr-saga:${COORD_VERSION} \
+            ghcr.io/angzarr-io/angzarr-projector:${COORD_VERSION} \
+            ghcr.io/angzarr-io/angzarr-grpc-gateway:${COORD_VERSION}
+          cd -
+
           # Use latest tag if building locally, otherwise images are already set
           if [ "${{ steps.images.outputs.build-examples }}" = "true" ]; then
             just deploy-apps latest

@@ -11,6 +11,7 @@ use crate::handlers;
 use crate::state::{TableState, STATE_ROUTER};
 
 /// Table command handler.
+#[derive(Clone)]
 pub struct TableHandler;
 
 impl TableHandler {

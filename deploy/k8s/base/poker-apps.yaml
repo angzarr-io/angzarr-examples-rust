@@ -295,6 +295,8 @@ spec:
               value: "127.0.0.1:50011"
             - name: ANGZARR_SUBSCRIBE_TOPICS
               value: "table.*"
+            - name: ANGZARR_TARGET
+              value: "hand"
             - name: ANGZARR_POSTGRES_URI
               valueFrom:
                 configMapKeyRef:
@@ -360,6 +362,8 @@ spec:
               value: "127.0.0.1:50014"
             - name: ANGZARR_SUBSCRIBE_TOPICS
               value: "hand.*"
+            - name: ANGZARR_TARGET
+              value: "player"
             - name: ANGZARR_POSTGRES_URI
               valueFrom:
                 configMapKeyRef:
@@ -425,6 +429,8 @@ spec:
               value: "127.0.0.1:50090"
             - name: ANGZARR_SUBSCRIBE_TOPICS
               value: "player.*,table.*,hand.*"
+            - name: ANGZARR_TARGET
+              value: "output"
             - name: ANGZARR_POSTGRES_URI
               valueFrom:
                 configMapKeyRef:
