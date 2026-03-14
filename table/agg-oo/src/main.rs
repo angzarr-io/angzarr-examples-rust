@@ -78,7 +78,6 @@ impl TableState {
 }
 
 /// Table aggregate using OO-style annotations.
-#[derive(Clone)]
 pub struct TableAggregate;
 
 // docs:start:oo_handlers
