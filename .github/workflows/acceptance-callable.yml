@@ -35,11 +35,24 @@ jobs:
     name: Kind Acceptance Tests
     runs-on: ubuntu-latest
     steps:
+      - name: Determine checkout ref
+        id: ref
+        run: |
+          REF="${{ inputs.examples-ref }}"
+          # Check if the requested ref exists
+          if git ls-remote --exit-code --heads https://github.com/angzarr-io/angzarr-examples-rust.git "$REF" >/dev/null 2>&1; then
+            echo "ref=$REF" >> $GITHUB_OUTPUT
+            echo "Using requested ref: $REF"
+          else
+            echo "ref=main" >> $GITHUB_OUTPUT
+            echo "Ref '$REF' not found, falling back to main"
+          fi
+
       - name: Checkout examples repo
         uses: actions/checkout@v4
         with:
           repository: angzarr-io/angzarr-examples-rust
-          ref: ${{ inputs.examples-ref }}
+          ref: ${{ steps.ref.outputs.ref }}
 
       - name: Install tools
         run: |
