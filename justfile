@@ -179,8 +179,10 @@ test-e2e:
     trap "kill $PF_PID 2>/dev/null || true" EXIT
     sleep 3
     # Run acceptance tests
+    # Note: Unset ANGZARR_PROTO_ROOT so angzarr-client uses pre-generated protos
+    # EXAMPLES_PROTO_ROOT is still needed for examples-proto crate
     export GATEWAY_URL="http://localhost:9084"
-    export ANGZARR_PROTO_ROOT="${ANGZARR_PROTO_ROOT:-angzarr-proto}"
+    unset ANGZARR_PROTO_ROOT
     cargo test --test acceptance --features acceptance-test || exit_code=$?
     kill $PF_PID 2>/dev/null || true
     exit ${exit_code:-0}
