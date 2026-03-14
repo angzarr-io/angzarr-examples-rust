@@ -5,8 +5,7 @@
 
 use angzarr_client::proto::{
     command_handler_coordinator_service_client::CommandHandlerCoordinatorServiceClient,
-    CommandBook, CommandPage, CommandRequest, CommandResponse, Cover, SyncMode,
-    Uuid as ProtoUuid,
+    CommandBook, CommandPage, CommandRequest, CommandResponse, Cover, SyncMode, Uuid as ProtoUuid,
 };
 use examples_proto::{Currency, DepositFunds, RegisterPlayer};
 use prost::Message;
@@ -63,7 +62,10 @@ fn make_command_request(domain: &str, root: ProtoUuid, command: Any) -> CommandR
     }
 }
 
-async fn send_command(domain: &str, request: CommandRequest) -> Result<CommandResponse, tonic::Status> {
+async fn send_command(
+    domain: &str,
+    request: CommandRequest,
+) -> Result<CommandResponse, tonic::Status> {
     let url = coordinator_url(domain);
     println!("Connecting to {} coordinator at {}", domain, url);
 
