@@ -9,10 +9,9 @@ name: Acceptance Tests (Callable)
 on:
   workflow_call:
     inputs:
-      coordinator-images:
-        description: 'JSON object of coordinator image refs. Empty = use :latest defaults.'
-        required: false
-        default: '{}'
+      coordinator-version:
+        description: 'Version tag for coordinator images (e.g., v1.0.0 or pr-123-abc1234)'
+        required: true
         type: string
       example-images:
         description: 'JSON object of example image refs. Empty = build locally.'
@@ -79,21 +78,24 @@ jobs:
 
       - name: Parse image inputs
         id: images
+        env:
+          VERSION: ${{ inputs.coordinator-version }}
         run: |
-          # Coordinator images - use provided or default to :latest
-          COORD='${{ inputs.coordinator-images }}'
-          if [ "$COORD" = "{}" ] || [ -z "$COORD" ]; then
-            COORD='{
-              "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:latest",
-              "saga": "ghcr.io/angzarr-io/angzarr-saga:latest",
-              "projector": "ghcr.io/angzarr-io/angzarr-projector:latest",
-              "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:latest",
-              "stream": "ghcr.io/angzarr-io/angzarr-stream:latest",
-              "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:latest"
-            }'
-          fi
-          # Compact JSON for output
+          # Build coordinator images JSON from version
+          COORD=$(cat <<EOF
+          {
+            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:${VERSION}",
+            "saga": "ghcr.io/angzarr-io/angzarr-saga:${VERSION}",
+            "projector": "ghcr.io/angzarr-io/angzarr-projector:${VERSION}",
+            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:${VERSION}",
+            "stream": "ghcr.io/angzarr-io/angzarr-stream:${VERSION}",
+            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:${VERSION}",
+            "log": "ghcr.io/angzarr-io/angzarr-log:${VERSION}"
+          }
+          EOF
+          )
           echo "coordinators=$(echo "$COORD" | jq -c '.')" >> $GITHUB_OUTPUT
+          echo "Using coordinator version: ${VERSION}"
 
           # Example images - use provided or build locally
           EXAMPLES='${{ inputs.example-images }}'
