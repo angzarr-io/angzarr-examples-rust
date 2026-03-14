@@ -109,11 +109,19 @@ pub struct ProductionAuditLogger;
 
 impl AuditLogger for ProductionAuditLogger {
     fn log_command(&self, command_type: &str, player_id: &str) {
-        info!(command = command_type, player = player_id, "Audit: command received");
+        info!(
+            command = command_type,
+            player = player_id,
+            "Audit: command received"
+        );
     }
 
     fn log_event(&self, event_type: &str, player_id: &str) {
-        info!(event = event_type, player = player_id, "Audit: event emitted");
+        info!(
+            event = event_type,
+            player = player_id,
+            "Audit: event emitted"
+        );
     }
 }
 
