@@ -83,22 +83,12 @@ build:
         dockerfile: Containerfile
         target: upc-player
 
-deploy:
-  kubectl:
-    manifests:
-      - deploy/k8s/base/*.yaml
-
 profiles:
   # Kind profile - load images directly into Kind cluster
   - name: kind
     build:
       local:
         push: false
-    deploy:
-      kubectl:
-        manifests:
-          - deploy/k8s/base/*.yaml
-          - deploy/k8s/overlays/ci/*.yaml
 
   # CI profile - push to registry
   - name: ci
