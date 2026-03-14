@@ -195,7 +195,18 @@ jobs:
         run: just deploy-infra
 
       - name: Deploy applications
+        env:
+          COORD_VERSION: ${{ inputs.coordinator-version }}
         run: |
+          # Set coordinator sidecar image tags
+          cd deploy/k8s/overlays/ci
+          kustomize edit set image \
+            ghcr.io/angzarr-io/angzarr-aggregate:${COORD_VERSION} \
+            ghcr.io/angzarr-io/angzarr-saga:${COORD_VERSION} \
+            ghcr.io/angzarr-io/angzarr-projector:${COORD_VERSION} \
+            ghcr.io/angzarr-io/angzarr-grpc-gateway:${COORD_VERSION}
+          cd -
+
           # Use latest tag if building locally, otherwise images are already set
           if [ "${{ steps.images.outputs.build-examples }}" = "true" ]; then
             just deploy-apps latest
