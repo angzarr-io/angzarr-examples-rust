@@ -191,6 +191,7 @@ jobs:
       # Coordinator version (passed via job output since env context unavailable in uses)
       coordinator-version: ${{ needs.compute-tag.outputs.coordinator-version }}
       examples-ref: ${{ github.ref }}
+    secrets: inherit
 
   summary:
     name: Summary
