@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: angzarr-test
+data:
+  init.sql: |
+    -- Angzarr event store schema
+    CREATE TABLE IF NOT EXISTS events (
+      id BIGSERIAL PRIMARY KEY,
+      stream_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      data BYTEA NOT NULL,
+      metadata JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(stream_id, sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_stream ON events(stream_id);
+    CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+
+    CREATE TABLE IF NOT EXISTS snapshots (
+      stream_id TEXT PRIMARY KEY,
+      sequence INTEGER NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS projections (
+      projector TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      PRIMARY KEY (projector, stream_id)
+    );
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: angzarr-test
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: angzarr-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: angzarr
+            - name: POSTGRES_PASSWORD
+              value: angzarr-test
+            - name: POSTGRES_DB
+              value: angzarr
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "angzarr"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: postgres-init

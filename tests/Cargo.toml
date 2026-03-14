@@ -3,6 +3,10 @@ name = "poker-tests"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+acceptance-test = ["tonic", "uuid"]
+
 [dependencies]
 examples-proto.workspace = true
 angzarr-client.workspace = true
@@ -17,6 +21,12 @@ prost-types = "0.13"
 hex = "0.4"
 sha2 = "0.10"
 regex = "1"
+tonic = { version = "0.12", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+
+[build-dependencies]
+tonic-build = "0.12"
+prost-build = "0.13"
 
 [[test]]
 name = "player"
@@ -29,3 +39,8 @@ harness = false
 [[test]]
 name = "hand"
 harness = false
+
+[[test]]
+name = "acceptance"
+harness = false
+required-features = ["acceptance-test"]

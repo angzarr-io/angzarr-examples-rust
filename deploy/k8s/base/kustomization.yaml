@@ -1,0 +1,21 @@
+# Base kustomization for poker acceptance tests
+# NOTE: Credentials here are for ephemeral CI test environments only
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: angzarr-test
+
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - rabbitmq.yaml
+  - poker-apps.yaml
+
+# Use 'labels' instead of 'commonLabels' to avoid adding labels to selectors
+# Selectors are immutable once a deployment is created
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: angzarr-poker-test
+      environment: test
+    includeSelectors: false
