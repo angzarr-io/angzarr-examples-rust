@@ -16,7 +16,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/angzarr-io/examples-rust
   # Coordinator version for acceptance tests - pin to specific release
-  COORDINATOR_VERSION: v0.1.0
+  COORDINATOR_VERSION: v0.1.3
   # Opt into Node.js 24 for GitHub Actions (required after June 2026)
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
