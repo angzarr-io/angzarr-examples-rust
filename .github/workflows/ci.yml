@@ -185,8 +185,6 @@ jobs:
       # Use latest coordinator images
       coordinator-images: '{}'
       examples-ref: ${{ github.ref }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   summary:
     name: Summary
