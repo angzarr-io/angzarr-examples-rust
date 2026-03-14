@@ -11,6 +11,7 @@ build:
   local:
     push: false
     useBuildkit: true
+    useDockerCLI: true
     concurrency: 4
   artifacts:
     # Player Aggregate

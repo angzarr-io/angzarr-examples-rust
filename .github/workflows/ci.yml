@@ -116,8 +116,10 @@ jobs:
         id: build
         env:
           SKAFFOLD_DEFAULT_REPO: ${{ env.REGISTRY }}/angzarr-io
-          DOCKER_BUILDKIT: "1"
         run: |
+          # Enable BuildKit for Dockerfile cache mounts
+          export DOCKER_BUILDKIT=1
+
           # Use custom tag instead of git commit for consistency
           skaffold build \
             --profile=ci \
