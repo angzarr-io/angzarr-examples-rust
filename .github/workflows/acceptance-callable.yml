@@ -44,8 +44,12 @@ jobs:
         id: ref
         run: |
           REF="${{ inputs.examples-ref }}"
-          # Check if the requested ref exists
-          if git ls-remote --exit-code --heads https://github.com/angzarr-io/angzarr-examples-rust.git "$REF" >/dev/null 2>&1; then
+          # For PR refs (refs/pull/N/merge), use directly - GitHub generates these
+          if [[ "$REF" == refs/pull/* ]]; then
+            echo "ref=$REF" >> $GITHUB_OUTPUT
+            echo "Using PR ref: $REF"
+          # For branch names, verify they exist
+          elif git ls-remote --exit-code https://github.com/angzarr-io/angzarr-examples-rust.git "$REF" >/dev/null 2>&1; then
             echo "ref=$REF" >> $GITHUB_OUTPUT
             echo "Using requested ref: $REF"
           else
