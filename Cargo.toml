@@ -23,7 +23,7 @@ members = [
 ]
 
 [workspace.dependencies]
-angzarr-client = { git = "https://github.com/angzarr-io/angzarr-client-rust", tag = "v0.2.5" }
+angzarr-client = { git = "https://github.com/angzarr-io/angzarr-client-rust", tag = "v0.2.6" }
 examples-proto = { path = "proto" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 prost = "0.13"
