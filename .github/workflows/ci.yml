@@ -79,19 +79,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        target:
-          - agg-player
-          - agg-table
-          - agg-hand
-          - saga-table-hand
-          - saga-table-player
-          - saga-hand-table
-          - saga-hand-player
-          - pmg-hand-flow
-          - prj-output
-          - upc-player
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -105,29 +94,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate image tags
-        id: tags
+      - name: Install skaffold
+        run: |
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+          chmod +x skaffold
+          sudo mv skaffold /usr/local/bin/
+
+      - name: Generate image tag
+        id: tag
         run: |
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:7}"
-
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
-            echo "tags=${{ env.IMAGE_PREFIX }}-${{ matrix.target }}:pr-${PR_NUM}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "tag=pr-${PR_NUM}-${SHORT_SHA}" >> $GITHUB_OUTPUT
           else
-            echo "tags=${{ env.IMAGE_PREFIX }}-${{ matrix.target }}:${SHORT_SHA},${{ env.IMAGE_PREFIX }}-${{ matrix.target }}:latest" >> $GITHUB_OUTPUT
+            echo "tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Containerfile
-          target: ${{ matrix.target }}
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push with skaffold
+        id: build
+        env:
+          SKAFFOLD_DEFAULT_REPO: ${{ env.REGISTRY }}/angzarr-io
+        run: |
+          # Use custom tag instead of git commit for consistency
+          skaffold build \
+            --profile=ci \
+            --tag=${{ steps.tag.outputs.tag }} \
+            --file-output=build.json
+
+          echo "Built images:"
+          jq -r '.builds[].tag' build.json
+
+          # Output digest for verification
+          echo "digest=$(jq -r '.builds[0].tag' build.json | cut -d: -f2)" >> $GITHUB_OUTPUT
+
+      - name: Tag latest (main branch only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Tag all images as latest
+          jq -r '.builds[].tag' build.json | while read img; do
+            LATEST_TAG="${img%:*}:latest"
+            echo "Tagging $img as $LATEST_TAG"
+            docker tag "$img" "$LATEST_TAG"
+            docker push "$LATEST_TAG"
+          done
 
   # Compute image tag for acceptance tests
   compute-tag:
