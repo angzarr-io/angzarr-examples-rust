@@ -7,10 +7,19 @@ resources:
   - ../../base
 
 # Add imagePullSecrets to all deployments for pulling from ghcr.io
+# Set imagePullPolicy: IfNotPresent so pre-loaded images work
 patches:
   - path: imagepullsecrets-patch.yaml
     target:
       kind: Deployment
+  - path: imagepullpolicy-patch.yaml
+    target:
+      kind: Deployment
+      labelSelector: "app.kubernetes.io/component in (aggregate,saga,projector)"
+  - path: gateway-imagepullpolicy-patch.yaml
+    target:
+      kind: Deployment
+      name: gateway
 
 # Images will be patched by CI using:
 # kustomize edit set image ghcr.io/angzarr-io/examples-rust-agg-player=ghcr.io/angzarr-io/examples-rust-agg-player:pr-N-sha
@@ -28,7 +37,9 @@ images:
     newTag: latest
   - name: ghcr.io/angzarr-io/examples-rust-prj-output
     newTag: latest
-  # Coordinator sidecar images (set by CI via kustomize edit set image)
+  # Coordinator sidecar images
+  # Use ghcr.io images - loaded into Kind via `kind load docker-image`
+  # For CI: same images are pulled from ghcr.io
   - name: ghcr.io/angzarr-io/angzarr-aggregate
     newTag: latest
   - name: ghcr.io/angzarr-io/angzarr-saga

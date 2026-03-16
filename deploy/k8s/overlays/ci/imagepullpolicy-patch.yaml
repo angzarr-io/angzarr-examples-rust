@@ -1,0 +1,14 @@
+# Patch to set imagePullPolicy to IfNotPresent for all containers
+# This allows pre-loaded images to be used without pulling from registry
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: placeholder
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          imagePullPolicy: IfNotPresent
+        - name: sidecar
+          imagePullPolicy: IfNotPresent

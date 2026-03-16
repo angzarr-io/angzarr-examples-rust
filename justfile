@@ -23,7 +23,7 @@ IMAGE := "angzarr-examples-rust-dev"
 # Build the devcontainer image
 [private]
 _build-image:
-    podman build --network=host -t {{IMAGE}} -f "{{ROOT}}/.devcontainer/Containerfile" "{{ROOT}}/.devcontainer"
+    docker build -t {{IMAGE}} -f "{{ROOT}}/.devcontainer/Containerfile" "{{ROOT}}/.devcontainer"
 
 # Run just target in container (or directly if already in devcontainer)
 [private]
@@ -32,8 +32,8 @@ _container +ARGS: _build-image
     if [ "${DEVCONTAINER:-}" = "true" ]; then
         just {{ARGS}}
     else
-        podman run --rm --network=host \
-            -v "{{ROOT}}:/workspace:Z" \
+        docker run --rm \
+            -v "{{ROOT}}:/workspace" \
             -v "{{ROOT}}/justfile.container:/workspace/justfile:ro" \
             -w /workspace \
             -e CARGO_HOME=/workspace/.cargo-container \
@@ -94,6 +94,10 @@ run-dev:
 # =============================================================================
 
 CLUSTER_NAME := "angzarr-test"
+COORDINATOR_VERSION := "latest"
+
+# Ensure we use Docker Engine, not Podman socket
+export DOCKER_HOST := ""
 
 # Create kind cluster for acceptance tests
 kind-create:
@@ -109,58 +113,150 @@ kind-create:
 kind-delete:
     kind delete cluster --name {{CLUSTER_NAME}} || true
 
-# Load locally built images into kind (for local testing)
-kind-load-images:
+# Load locally built images into kind (tags as :latest for base manifests)
+kind-load-images tag="":
     #!/usr/bin/env bash
     set -euo pipefail
     images=(
-        "ghcr.io/angzarr-io/examples-rust-agg-player:latest"
-        "ghcr.io/angzarr-io/examples-rust-agg-table:latest"
-        "ghcr.io/angzarr-io/examples-rust-agg-hand:latest"
-        "ghcr.io/angzarr-io/examples-rust-saga-table-hand:latest"
-        "ghcr.io/angzarr-io/examples-rust-saga-hand-player:latest"
-        "ghcr.io/angzarr-io/examples-rust-prj-output:latest"
+        "ghcr.io/angzarr-io/examples-rust-agg-player"
+        "ghcr.io/angzarr-io/examples-rust-agg-table"
+        "ghcr.io/angzarr-io/examples-rust-agg-hand"
+        "ghcr.io/angzarr-io/examples-rust-saga-table-hand"
+        "ghcr.io/angzarr-io/examples-rust-saga-hand-player"
+        "ghcr.io/angzarr-io/examples-rust-prj-output"
     )
+    tag="{{tag}}"
+    # If no tag specified, find the most recent skaffold-built tag
+    if [ -z "$tag" ]; then
+        tag=$(docker images --format '{{{{.Tag}}}}' ghcr.io/angzarr-io/examples-rust-agg-player 2>/dev/null | grep '^dev-' | head -1)
+    fi
+    if [ -z "$tag" ]; then
+        echo "No images found. Run 'skaffold build --profile=kind' first."
+        exit 1
+    fi
+    echo "Using tag: $tag"
     for img in "${images[@]}"; do
-        if docker image inspect "$img" &>/dev/null; then
-            kind load docker-image "$img" --name {{CLUSTER_NAME}}
+        src="${img}:${tag}"
+        dst="${img}:latest"
+        if docker image inspect "$src" &>/dev/null; then
+            echo "Tagging $src as $dst..."
+            docker tag "$src" "$dst"
+            echo "Loading $dst into Kind..."
+            kind load docker-image "$dst" --name {{CLUSTER_NAME}}
+        else
+            echo "Skipping $img (not found with tag $tag)"
         fi
     done
 
-# Deploy infrastructure (postgres, rabbitmq)
-deploy-infra:
+# Pull and load coordinator sidecar images into kind
+kind-load-coordinators:
     #!/usr/bin/env bash
     set -euo pipefail
-    kubectl apply -k deploy/k8s/base --selector='app in (postgres,rabbitmq)' || \
-        kubectl apply -f deploy/k8s/base/namespace.yaml && \
-        kubectl apply -f deploy/k8s/base/config.yaml && \
-        kubectl apply -f deploy/k8s/base/postgres.yaml && \
-        kubectl apply -f deploy/k8s/base/rabbitmq.yaml
+    coordinators=(
+        "angzarr-aggregate"
+        "angzarr-saga"
+        "angzarr-projector"
+        "angzarr-grpc-gateway"
+    )
+    for name in "${coordinators[@]}"; do
+        img="ghcr.io/angzarr-io/${name}:{{COORDINATOR_VERSION}}"
+        echo "Pulling $img..."
+        docker pull "$img"
+        echo "Loading $img into kind..."
+        kind load docker-image "$img" --name {{CLUSTER_NAME}}
+    done
+
+# Create namespace and apply base config
+setup-namespace:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    kubectl create namespace angzarr-test --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -f deploy/k8s/base/config.yaml
+
+# Create image pull secret for ghcr.io (optional, for private images)
+setup-pull-secret:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${GHCR_TOKEN:-}" ]; then
+        echo "GHCR_TOKEN not set, skipping pull secret (public images will still work)"
+        exit 0
+    fi
+    kubectl create secret docker-registry ghcr-pull-secret \
+        --docker-server=ghcr.io \
+        --docker-username="${GHCR_USER:-$USER}" \
+        --docker-password="${GHCR_TOKEN}" \
+        --namespace=angzarr-test \
+        --dry-run=client -o yaml | kubectl apply -f -
+    kubectl patch serviceaccount default -n angzarr-test \
+        -p '{"imagePullSecrets": [{"name": "ghcr-pull-secret"}]}' || true
+
+# Deploy infrastructure (postgres, rabbitmq)
+deploy-infra: setup-namespace
+    #!/usr/bin/env bash
+    set -euo pipefail
+    kubectl apply -f deploy/k8s/base/postgres.yaml
+    kubectl apply -f deploy/k8s/base/rabbitmq.yaml
     echo "Waiting for postgres..."
     kubectl wait --for=condition=ready pod -l app=postgres -n angzarr-test --timeout=120s
     echo "Waiting for rabbitmq..."
     kubectl wait --for=condition=ready pod -l app=rabbitmq -n angzarr-test --timeout=180s
 
-# Deploy poker applications
-deploy-apps tag="latest":
+# Deploy poker applications using Kustomize
+# Usage: just deploy-apps [example-tag] [coordinator-version]
+# Examples:
+#   just deploy-apps              # Use :latest for all
+#   just deploy-apps dev-abc123   # Set example images to tag
+#   just deploy-apps latest v0.1.3  # Set both example and coordinator tags
+deploy-apps example_tag="latest" coordinator_version="":
     #!/usr/bin/env bash
     set -euo pipefail
-    cd deploy/k8s/overlays/ci
-    # Set image tags
-    kustomize edit set image \
-        ghcr.io/angzarr-io/examples-rust-agg-player:{{tag}} \
-        ghcr.io/angzarr-io/examples-rust-agg-table:{{tag}} \
-        ghcr.io/angzarr-io/examples-rust-agg-hand:{{tag}} \
-        ghcr.io/angzarr-io/examples-rust-saga-table-hand:{{tag}} \
-        ghcr.io/angzarr-io/examples-rust-saga-hand-player:{{tag}} \
-        ghcr.io/angzarr-io/examples-rust-prj-output:{{tag}}
-    cd -
-    kubectl apply -k deploy/k8s/overlays/ci
-    echo "Waiting for poker apps..."
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/part-of=angzarr-poker-test -n angzarr-test --timeout=180s || true
+    kustomization="deploy/k8s/overlays/ci/kustomization.yaml"
+    example_tag="{{example_tag}}"
+    coord_ver="{{coordinator_version}}"
 
-# Deploy everything to kind
-deploy-all tag="latest": deploy-infra (deploy-apps tag)
+    # Use yq if available, otherwise fall back to sed
+    if command -v yq &>/dev/null; then
+        # Update example image tags
+        for img in examples-rust-agg-player examples-rust-agg-table examples-rust-agg-hand \
+                   examples-rust-saga-table-hand examples-rust-saga-hand-player examples-rust-prj-output; do
+            yq -i "(.images[] | select(.name == \"ghcr.io/angzarr-io/${img}\")).newTag = \"${example_tag}\"" "$kustomization"
+        done
+
+        # Update coordinator image tags if provided
+        if [ -n "$coord_ver" ]; then
+            for img in angzarr-aggregate angzarr-saga angzarr-projector angzarr-grpc-gateway; do
+                yq -i "(.images[] | select(.name == \"ghcr.io/angzarr-io/${img}\")).newTag = \"${coord_ver}\"" "$kustomization"
+            done
+        fi
+    else
+        # Fall back to sed for simple newTag updates
+        # Pattern: after line with "name: ghcr.io/...", update the next "newTag:" line
+        for img in examples-rust-agg-player examples-rust-agg-table examples-rust-agg-hand \
+                   examples-rust-saga-table-hand examples-rust-saga-hand-player examples-rust-prj-output; do
+            sed -i "/name: ghcr.io\/angzarr-io\/${img}/{ n; s/newTag:.*/newTag: ${example_tag}/ }" "$kustomization"
+        done
+
+        if [ -n "$coord_ver" ]; then
+            for img in angzarr-aggregate angzarr-saga angzarr-projector angzarr-grpc-gateway; do
+                sed -i "/name: ghcr.io\/angzarr-io\/${img}/{ n; s/newTag:.*/newTag: ${coord_ver}/ }" "$kustomization"
+            done
+        fi
+    fi
+
+    kubectl apply -k deploy/k8s/overlays/ci
+
+    echo "Waiting for deployments..."
+    kubectl wait --for=condition=available deployment --all -n angzarr-test --timeout=300s || {
+        echo "Some deployments not ready, showing status..."
+        kubectl get pods -n angzarr-test
+    }
+
+    echo "Deployment complete. Checking status:"
+    kubectl get pods -n angzarr-test
+
+# Deploy everything to kind (uses COORDINATOR_VERSION from justfile)
+deploy-all: deploy-infra
+    just deploy-apps latest {{COORDINATOR_VERSION}}
 
 # Run acceptance tests against deployed cluster
 test-e2e:
@@ -187,8 +283,31 @@ test-e2e:
     kill $PF_PID 2>/dev/null || true
     exit ${exit_code:-0}
 
+# Full local setup: build images, create cluster, deploy everything
+# This mirrors what CI does, so local and CI behave identically
+local-setup: kind-create
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Loading coordinator images into Kind ==="
+    just kind-load-coordinators
+
+    echo "=== Building example images with skaffold ==="
+    skaffold build --profile=kind --push=false --file-output=build.json
+
+    echo "=== Loading example images into Kind ==="
+    jq -r '.builds[].tag' build.json | while read img; do
+        echo "Loading $img into Kind..."
+        kind load docker-image "$img" --name {{CLUSTER_NAME}}
+    done
+
+    echo "=== Deploying to Kind ==="
+    just deploy-all
+
+    echo "=== Setup complete! ==="
+    just kind-status
+
 # Full acceptance test cycle: create cluster, deploy, test, cleanup
-acceptance-test tag="latest": kind-create (deploy-all tag) test-e2e
+acceptance-test: kind-create deploy-all test-e2e
 
 # Cleanup: delete cluster
 acceptance-cleanup: kind-delete

@@ -89,10 +89,10 @@ RUN mkdir -p proto/src \
 # Copy proto build.rs (needed to generate proto code)
 COPY proto/build.rs ./proto/
 
-# Build dependencies only
+# Build dependencies only (stub build - errors expected, will rebuild with real source)
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
-    cargo build --release --target x86_64-unknown-linux-musl --workspace 2>/dev/null || true
+    cargo build --release --target x86_64-unknown-linux-musl --workspace || true
 
 # Copy real source
 COPY proto/src ./proto/src
