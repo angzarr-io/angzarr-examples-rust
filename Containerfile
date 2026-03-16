@@ -12,18 +12,11 @@
 ARG RUST_VERSION=1.86
 
 # ============================================================================
-# Builder - fetch deps and compile
+# Proto generation stage - runs build.rs to generate proto code
 # ============================================================================
-FROM docker.io/library/rust:${RUST_VERSION}-alpine AS builder
+FROM docker.io/library/rust:${RUST_VERSION}-alpine AS proto-gen
 
-RUN apk add --no-cache \
-    musl-dev \
-    protobuf-dev \
-    protoc \
-    openssl-dev \
-    openssl-libs-static \
-    pkgconfig \
-    curl
+RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig curl
 
 # Install buf for proto export
 RUN curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf && \
@@ -41,58 +34,115 @@ WORKDIR /app
 ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
 RUN buf export buf.build/angzarr/examples -o /app/examples-proto
 
-# Copy manifests first for better caching
+# Copy what's needed for proto generation
 COPY Cargo.toml Cargo.lock ./
-COPY proto/Cargo.toml ./proto/
+COPY proto/ ./proto/
+
+# Create minimal stubs
+RUN mkdir -p player/agg/src player/upc/src \
+    table/agg/src table/saga-hand/src table/saga-player/src \
+    hand/agg/src hand/saga-table/src hand/saga-player/src \
+    pmg-hand-flow/src prj-output/src tests/tests && \
+    for d in player/agg player/upc table/agg table/saga-hand table/saga-player \
+             hand/agg hand/saga-table hand/saga-player pmg-hand-flow prj-output; do \
+      echo "[package]\nname = \"stub\"\nversion = \"0.1.0\"\nedition = \"2021\"" > $d/Cargo.toml 2>/dev/null || true; \
+      echo "fn main() {}" > $d/src/main.rs; \
+    done && \
+    echo "fn main() {}" > tests/tests/player.rs
+
+# Copy real Cargo.toml files
 COPY player/agg/Cargo.toml ./player/agg/
-COPY player/agg-oo/Cargo.toml ./player/agg-oo/
 COPY player/upc/Cargo.toml ./player/upc/
 COPY table/agg/Cargo.toml ./table/agg/
-COPY table/agg-oo/Cargo.toml ./table/agg-oo/
 COPY table/saga-hand/Cargo.toml ./table/saga-hand/
-COPY table/saga-hand-oo/Cargo.toml ./table/saga-hand-oo/
 COPY table/saga-player/Cargo.toml ./table/saga-player/
 COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
 COPY prj-output/Cargo.toml ./prj-output/
-COPY prj-output-oo/Cargo.toml ./prj-output-oo/
 COPY tests/Cargo.toml ./tests/
 
-# Create stub files for dependency caching
-RUN mkdir -p proto/src \
-    player/agg/src player/agg-oo/src player/upc/src \
-    table/agg/src table/agg-oo/src table/saga-hand/src table/saga-hand-oo/src table/saga-player/src \
-    hand/agg/src hand/saga-table/src hand/saga-player/src \
-    pmg-hand-flow/src prj-output/src prj-output-oo/src \
-    tests/tests && \
-    echo "fn main() {}" > proto/src/lib.rs && \
-    echo "fn main() {}" > player/agg/src/main.rs && \
-    echo "fn main() {}" > player/agg-oo/src/main.rs && \
-    echo "fn main() {}" > player/upc/src/main.rs && \
-    echo "fn main() {}" > table/agg/src/main.rs && \
-    echo "fn main() {}" > table/agg-oo/src/main.rs && \
-    echo "fn main() {}" > table/saga-hand/src/main.rs && \
-    echo "fn main() {}" > table/saga-hand-oo/src/main.rs && \
-    echo "fn main() {}" > table/saga-player/src/main.rs && \
-    echo "fn main() {}" > hand/agg/src/main.rs && \
-    echo "fn main() {}" > hand/saga-table/src/main.rs && \
-    echo "fn main() {}" > hand/saga-player/src/main.rs && \
-    echo "fn main() {}" > pmg-hand-flow/src/main.rs && \
-    echo "fn main() {}" > prj-output/src/main.rs && \
-    echo "fn main() {}" > prj-output-oo/src/main.rs && \
-    echo "fn main() {}" > tests/tests/player.rs && \
-    echo "fn main() {}" > tests/tests/table.rs && \
-    echo "fn main() {}" > tests/tests/hand.rs
-
-# Copy proto build.rs (needed to generate proto code)
-COPY proto/build.rs ./proto/
-
-# Build dependencies only (stub build - errors expected, will rebuild with real source)
+# Run cargo build to execute proto build.rs
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
-    cargo build --release --target x86_64-unknown-linux-musl --workspace || true
+    cargo build --release --target x86_64-unknown-linux-musl -p proto 2>&1 || true
+
+# Extract generated proto files
+RUN mkdir -p /proto-out && \
+    cp -r target/x86_64-unknown-linux-musl/release/build/proto-*/out/* /proto-out/ 2>/dev/null || true
+
+# ============================================================================
+# Builder deps - compile dependencies only
+# ============================================================================
+FROM docker.io/library/rust:${RUST_VERSION}-alpine AS builder-deps
+
+RUN apk add --no-cache \
+    musl-dev \
+    protobuf-dev \
+    protoc \
+    openssl-dev \
+    openssl-libs-static \
+    pkgconfig \
+    curl
+
+RUN curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf && \
+    chmod +x /usr/local/bin/buf
+
+RUN rustup target add x86_64-unknown-linux-musl
+
+ENV RUSTFLAGS="-C target-feature=+crt-static"
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_DIR=/usr
+
+WORKDIR /app
+
+# Export example protos
+ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
+RUN buf export buf.build/angzarr/examples -o /app/examples-proto
+
+# Copy pre-generated proto files
+COPY --from=proto-gen /proto-out/ /proto-cache/
+
+# Copy manifests
+COPY Cargo.toml Cargo.lock ./
+COPY proto/ ./proto/
+COPY player/agg/Cargo.toml ./player/agg/
+COPY player/upc/Cargo.toml ./player/upc/
+COPY table/agg/Cargo.toml ./table/agg/
+COPY table/saga-hand/Cargo.toml ./table/saga-hand/
+COPY table/saga-player/Cargo.toml ./table/saga-player/
+COPY hand/agg/Cargo.toml ./hand/agg/
+COPY hand/saga-table/Cargo.toml ./hand/saga-table/
+COPY hand/saga-player/Cargo.toml ./hand/saga-player/
+COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
+COPY prj-output/Cargo.toml ./prj-output/
+COPY tests/Cargo.toml ./tests/
+
+# Create stubs
+RUN mkdir -p player/agg/src player/upc/src \
+    table/agg/src table/saga-hand/src table/saga-player/src \
+    hand/agg/src hand/saga-table/src hand/saga-player/src \
+    pmg-hand-flow/src prj-output/src tests/tests && \
+    echo "fn main() {}" > proto/src/lib.rs && \
+    for d in player/agg player/upc table/agg table/saga-hand table/saga-player \
+             hand/agg hand/saga-table hand/saga-player pmg-hand-flow prj-output; do \
+      echo "fn main() {}" > $d/src/main.rs; \
+    done && \
+    echo "fn main() {}" > tests/tests/player.rs
+
+# Build dependencies
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
+    cargo build --release --target x86_64-unknown-linux-musl --workspace 2>&1 || true
+
+# ============================================================================
+# Builder - compile with real source
+# ============================================================================
+FROM builder-deps AS builder
+
+# Remove stubs
+RUN rm -rf proto/src player/*/src table/*/src hand/*/src pmg-hand-flow/src prj-output/src tests/tests
 
 # Copy real source
 COPY proto/src ./proto/src
@@ -108,8 +158,25 @@ COPY pmg-hand-flow/src ./pmg-hand-flow/src
 COPY prj-output/src ./prj-output/src
 COPY tests/tests ./tests/tests
 
-# Force proto crate rebuild by touching build.rs (the stub build may have stale artifacts)
-RUN touch proto/build.rs
+# Inject pre-generated proto files
+RUN BUILD_DIR=$(ls -d target/x86_64-unknown-linux-musl/release/build/proto-*/out 2>/dev/null | head -1) && \
+    if [ -n "$BUILD_DIR" ]; then \
+        cp -r /proto-cache/* "$BUILD_DIR/" 2>/dev/null || true; \
+    fi
+
+# Clean workspace crate artifacts to force rebuild
+RUN rm -rf target/x86_64-unknown-linux-musl/release/.fingerprint/agg-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/saga-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/pmg-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/prj-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/upc-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/proto-* \
+    target/x86_64-unknown-linux-musl/release/deps/libagg* \
+    target/x86_64-unknown-linux-musl/release/deps/libsaga* \
+    target/x86_64-unknown-linux-musl/release/deps/libpmg* \
+    target/x86_64-unknown-linux-musl/release/deps/libprj* \
+    target/x86_64-unknown-linux-musl/release/deps/libupc* \
+    target/x86_64-unknown-linux-musl/release/deps/libproto*
 
 # Build all binaries
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
