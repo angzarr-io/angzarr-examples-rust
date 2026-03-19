@@ -66,7 +66,7 @@ COPY tests/Cargo.toml ./tests/
 # Run cargo build to execute proto build.rs
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
-    cargo build --release --target x86_64-unknown-linux-musl -p proto 2>&1 || true
+    cargo build --release --target x86_64-unknown-linux-musl -p examples-proto 2>&1 || true
 
 # Extract generated proto files
 RUN mkdir -p /proto-out && \
