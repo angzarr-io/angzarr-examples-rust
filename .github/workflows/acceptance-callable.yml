@@ -201,6 +201,20 @@ jobs:
             kind load docker-image "$img" --name angzarr-test
           done
 
+      - name: Generate gateway descriptor
+        run: |
+          # Generate proto descriptor for gateway type discovery
+          echo "Generating gateway descriptor from examples protos..."
+          buf build examples-proto -o types.bin
+          echo "Descriptor size: $(stat -c%s types.bin) bytes"
+
+      - name: Create gateway descriptor ConfigMap
+        run: |
+          kubectl create configmap gateway-descriptor \
+            --from-file=types.bin=types.bin \
+            --namespace=angzarr-test \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy infrastructure
         run: just deploy-infra
 
