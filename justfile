@@ -98,7 +98,7 @@ COORDINATOR_VERSION := "latest"
 
 # OCI chart references
 CHART_REGISTRY := "oci://ghcr.io/angzarr-io/charts"
-ANGZARR_CHART_VERSION := "0.2.1"
+ANGZARR_CHART_VERSION := "0.2.2"
 
 # Ensure we use Docker Engine, not Podman socket
 export DOCKER_HOST := ""
@@ -283,14 +283,14 @@ test-e2e:
         exit 1
     }
     # Port-forward gateway for tests
-    kubectl port-forward -n angzarr-test svc/gateway 9084:9084 &
+    kubectl port-forward -n angzarr-test svc/gateway 8080:8080 &
     PF_PID=$!
     trap "kill $PF_PID 2>/dev/null || true" EXIT
     sleep 3
     # Run acceptance tests
     # Note: Unset ANGZARR_PROTO_ROOT so angzarr-client uses pre-generated protos
     # EXAMPLES_PROTO_ROOT is still needed for examples-proto crate
-    export GATEWAY_URL="http://localhost:9084"
+    export GATEWAY_URL="http://localhost:8080"
     unset ANGZARR_PROTO_ROOT
     cargo test --test acceptance --features acceptance-test || exit_code=$?
     kill $PF_PID 2>/dev/null || true
