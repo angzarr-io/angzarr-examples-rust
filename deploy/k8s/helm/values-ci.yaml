@@ -1,0 +1,17 @@
+# CI-specific overrides for Helm deployment
+# Used in addition to values.yaml when deploying in CI
+
+# Image pull secret for GHCR
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+# Use IfNotPresent since images are pre-loaded into Kind
+images:
+  aggregate:
+    pullPolicy: IfNotPresent
+  saga:
+    pullPolicy: IfNotPresent
+  projector:
+    pullPolicy: IfNotPresent
+  processManager:
+    pullPolicy: IfNotPresent

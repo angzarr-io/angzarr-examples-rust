@@ -68,6 +68,9 @@ jobs:
           # Install just
           curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
 
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -125,10 +128,8 @@ jobs:
           node_image: kindest/node:v1.31.0
           wait: 120s
 
-      - name: Create namespace and config
-        run: |
-          kubectl create namespace angzarr-test --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f deploy/k8s/base/config.yaml
+      - name: Create namespace
+        run: kubectl create namespace angzarr-test --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create image pull secret
         env:
@@ -149,6 +150,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Log in to Helm registry
+        run: echo "${{ secrets.GHCR_TOKEN || github.token }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Pull and load coordinator images
         run: |
@@ -198,9 +202,8 @@ jobs:
         env:
           COORD_VERSION: ${{ inputs.coordinator-version }}
         run: |
-          # Use just targets with appropriate tags
-          # deploy-apps handles both example and coordinator image tags
-          just deploy-apps latest "${COORD_VERSION}"
+          # Use Helm deploy with CI values (imagePullSecrets)
+          just deploy-apps-ci latest "${COORD_VERSION}"
 
       - name: Run acceptance tests
         run: just test-e2e

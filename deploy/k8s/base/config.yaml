@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: angzarr-config
-  namespace: angzarr-test
-data:
-  POSTGRES_URI: "postgres://angzarr:angzarr-test@postgres:5432/angzarr"
-  AMQP_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
-  RUST_LOG: "info"

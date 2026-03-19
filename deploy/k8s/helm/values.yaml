@@ -1,31 +1,8 @@
 # Poker Example - Rust implementation
-# Deploy: helm upgrade --install angzarr ../angzarr/deploy/k8s/helm/angzarr -f deploy/k8s/helm/values.yaml -n angzarr-test --create-namespace
-
-# Enable messaging for sagas/projectors
-messaging:
-  amqp:
-    enabled: true
-    host: "rabbitmq"
-    url: "amqp://guest:guest@rabbitmq:5672/%2F"
-
-# Storage configuration
-storage:
-  postgres:
-    host: "postgres"
-    uri: "postgres://angzarr:angzarr-test@postgres:5432/angzarr"
-
-# Enable infrastructure services
-infrastructure:
-  stream:
-    enabled: true
-    serviceType: NodePort
-    nodePort: 31340
-  gateway:
-    enabled: true
-    serviceType: NodePort
-    nodePort: 30084
-  log:
-    enabled: true
+# Deploy: helm upgrade --install poker oci://ghcr.io/angzarr-io/charts/angzarr -f deploy/k8s/helm/values.yaml -n angzarr-test
+#
+# Uses angzarr chart defaults for storage (postgres), messaging (rabbitmq), and gateway.
+# Only application definitions below.
 
 # Poker domain applications
 applications:
@@ -56,7 +33,7 @@ applications:
       image:
         repository: ghcr.io/angzarr-io/examples-rust-saga-table-hand
         tag: "latest"
-      domain: "saga-table-hand"
+      domain: "table-hand"
       port: 50011
       topics:
         - "table.*"
@@ -65,7 +42,7 @@ applications:
       image:
         repository: ghcr.io/angzarr-io/examples-rust-saga-hand-player
         tag: "latest"
-      domain: "saga-hand-player"
+      domain: "hand-player"
       port: 50014
       topics:
         - "hand.*"
@@ -75,7 +52,7 @@ applications:
       image:
         repository: ghcr.io/angzarr-io/examples-rust-prj-output
         tag: "latest"
-      domain: "prj-output"
+      domain: "output"
       port: 50030
       topics:
         - "player.*"

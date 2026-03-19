@@ -96,6 +96,10 @@ run-dev:
 CLUSTER_NAME := "angzarr-test"
 COORDINATOR_VERSION := "latest"
 
+# OCI chart references
+CHART_REGISTRY := "oci://ghcr.io/angzarr-io/charts"
+ANGZARR_CHART_VERSION := "0.2.0"
+
 # Ensure we use Docker Engine, not Podman socket
 export DOCKER_HOST := ""
 
@@ -190,66 +194,76 @@ setup-pull-secret:
     kubectl patch serviceaccount default -n angzarr-test \
         -p '{"imagePullSecrets": [{"name": "ghcr-pull-secret"}]}' || true
 
-# Deploy infrastructure (postgres, rabbitmq)
+# Deploy infrastructure (postgres, rabbitmq) via Helm
 deploy-infra: setup-namespace
     #!/usr/bin/env bash
     set -euo pipefail
-    kubectl apply -f deploy/k8s/base/postgres.yaml
-    kubectl apply -f deploy/k8s/base/rabbitmq.yaml
-    echo "Waiting for postgres..."
-    kubectl wait --for=condition=ready pod -l app=postgres -n angzarr-test --timeout=120s
-    echo "Waiting for rabbitmq..."
-    kubectl wait --for=condition=ready pod -l app=rabbitmq -n angzarr-test --timeout=180s
+    echo "Deploying PostgreSQL..."
+    helm upgrade --install postgres {{CHART_REGISTRY}}/postgres-simple \
+      --namespace angzarr-test \
+      --wait --timeout 2m
+    echo "Deploying RabbitMQ..."
+    helm upgrade --install rabbitmq {{CHART_REGISTRY}}/rabbitmq-simple \
+      --namespace angzarr-test \
+      --wait --timeout 3m
+    echo "Infrastructure deployed"
 
-# Deploy poker applications using Kustomize
+# Deploy poker applications using Helm
 # Usage: just deploy-apps [example-tag] [coordinator-version]
 # Examples:
 #   just deploy-apps              # Use :latest for all
 #   just deploy-apps dev-abc123   # Set example images to tag
 #   just deploy-apps latest v0.1.3  # Set both example and coordinator tags
-deploy-apps example_tag="latest" coordinator_version="":
+deploy-apps example_tag="latest" coordinator_version="latest":
     #!/usr/bin/env bash
     set -euo pipefail
-    kustomization="deploy/k8s/overlays/ci/kustomization.yaml"
     example_tag="{{example_tag}}"
     coord_ver="{{coordinator_version}}"
 
-    # Use yq if available, otherwise fall back to sed
-    if command -v yq &>/dev/null; then
-        # Update example image tags
-        for img in examples-rust-agg-player examples-rust-agg-table examples-rust-agg-hand \
-                   examples-rust-saga-table-hand examples-rust-saga-hand-player examples-rust-prj-output; do
-            yq -i "(.images[] | select(.name == \"ghcr.io/angzarr-io/${img}\")).newTag = \"${example_tag}\"" "$kustomization"
-        done
+    echo "Deploying poker applications via Helm..."
+    helm upgrade --install poker {{CHART_REGISTRY}}/angzarr \
+      --version {{ANGZARR_CHART_VERSION}} \
+      -f deploy/k8s/helm/values.yaml \
+      --set images.aggregate.tag="${coord_ver}" \
+      --set images.saga.tag="${coord_ver}" \
+      --set images.projector.tag="${coord_ver}" \
+      --set images.processManager.tag="${coord_ver}" \
+      --set "applications.business[0].image.tag=${example_tag}" \
+      --set "applications.business[1].image.tag=${example_tag}" \
+      --set "applications.business[2].image.tag=${example_tag}" \
+      --set "applications.sagas[0].image.tag=${example_tag}" \
+      --set "applications.sagas[1].image.tag=${example_tag}" \
+      --set "applications.projectors[0].image.tag=${example_tag}" \
+      --namespace angzarr-test \
+      --wait --timeout 5m
 
-        # Update coordinator image tags if provided
-        if [ -n "$coord_ver" ]; then
-            for img in angzarr-aggregate angzarr-saga angzarr-projector angzarr-grpc-gateway; do
-                yq -i "(.images[] | select(.name == \"ghcr.io/angzarr-io/${img}\")).newTag = \"${coord_ver}\"" "$kustomization"
-            done
-        fi
-    else
-        # Fall back to sed for simple newTag updates
-        # Pattern: after line with "name: ghcr.io/...", update the next "newTag:" line
-        for img in examples-rust-agg-player examples-rust-agg-table examples-rust-agg-hand \
-                   examples-rust-saga-table-hand examples-rust-saga-hand-player examples-rust-prj-output; do
-            sed -i "/name: ghcr.io\/angzarr-io\/${img}/{ n; s/newTag:.*/newTag: ${example_tag}/ }" "$kustomization"
-        done
+    echo "Deployment complete. Checking status:"
+    kubectl get pods -n angzarr-test
 
-        if [ -n "$coord_ver" ]; then
-            for img in angzarr-aggregate angzarr-saga angzarr-projector angzarr-grpc-gateway; do
-                sed -i "/name: ghcr.io\/angzarr-io\/${img}/{ n; s/newTag:.*/newTag: ${coord_ver}/ }" "$kustomization"
-            done
-        fi
-    fi
+# Deploy poker applications with CI overlay (imagePullSecrets)
+deploy-apps-ci example_tag="latest" coordinator_version="latest":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    example_tag="{{example_tag}}"
+    coord_ver="{{coordinator_version}}"
 
-    kubectl apply -k deploy/k8s/overlays/ci
-
-    echo "Waiting for deployments..."
-    kubectl wait --for=condition=available deployment --all -n angzarr-test --timeout=300s || {
-        echo "Some deployments not ready, showing status..."
-        kubectl get pods -n angzarr-test
-    }
+    echo "Deploying poker applications via Helm (CI mode)..."
+    helm upgrade --install poker {{CHART_REGISTRY}}/angzarr \
+      --version {{ANGZARR_CHART_VERSION}} \
+      -f deploy/k8s/helm/values.yaml \
+      -f deploy/k8s/helm/values-ci.yaml \
+      --set images.aggregate.tag="${coord_ver}" \
+      --set images.saga.tag="${coord_ver}" \
+      --set images.projector.tag="${coord_ver}" \
+      --set images.processManager.tag="${coord_ver}" \
+      --set "applications.business[0].image.tag=${example_tag}" \
+      --set "applications.business[1].image.tag=${example_tag}" \
+      --set "applications.business[2].image.tag=${example_tag}" \
+      --set "applications.sagas[0].image.tag=${example_tag}" \
+      --set "applications.sagas[1].image.tag=${example_tag}" \
+      --set "applications.projectors[0].image.tag=${example_tag}" \
+      --namespace angzarr-test \
+      --wait --timeout 5m
 
     echo "Deployment complete. Checking status:"
     kubectl get pods -n angzarr-test
