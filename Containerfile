@@ -48,7 +48,7 @@ RUN mkdir -p player/agg/src player/upc/src \
       echo "[package]\nname = \"stub\"\nversion = \"0.1.0\"\nedition = \"2021\"" > $d/Cargo.toml 2>/dev/null || true; \
       echo "fn main() {}" > $d/src/main.rs; \
     done && \
-    echo "fn main() {}" > tests/tests/player.rs
+    for t in player table hand acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
 
 # Copy real Cargo.toml files
 COPY player/agg/Cargo.toml ./player/agg/
@@ -129,7 +129,7 @@ RUN mkdir -p player/agg/src player/upc/src \
              hand/agg hand/saga-table hand/saga-player pmg-hand-flow prj-output; do \
       echo "fn main() {}" > $d/src/main.rs; \
     done && \
-    echo "fn main() {}" > tests/tests/player.rs
+    for t in player table hand acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
 
 # Build dependencies
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
