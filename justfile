@@ -199,11 +199,11 @@ deploy-infra: setup-namespace
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Deploying PostgreSQL..."
-    helm upgrade --install postgres {{CHART_REGISTRY}}/postgres-simple \
+    helm upgrade --install postgres {{CHART_REGISTRY}}/angzarr-db-postgres-simple \
       --namespace angzarr-test \
       --wait --timeout 2m
     echo "Deploying RabbitMQ..."
-    helm upgrade --install rabbitmq {{CHART_REGISTRY}}/rabbitmq-simple \
+    helm upgrade --install rabbitmq {{CHART_REGISTRY}}/angzarr-mq-rabbitmq-simple \
       --namespace angzarr-test \
       --wait --timeout 3m
     echo "Infrastructure deployed"
