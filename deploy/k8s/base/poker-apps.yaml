@@ -47,16 +47,20 @@ spec:
             - containerPort: 1310
               name: sidecar-grpc
           env:
-            - name: ANGZARR_DOMAIN
+            - name: ANGZARR__TARGET__DOMAIN
               value: "player"
-            - name: ANGZARR_HANDLER_ADDRESS
+            - name: ANGZARR__TARGET__ADDRESS
               value: "127.0.0.1:50001"
-            - name: ANGZARR_POSTGRES_URI
+            - name: ANGZARR__STORAGE__TYPE
+              value: "postgres"
+            - name: ANGZARR__STORAGE__POSTGRES__URI
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
                   key: POSTGRES_URI
-            - name: ANGZARR_AMQP_URL
+            - name: ANGZARR__MESSAGING__MESSAGING_TYPE
+              value: "amqp"
+            - name: ANGZARR__MESSAGING__AMQP__URL
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
@@ -130,16 +134,20 @@ spec:
             - containerPort: 1310
               name: sidecar-grpc
           env:
-            - name: ANGZARR_DOMAIN
+            - name: ANGZARR__TARGET__DOMAIN
               value: "table"
-            - name: ANGZARR_HANDLER_ADDRESS
+            - name: ANGZARR__TARGET__ADDRESS
               value: "127.0.0.1:50002"
-            - name: ANGZARR_POSTGRES_URI
+            - name: ANGZARR__STORAGE__TYPE
+              value: "postgres"
+            - name: ANGZARR__STORAGE__POSTGRES__URI
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
                   key: POSTGRES_URI
-            - name: ANGZARR_AMQP_URL
+            - name: ANGZARR__MESSAGING__MESSAGING_TYPE
+              value: "amqp"
+            - name: ANGZARR__MESSAGING__AMQP__URL
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
@@ -213,16 +221,20 @@ spec:
             - containerPort: 1310
               name: sidecar-grpc
           env:
-            - name: ANGZARR_DOMAIN
+            - name: ANGZARR__TARGET__DOMAIN
               value: "hand"
-            - name: ANGZARR_HANDLER_ADDRESS
+            - name: ANGZARR__TARGET__ADDRESS
               value: "127.0.0.1:50003"
-            - name: ANGZARR_POSTGRES_URI
+            - name: ANGZARR__STORAGE__TYPE
+              value: "postgres"
+            - name: ANGZARR__STORAGE__POSTGRES__URI
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
                   key: POSTGRES_URI
-            - name: ANGZARR_AMQP_URL
+            - name: ANGZARR__MESSAGING__MESSAGING_TYPE
+              value: "amqp"
+            - name: ANGZARR__MESSAGING__AMQP__URL
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
@@ -291,18 +303,26 @@ spec:
         - name: sidecar
           image: ghcr.io/angzarr-io/angzarr-saga:latest
           env:
-            - name: ANGZARR_HANDLER_ADDRESS
+            - name: ANGZARR__TARGET__DOMAIN
+              value: "table-hand"
+            - name: ANGZARR__TARGET__ADDRESS
               value: "127.0.0.1:50011"
-            - name: ANGZARR_SUBSCRIBE_TOPICS
-              value: "table.*"
-            - name: ANGZARR_TARGET
-              value: "hand"
-            - name: ANGZARR_POSTGRES_URI
+            - name: ANGZARR__TARGET__LISTEN_DOMAIN
+              value: "table"
+            - name: ANGZARR_SUBSCRIPTIONS
+              value: "table:*"
+            - name: ANGZARR_STATIC_ENDPOINTS
+              value: "hand=poker-hand:1310"
+            - name: ANGZARR__STORAGE__TYPE
+              value: "postgres"
+            - name: ANGZARR__STORAGE__POSTGRES__URI
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
                   key: POSTGRES_URI
-            - name: ANGZARR_AMQP_URL
+            - name: ANGZARR__MESSAGING__MESSAGING_TYPE
+              value: "amqp"
+            - name: ANGZARR__MESSAGING__AMQP__URL
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
@@ -358,18 +378,26 @@ spec:
         - name: sidecar
           image: ghcr.io/angzarr-io/angzarr-saga:latest
           env:
-            - name: ANGZARR_HANDLER_ADDRESS
+            - name: ANGZARR__TARGET__DOMAIN
+              value: "hand-player"
+            - name: ANGZARR__TARGET__ADDRESS
               value: "127.0.0.1:50014"
-            - name: ANGZARR_SUBSCRIBE_TOPICS
-              value: "hand.*"
-            - name: ANGZARR_TARGET
-              value: "player"
-            - name: ANGZARR_POSTGRES_URI
+            - name: ANGZARR__TARGET__LISTEN_DOMAIN
+              value: "hand"
+            - name: ANGZARR_SUBSCRIPTIONS
+              value: "hand:*"
+            - name: ANGZARR_STATIC_ENDPOINTS
+              value: "player=poker-player:1310"
+            - name: ANGZARR__STORAGE__TYPE
+              value: "postgres"
+            - name: ANGZARR__STORAGE__POSTGRES__URI
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
                   key: POSTGRES_URI
-            - name: ANGZARR_AMQP_URL
+            - name: ANGZARR__MESSAGING__MESSAGING_TYPE
+              value: "amqp"
+            - name: ANGZARR__MESSAGING__AMQP__URL
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
@@ -425,18 +453,22 @@ spec:
         - name: sidecar
           image: ghcr.io/angzarr-io/angzarr-projector:latest
           env:
-            - name: ANGZARR_HANDLER_ADDRESS
-              value: "127.0.0.1:50090"
-            - name: ANGZARR_SUBSCRIBE_TOPICS
-              value: "player.*,table.*,hand.*"
-            - name: ANGZARR_TARGET
+            - name: ANGZARR__TARGET__DOMAIN
               value: "output"
-            - name: ANGZARR_POSTGRES_URI
+            - name: ANGZARR__TARGET__ADDRESS
+              value: "127.0.0.1:50090"
+            - name: ANGZARR_SUBSCRIPTIONS
+              value: "player;table;hand"
+            - name: ANGZARR__STORAGE__TYPE
+              value: "postgres"
+            - name: ANGZARR__STORAGE__POSTGRES__URI
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config
                   key: POSTGRES_URI
-            - name: ANGZARR_AMQP_URL
+            - name: ANGZARR__MESSAGING__MESSAGING_TYPE
+              value: "amqp"
+            - name: ANGZARR__MESSAGING__AMQP__URL
               valueFrom:
                 configMapKeyRef:
                   name: angzarr-config

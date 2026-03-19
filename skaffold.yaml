@@ -90,12 +90,16 @@ profiles:
     build:
       local:
         push: false
+        useBuildkit: true
+        useDockerCLI: true
 
   # CI profile - push to registry
   - name: ci
     build:
       local:
         push: true
+        useBuildkit: true
+        useDockerCLI: true
         concurrency: 4
 
   # Dev profile - fast iteration with hot reload
@@ -103,4 +107,6 @@ profiles:
     build:
       local:
         push: false
+        useBuildkit: true
+        useDockerCLI: true
         concurrency: 1

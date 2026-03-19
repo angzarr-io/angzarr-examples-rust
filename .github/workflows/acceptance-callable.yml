@@ -198,34 +198,9 @@ jobs:
         env:
           COORD_VERSION: ${{ inputs.coordinator-version }}
         run: |
-          # Set coordinator sidecar image tags
-          cd deploy/k8s/overlays/ci
-          kustomize edit set image \
-            ghcr.io/angzarr-io/angzarr-aggregate:${COORD_VERSION} \
-            ghcr.io/angzarr-io/angzarr-saga:${COORD_VERSION} \
-            ghcr.io/angzarr-io/angzarr-projector:${COORD_VERSION} \
-            ghcr.io/angzarr-io/angzarr-grpc-gateway:${COORD_VERSION}
-          cd -
-
-          # Use latest tag if building locally, otherwise images are already set
-          if [ "${{ steps.images.outputs.build-examples }}" = "true" ]; then
-            just deploy-apps latest
-          else
-            # Images already loaded, deploy with default tags
-            kubectl apply -k deploy/k8s/overlays/ci
-          fi
-
-      - name: Wait for deployments
-        run: |
-          echo "Waiting for all deployments..."
-          kubectl wait --for=condition=available deployment --all -n angzarr-test --timeout=300s || {
-            echo "Some deployments not ready, showing status..."
-            kubectl get pods -n angzarr-test
-            kubectl describe pods -n angzarr-test | head -200
-          }
-          echo ""
-          echo "=== Final pod status ==="
-          kubectl get pods -n angzarr-test
+          # Use just targets with appropriate tags
+          # deploy-apps handles both example and coordinator image tags
+          just deploy-apps latest "${COORD_VERSION}"
 
       - name: Run acceptance tests
         run: just test-e2e
