@@ -277,13 +277,13 @@ test-e2e:
     set -euo pipefail
     # Wait for gateway to be ready
     echo "Waiting for gateway pod..."
-    kubectl wait --for=condition=ready pod -l app=gateway -n angzarr-test --timeout=180s || {
+    kubectl wait --for=condition=ready pod -l angzarr.io/service=grpc-gateway -n angzarr-test --timeout=180s || {
         echo "Gateway pod not ready, checking status..."
         kubectl get pods -n angzarr-test
         exit 1
     }
-    # Port-forward gateway for tests
-    kubectl port-forward -n angzarr-test svc/gateway 8080:8080 &
+    # Port-forward gateway for tests (service name: {release}-angzarr-grpc-gateway)
+    kubectl port-forward -n angzarr-test svc/poker-angzarr-grpc-gateway 8080:8080 &
     PF_PID=$!
     trap "kill $PF_PID 2>/dev/null || true" EXIT
     sleep 3
