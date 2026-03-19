@@ -70,7 +70,7 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 
 # Extract generated proto files
 RUN mkdir -p /proto-out && \
-    cp -r target/x86_64-unknown-linux-musl/release/build/proto-*/out/* /proto-out/ 2>/dev/null || true
+    cp -r target/x86_64-unknown-linux-musl/release/build/examples-proto-*/out/* /proto-out/ 2>/dev/null || true
 
 # ============================================================================
 # Builder deps - compile dependencies only
@@ -159,7 +159,7 @@ COPY prj-output/src ./prj-output/src
 COPY tests/tests ./tests/tests
 
 # Inject pre-generated proto files
-RUN BUILD_DIR=$(ls -d target/x86_64-unknown-linux-musl/release/build/proto-*/out 2>/dev/null | head -1) && \
+RUN BUILD_DIR=$(ls -d target/x86_64-unknown-linux-musl/release/build/examples-proto-*/out 2>/dev/null | head -1) && \
     if [ -n "$BUILD_DIR" ]; then \
         cp -r /proto-cache/* "$BUILD_DIR/" 2>/dev/null || true; \
     fi
@@ -170,13 +170,13 @@ RUN rm -rf target/x86_64-unknown-linux-musl/release/.fingerprint/agg-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/pmg-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/prj-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/upc-* \
-    target/x86_64-unknown-linux-musl/release/.fingerprint/proto-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/examples-proto-* \
     target/x86_64-unknown-linux-musl/release/deps/libagg* \
     target/x86_64-unknown-linux-musl/release/deps/libsaga* \
     target/x86_64-unknown-linux-musl/release/deps/libpmg* \
     target/x86_64-unknown-linux-musl/release/deps/libprj* \
     target/x86_64-unknown-linux-musl/release/deps/libupc* \
-    target/x86_64-unknown-linux-musl/release/deps/libproto*
+    target/x86_64-unknown-linux-musl/release/deps/libexamples_proto*
 
 # Build all binaries
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
