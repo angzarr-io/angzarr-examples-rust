@@ -166,6 +166,7 @@ jobs:
           done
 
       - name: Build example images (if not provided)
+        id: build-examples
         if: steps.images.outputs.build-examples == 'true'
         run: |
           echo "Building example images locally..."
@@ -177,10 +178,15 @@ jobs:
           # Build without pushing
           skaffold build --push=false --file-output=build.json
 
-          # Load into Kind
+          # Load into Kind and re-tag as :latest for Helm
           jq -r '.builds[].tag' build.json | while read img; do
             echo "Loading $img into Kind..."
             kind load docker-image "$img" --name angzarr-test
+            # Extract base image name and tag as :latest
+            base=$(echo "$img" | cut -d: -f1)
+            echo "Tagging $base:latest..."
+            docker tag "$img" "$base:latest"
+            kind load docker-image "$base:latest" --name angzarr-test
           done
 
       - name: Pull and load provided example images
