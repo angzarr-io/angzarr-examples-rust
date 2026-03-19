@@ -175,7 +175,6 @@ setup-namespace:
     #!/usr/bin/env bash
     set -euo pipefail
     kubectl create namespace angzarr-test --dry-run=client -o yaml | kubectl apply -f -
-    kubectl apply -f deploy/k8s/base/config.yaml
 
 # Create image pull secret for ghcr.io (optional, for private images)
 setup-pull-secret:
