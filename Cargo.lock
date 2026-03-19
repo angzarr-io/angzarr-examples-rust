@@ -36,38 +36,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "agg-player-oo"
-version = "0.1.0"
-dependencies = [
- "angzarr-client",
- "examples-proto",
- "hex",
- "prost",
- "prost-types",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "agg-table"
-version = "0.1.0"
-dependencies = [
- "angzarr-client",
- "examples-proto",
- "hex",
- "prost",
- "prost-types",
- "sha2",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "agg-table-oo"
 version = "0.1.0"
 dependencies = [
  "angzarr-client",
@@ -1419,22 +1388,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prj-output-oo"
-version = "0.1.0"
-dependencies = [
- "angzarr-client",
- "chrono",
- "examples-proto",
- "hex",
- "prost",
- "prost-types",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1682,20 +1635,6 @@ dependencies = [
 
 [[package]]
 name = "saga-table-hand"
-version = "0.1.0"
-dependencies = [
- "angzarr-client",
- "examples-proto",
- "prost",
- "prost-types",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "saga-table-hand-oo"
 version = "0.1.0"
 dependencies = [
  "angzarr-client",
