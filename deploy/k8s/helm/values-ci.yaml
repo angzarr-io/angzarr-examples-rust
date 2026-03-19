@@ -15,3 +15,64 @@ images:
     pullPolicy: IfNotPresent
   processManager:
     pullPolicy: IfNotPresent
+
+# Override applications with pullPolicy for CI (images loaded into Kind)
+applications:
+  business:
+    - name: agg-player
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-agg-player
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "player"
+      port: 50001
+
+    - name: agg-table
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-agg-table
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "table"
+      port: 50002
+
+    - name: agg-hand
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-agg-hand
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "hand"
+      port: 50003
+
+  sagas:
+    - name: saga-table-hand
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-saga-table-hand
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "table-hand"
+      port: 50011
+      topics:
+        - "table.*"
+
+    - name: saga-hand-player
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-saga-hand-player
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "hand-player"
+      port: 50014
+      topics:
+        - "hand.*"
+
+  projectors:
+    - name: prj-output
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-prj-output
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "output"
+      port: 50030
+      topics:
+        - "player.*"
+        - "table.*"
+        - "hand.*"
