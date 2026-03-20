@@ -23,7 +23,7 @@ fn validate<'a>(cmd: &LeaveTable, state: &'a TableState) -> CommandResult<(i32, 
     }
 
     let seat_position = state
-        .find_seat_by_player(&cmd.player_root)
+        .find_seat_position_by_player(&cmd.player_root)
         .ok_or_else(|| CommandRejectedError::new("Player not seated at table"))?;
 
     let seat = state.seats.get(&seat_position).unwrap();

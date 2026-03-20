@@ -36,6 +36,9 @@ impl CommandHandlerDomainHandler for TableHandler {
             "LeaveTable".into(),
             "StartHand".into(),
             "EndHand".into(),
+            // PM-orchestrated commands
+            "SeatPlayer".into(),
+            "AddRebuyChips".into(),
         ]
     }
 
@@ -56,6 +59,9 @@ impl CommandHandlerDomainHandler for TableHandler {
             "LeaveTable" => handlers::handle_leave_table,
             "StartHand" => handlers::handle_start_hand,
             "EndHand" => handlers::handle_end_hand,
+            // PM-orchestrated commands
+            "SeatPlayer" => handlers::handle_seat_player,
+            "AddRebuyChips" => handlers::handle_add_rebuy_chips,
         })
     }
 

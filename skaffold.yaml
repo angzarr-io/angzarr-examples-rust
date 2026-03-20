@@ -63,12 +63,40 @@ build:
         dockerfile: Containerfile
         target: saga-hand-player
 
+    # Tournament Aggregate
+    - image: ghcr.io/angzarr-io/examples-rust-agg-tournament
+      context: .
+      docker:
+        dockerfile: Containerfile
+        target: agg-tournament
+
     # Hand Flow Process Manager
     - image: ghcr.io/angzarr-io/examples-rust-pmg-hand-flow
       context: .
       docker:
         dockerfile: Containerfile
         target: pmg-hand-flow
+
+    # Buy-In Orchestrator Process Manager
+    - image: ghcr.io/angzarr-io/examples-rust-pmg-buy-in
+      context: .
+      docker:
+        dockerfile: Containerfile
+        target: pmg-buy-in
+
+    # Registration Orchestrator Process Manager
+    - image: ghcr.io/angzarr-io/examples-rust-pmg-registration
+      context: .
+      docker:
+        dockerfile: Containerfile
+        target: pmg-registration
+
+    # Rebuy Orchestrator Process Manager
+    - image: ghcr.io/angzarr-io/examples-rust-pmg-rebuy
+      context: .
+      docker:
+        dockerfile: Containerfile
+        target: pmg-rebuy
 
     # Output Projector
     - image: ghcr.io/angzarr-io/examples-rust-prj-output

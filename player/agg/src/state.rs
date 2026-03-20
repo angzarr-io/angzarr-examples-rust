@@ -11,9 +11,36 @@ use angzarr_client::proto::EventBook;
 use angzarr_client::StateRouter;
 use angzarr_client::UnpackAny;
 use examples_proto::{
-    FundsDeposited, FundsReleased, FundsReserved, FundsTransferred, FundsWithdrawn,
-    PlayerRegistered, PlayerState as ProtoPlayerState, PlayerType,
+    BuyInConfirmed, BuyInRequested, BuyInReservationReleased, FundsDeposited, FundsReleased,
+    FundsReserved, FundsTransferred, FundsWithdrawn, PlayerRegistered,
+    PlayerState as ProtoPlayerState, PlayerType, RebuyFeeConfirmed, RebuyFeeReleased,
+    RebuyRequested, RegistrationFeeConfirmed, RegistrationFeeReleased, RegistrationRequested,
 };
+
+/// Pending buy-in request.
+#[derive(Debug, Clone, Default)]
+pub struct PendingBuyIn {
+    pub table_root: Vec<u8>,
+    pub seat: i32,
+    pub amount: i64,
+}
+
+/// Pending registration request.
+#[derive(Debug, Clone, Default)]
+pub struct PendingRegistration {
+    pub tournament_root: Vec<u8>,
+    pub fee: i64,
+}
+
+/// Pending rebuy request.
+#[derive(Debug, Clone, Default)]
+pub struct PendingRebuy {
+    pub tournament_root: Vec<u8>,
+    pub table_root: Vec<u8>,
+    pub seat: i32,
+    pub fee: i64,
+    pub chips_to_add: i64,
+}
 
 /// Player aggregate state rebuilt from events.
 #[derive(Debug, Default, Clone)]
@@ -27,6 +54,10 @@ pub struct PlayerState {
     pub reserved_funds: i64,
     pub table_reservations: HashMap<String, i64>, // table_root_hex -> amount
     pub status: String,
+    // Orchestration pending states
+    pub pending_buy_ins: HashMap<String, PendingBuyIn>,           // reservation_id_hex -> pending
+    pub pending_registrations: HashMap<String, PendingRegistration>, // reservation_id_hex -> pending
+    pub pending_rebuys: HashMap<String, PendingRebuy>,            // reservation_id_hex -> pending
 }
 
 impl PlayerState {
@@ -96,6 +127,124 @@ fn apply_transferred(state: &mut PlayerState, event: FundsTransferred) {
     }
 }
 
+// --- Buy-in orchestration events ---
+
+fn apply_buy_in_requested(state: &mut PlayerState, event: BuyInRequested) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+    let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
+
+    // Reserve funds for this buy-in
+    state.reserved_funds += amount;
+
+    state.pending_buy_ins.insert(
+        reservation_hex,
+        PendingBuyIn {
+            table_root: event.table_root,
+            seat: event.seat,
+            amount,
+        },
+    );
+}
+
+fn apply_buy_in_confirmed(state: &mut PlayerState, event: BuyInConfirmed) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+
+    if let Some(pending) = state.pending_buy_ins.remove(&reservation_hex) {
+        // Move from reserved to table reservation
+        state.reserved_funds -= pending.amount;
+        let table_key = hex::encode(&pending.table_root);
+        state.table_reservations.insert(table_key, pending.amount);
+        // Deduct from bankroll (funds are now at the table)
+        state.bankroll -= pending.amount;
+    }
+}
+
+fn apply_buy_in_released(state: &mut PlayerState, event: BuyInReservationReleased) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+
+    if let Some(pending) = state.pending_buy_ins.remove(&reservation_hex) {
+        // Release reserved funds back to available
+        state.reserved_funds -= pending.amount;
+    }
+}
+
+// --- Registration orchestration events ---
+
+fn apply_registration_requested(state: &mut PlayerState, event: RegistrationRequested) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+    let fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
+
+    // Reserve funds for registration fee
+    state.reserved_funds += fee;
+
+    state.pending_registrations.insert(
+        reservation_hex,
+        PendingRegistration {
+            tournament_root: event.tournament_root,
+            fee,
+        },
+    );
+}
+
+fn apply_registration_confirmed(state: &mut PlayerState, event: RegistrationFeeConfirmed) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+
+    if let Some(pending) = state.pending_registrations.remove(&reservation_hex) {
+        // Deduct fee from reserved and bankroll
+        state.reserved_funds -= pending.fee;
+        state.bankroll -= pending.fee;
+    }
+}
+
+fn apply_registration_released(state: &mut PlayerState, event: RegistrationFeeReleased) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+
+    if let Some(pending) = state.pending_registrations.remove(&reservation_hex) {
+        // Release reserved funds
+        state.reserved_funds -= pending.fee;
+    }
+}
+
+// --- Rebuy orchestration events ---
+
+fn apply_rebuy_requested(state: &mut PlayerState, event: RebuyRequested) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+    let fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
+
+    // Reserve funds for rebuy fee
+    state.reserved_funds += fee;
+
+    state.pending_rebuys.insert(
+        reservation_hex,
+        PendingRebuy {
+            tournament_root: event.tournament_root,
+            table_root: event.table_root,
+            seat: event.seat,
+            fee,
+            chips_to_add: 0, // Will be set by PM
+        },
+    );
+}
+
+fn apply_rebuy_confirmed(state: &mut PlayerState, event: RebuyFeeConfirmed) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+
+    if let Some(pending) = state.pending_rebuys.remove(&reservation_hex) {
+        // Deduct fee from reserved and bankroll
+        state.reserved_funds -= pending.fee;
+        state.bankroll -= pending.fee;
+    }
+}
+
+fn apply_rebuy_released(state: &mut PlayerState, event: RebuyFeeReleased) {
+    let reservation_hex = hex::encode(&event.reservation_id);
+
+    if let Some(pending) = state.pending_rebuys.remove(&reservation_hex) {
+        // Release reserved funds
+        state.reserved_funds -= pending.fee;
+    }
+}
+
 /// StateRouter for fluent state reconstruction.
 ///
 /// Type names are extracted via reflection using `prost::Name::full_name()`.
@@ -107,6 +256,18 @@ pub static STATE_ROUTER: LazyLock<StateRouter<PlayerState>> = LazyLock::new(|| {
         .on::<FundsReserved>(apply_reserved)
         .on::<FundsReleased>(apply_released)
         .on::<FundsTransferred>(apply_transferred)
+        // Buy-in orchestration
+        .on::<BuyInRequested>(apply_buy_in_requested)
+        .on::<BuyInConfirmed>(apply_buy_in_confirmed)
+        .on::<BuyInReservationReleased>(apply_buy_in_released)
+        // Registration orchestration
+        .on::<RegistrationRequested>(apply_registration_requested)
+        .on::<RegistrationFeeConfirmed>(apply_registration_confirmed)
+        .on::<RegistrationFeeReleased>(apply_registration_released)
+        // Rebuy orchestration
+        .on::<RebuyRequested>(apply_rebuy_requested)
+        .on::<RebuyFeeConfirmed>(apply_rebuy_confirmed)
+        .on::<RebuyFeeReleased>(apply_rebuy_released)
 });
 // docs:end:state_router
 
@@ -149,5 +310,10 @@ fn apply_snapshot(snapshot: &ProtoPlayerState) -> PlayerState {
         reserved_funds,
         table_reservations: snapshot.table_reservations.clone(),
         status: snapshot.status.clone(),
+        // Pending orchestration states are not persisted in snapshots
+        // They are rebuilt from events
+        pending_buy_ins: HashMap::new(),
+        pending_registrations: HashMap::new(),
+        pending_rebuys: HashMap::new(),
     }
 }

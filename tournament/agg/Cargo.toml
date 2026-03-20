@@ -1,5 +1,5 @@
 [package]
-name = "agg-player"
+name = "agg-tournament"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,4 +13,3 @@ tonic.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 hex.workspace = true
-uuid.workspace = true

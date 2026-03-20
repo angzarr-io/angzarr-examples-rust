@@ -13,6 +13,10 @@ angzarr-client.workspace = true
 agg-player = { path = "../player/agg" }
 agg-table = { path = "../table/agg" }
 agg-hand = { path = "../hand/agg" }
+agg-tournament = { path = "../tournament/agg" }
+pmg-buy-in = { path = "../pmg-buy-in" }
+pmg-registration = { path = "../pmg-registration" }
+pmg-rebuy = { path = "../pmg-rebuy" }
 cucumber = "0.21"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 futures = "0.3"
@@ -34,6 +38,10 @@ harness = false
 
 [[test]]
 name = "hand"
+harness = false
+
+[[test]]
+name = "orchestration"
 harness = false
 
 [[test]]

@@ -9,7 +9,8 @@ use angzarr_client::StateRouter;
 use angzarr_client::UnpackAny;
 use examples_proto::{
     ChipsAdded, GameVariant, HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerSatIn,
-    PlayerSatOut, TableCreated, TableState as ProtoTableState,
+    PlayerSatOut, PlayerSeated, RebuyChipsAdded, SeatingRejected, TableCreated,
+    TableState as ProtoTableState,
 };
 
 /// Seat state at the table.
@@ -57,8 +58,8 @@ impl TableState {
         self.seats.values().filter(|s| !s.is_sitting_out).count()
     }
 
-    /// Find seat by player root.
-    pub fn find_seat_by_player(&self, player_root: &[u8]) -> Option<i32> {
+    /// Find seat position by player root.
+    pub fn find_seat_position_by_player(&self, player_root: &[u8]) -> Option<i32> {
         let player_hex = hex::encode(player_root);
         self.seats.iter().find_map(|(pos, seat)| {
             if hex::encode(&seat.player_root) == player_hex {
@@ -67,6 +68,12 @@ impl TableState {
                 None
             }
         })
+    }
+
+    /// Find seat by player root (returns full seat state).
+    pub fn find_seat_by_player(&self, player_root: &[u8]) -> Option<&SeatState> {
+        let player_hex = hex::encode(player_root);
+        self.seats.values().find(|seat| hex::encode(&seat.player_root) == player_hex)
     }
 
     /// Get next available seat.
@@ -110,7 +117,7 @@ fn apply_player_left(state: &mut TableState, event: PlayerLeft) {
 }
 
 fn apply_player_sat_out(state: &mut TableState, event: PlayerSatOut) {
-    if let Some(pos) = state.find_seat_by_player(&event.player_root) {
+    if let Some(pos) = state.find_seat_position_by_player(&event.player_root) {
         if let Some(seat) = state.seats.get_mut(&pos) {
             seat.is_sitting_out = true;
         }
@@ -118,7 +125,7 @@ fn apply_player_sat_out(state: &mut TableState, event: PlayerSatOut) {
 }
 
 fn apply_player_sat_in(state: &mut TableState, event: PlayerSatIn) {
-    if let Some(pos) = state.find_seat_by_player(&event.player_root) {
+    if let Some(pos) = state.find_seat_position_by_player(&event.player_root) {
         if let Some(seat) = state.seats.get_mut(&pos) {
             seat.is_sitting_out = false;
         }
@@ -147,10 +154,35 @@ fn apply_hand_ended(state: &mut TableState, event: HandEnded) {
 }
 
 fn apply_chips_added(state: &mut TableState, event: ChipsAdded) {
-    if let Some(pos) = state.find_seat_by_player(&event.player_root) {
+    if let Some(pos) = state.find_seat_position_by_player(&event.player_root) {
         if let Some(seat) = state.seats.get_mut(&pos) {
             seat.stack = event.new_stack;
         }
+    }
+}
+
+// --- PM-orchestrated events ---
+
+fn apply_player_seated(state: &mut TableState, event: PlayerSeated) {
+    state.seats.insert(
+        event.seat_position,
+        SeatState {
+            position: event.seat_position,
+            player_root: event.player_root,
+            stack: event.stack,
+            is_active: true,
+            is_sitting_out: false,
+        },
+    );
+}
+
+fn apply_seating_rejected(_state: &mut TableState, _event: SeatingRejected) {
+    // No state change - rejection event is for PM consumption
+}
+
+fn apply_rebuy_chips_added(state: &mut TableState, event: RebuyChipsAdded) {
+    if let Some(seat) = state.seats.get_mut(&event.seat) {
+        seat.stack = event.new_stack;
     }
 }
 
@@ -167,6 +199,10 @@ pub static STATE_ROUTER: LazyLock<StateRouter<TableState>> = LazyLock::new(|| {
         .on::<HandStarted>(apply_hand_started)
         .on::<HandEnded>(apply_hand_ended)
         .on::<ChipsAdded>(apply_chips_added)
+        // PM-orchestrated events
+        .on::<PlayerSeated>(apply_player_seated)
+        .on::<SeatingRejected>(apply_seating_rejected)
+        .on::<RebuyChipsAdded>(apply_rebuy_chips_added)
 });
 
 /// Rebuild table state from event history.

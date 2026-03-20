@@ -42,9 +42,12 @@ COPY proto/ ./proto/
 RUN mkdir -p player/agg/src player/upc/src \
     table/agg/src table/saga-hand/src table/saga-player/src \
     hand/agg/src hand/saga-table/src hand/saga-player/src \
-    pmg-hand-flow/src prj-output/src tests/tests && \
+    tournament/agg/src \
+    pmg-hand-flow/src pmg-buy-in/src pmg-registration/src pmg-rebuy/src \
+    prj-output/src tests/tests && \
     for d in player/agg player/upc table/agg table/saga-hand table/saga-player \
-             hand/agg hand/saga-table hand/saga-player pmg-hand-flow prj-output; do \
+             hand/agg hand/saga-table hand/saga-player tournament/agg \
+             pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output; do \
       echo "[package]\nname = \"stub\"\nversion = \"0.1.0\"\nedition = \"2021\"" > $d/Cargo.toml 2>/dev/null || true; \
       echo "fn main() {}" > $d/src/main.rs; \
     done && \
@@ -59,7 +62,11 @@ COPY table/saga-player/Cargo.toml ./table/saga-player/
 COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
+COPY tournament/agg/Cargo.toml ./tournament/agg/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
+COPY pmg-buy-in/Cargo.toml ./pmg-buy-in/
+COPY pmg-registration/Cargo.toml ./pmg-registration/
+COPY pmg-rebuy/Cargo.toml ./pmg-rebuy/
 COPY prj-output/Cargo.toml ./prj-output/
 COPY tests/Cargo.toml ./tests/
 
@@ -115,7 +122,11 @@ COPY table/saga-player/Cargo.toml ./table/saga-player/
 COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
+COPY tournament/agg/Cargo.toml ./tournament/agg/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
+COPY pmg-buy-in/Cargo.toml ./pmg-buy-in/
+COPY pmg-registration/Cargo.toml ./pmg-registration/
+COPY pmg-rebuy/Cargo.toml ./pmg-rebuy/
 COPY prj-output/Cargo.toml ./prj-output/
 COPY tests/Cargo.toml ./tests/
 
@@ -123,10 +134,13 @@ COPY tests/Cargo.toml ./tests/
 RUN mkdir -p player/agg/src player/upc/src \
     table/agg/src table/saga-hand/src table/saga-player/src \
     hand/agg/src hand/saga-table/src hand/saga-player/src \
-    pmg-hand-flow/src prj-output/src tests/tests && \
+    tournament/agg/src \
+    pmg-hand-flow/src pmg-buy-in/src pmg-registration/src pmg-rebuy/src \
+    prj-output/src tests/tests && \
     echo "fn main() {}" > proto/src/lib.rs && \
     for d in player/agg player/upc table/agg table/saga-hand table/saga-player \
-             hand/agg hand/saga-table hand/saga-player pmg-hand-flow prj-output; do \
+             hand/agg hand/saga-table hand/saga-player tournament/agg \
+             pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output; do \
       echo "fn main() {}" > $d/src/main.rs; \
     done && \
     for t in player table hand acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
@@ -142,7 +156,9 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 FROM builder-deps AS builder
 
 # Remove stubs
-RUN rm -rf proto/src player/*/src table/*/src hand/*/src pmg-hand-flow/src prj-output/src tests/tests
+RUN rm -rf proto/src player/*/src table/*/src hand/*/src tournament/*/src \
+    pmg-hand-flow/src pmg-buy-in/src pmg-registration/src pmg-rebuy/src \
+    prj-output/src tests/tests
 
 # Copy real source
 COPY proto/src ./proto/src
@@ -154,7 +170,11 @@ COPY table/saga-player/src ./table/saga-player/src
 COPY hand/agg/src ./hand/agg/src
 COPY hand/saga-table/src ./hand/saga-table/src
 COPY hand/saga-player/src ./hand/saga-player/src
+COPY tournament/agg/src ./tournament/agg/src
 COPY pmg-hand-flow/src ./pmg-hand-flow/src
+COPY pmg-buy-in/src ./pmg-buy-in/src
+COPY pmg-registration/src ./pmg-registration/src
+COPY pmg-rebuy/src ./pmg-rebuy/src
 COPY prj-output/src ./prj-output/src
 COPY tests/tests ./tests/tests
 
@@ -187,11 +207,15 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     cp target/x86_64-unknown-linux-musl/release/upc-player /out/ && \
     cp target/x86_64-unknown-linux-musl/release/agg-table /out/ && \
     cp target/x86_64-unknown-linux-musl/release/agg-hand /out/ && \
+    cp target/x86_64-unknown-linux-musl/release/agg-tournament /out/ && \
     cp target/x86_64-unknown-linux-musl/release/saga-table-hand /out/ && \
     cp target/x86_64-unknown-linux-musl/release/saga-table-player /out/ && \
     cp target/x86_64-unknown-linux-musl/release/saga-hand-table /out/ && \
     cp target/x86_64-unknown-linux-musl/release/saga-hand-player /out/ && \
     cp target/x86_64-unknown-linux-musl/release/pmg-hand-flow /out/ && \
+    cp target/x86_64-unknown-linux-musl/release/pmg-buy-in /out/ && \
+    cp target/x86_64-unknown-linux-musl/release/pmg-registration /out/ && \
+    cp target/x86_64-unknown-linux-musl/release/pmg-rebuy /out/ && \
     cp target/x86_64-unknown-linux-musl/release/prj-output /out/
 
 # ============================================================================
@@ -223,6 +247,12 @@ ENV PORT=50003
 EXPOSE 50003
 ENTRYPOINT ["./server"]
 
+FROM runtime AS agg-tournament
+COPY --from=builder --chown=nonroot:nonroot /out/agg-tournament ./server
+ENV PORT=50004
+EXPOSE 50004
+ENTRYPOINT ["./server"]
+
 FROM runtime AS saga-table-hand
 COPY --from=builder --chown=nonroot:nonroot /out/saga-table-hand ./server
 ENV PORT=50011
@@ -249,8 +279,26 @@ ENTRYPOINT ["./server"]
 
 FROM runtime AS pmg-hand-flow
 COPY --from=builder --chown=nonroot:nonroot /out/pmg-hand-flow ./server
-ENV PORT=50020
-EXPOSE 50020
+ENV PORT=50391
+EXPOSE 50391
+ENTRYPOINT ["./server"]
+
+FROM runtime AS pmg-buy-in
+COPY --from=builder --chown=nonroot:nonroot /out/pmg-buy-in ./server
+ENV PORT=50392
+EXPOSE 50392
+ENTRYPOINT ["./server"]
+
+FROM runtime AS pmg-registration
+COPY --from=builder --chown=nonroot:nonroot /out/pmg-registration ./server
+ENV PORT=50393
+EXPOSE 50393
+ENTRYPOINT ["./server"]
+
+FROM runtime AS pmg-rebuy
+COPY --from=builder --chown=nonroot:nonroot /out/pmg-rebuy ./server
+ENV PORT=50394
+EXPOSE 50394
 ENTRYPOINT ["./server"]
 
 FROM runtime AS prj-output

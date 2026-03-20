@@ -12,6 +12,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}/examples/table.proto", proto_root),
         format!("{}/examples/hand.proto", proto_root),
         format!("{}/examples/ai_sidecar.proto", proto_root),
+        // Orchestration protos
+        format!("{}/examples/orchestration.proto", proto_root),
+        format!("{}/examples/buy_in.proto", proto_root),
+        format!("{}/examples/tournament.proto", proto_root),
+        format!("{}/examples/registration.proto", proto_root),
+        format!("{}/examples/rebuy.proto", proto_root),
     ];
 
     let mut prost_config = prost_build::Config::new();

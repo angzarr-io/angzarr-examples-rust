@@ -36,6 +36,18 @@ impl CommandHandlerDomainHandler for PlayerHandler {
             "WithdrawFunds".into(),
             "ReserveFunds".into(),
             "ReleaseFunds".into(),
+            // Buy-in orchestration
+            "InitiateBuyIn".into(),
+            "ConfirmBuyIn".into(),
+            "ReleaseBuyIn".into(),
+            // Registration orchestration
+            "InitiateTournamentRegistration".into(),
+            "ConfirmRegistrationFee".into(),
+            "ReleaseRegistrationFee".into(),
+            // Rebuy orchestration
+            "InitiateRebuy".into(),
+            "ConfirmRebuyFee".into(),
+            "ReleaseRebuyFee".into(),
         ]
     }
 
@@ -56,6 +68,18 @@ impl CommandHandlerDomainHandler for PlayerHandler {
             "WithdrawFunds" => handlers::handle_withdraw_funds,
             "ReserveFunds" => handlers::handle_reserve_funds,
             "ReleaseFunds" => handlers::handle_release_funds,
+            // Buy-in orchestration
+            "InitiateBuyIn" => handlers::handle_initiate_buy_in,
+            "ConfirmBuyIn" => handlers::handle_confirm_buy_in,
+            "ReleaseBuyIn" => handlers::handle_release_buy_in,
+            // Registration orchestration
+            "InitiateTournamentRegistration" => handlers::handle_initiate_tournament_registration,
+            "ConfirmRegistrationFee" => handlers::handle_confirm_registration_fee,
+            "ReleaseRegistrationFee" => handlers::handle_release_registration_fee,
+            // Rebuy orchestration
+            "InitiateRebuy" => handlers::handle_initiate_rebuy,
+            "ConfirmRebuyFee" => handlers::handle_confirm_rebuy_fee,
+            "ReleaseRebuyFee" => handlers::handle_release_rebuy_fee,
         })
     }
 

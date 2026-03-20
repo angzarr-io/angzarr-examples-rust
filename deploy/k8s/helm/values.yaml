@@ -28,6 +28,13 @@ applications:
       domain: "hand"
       port: 50003
 
+    - name: agg-tournament
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-agg-tournament
+        tag: "latest"
+      domain: "tournament"
+      port: 50004
+
   sagas:
     - name: saga-table-hand
       image:
@@ -47,6 +54,48 @@ applications:
       topics:
         - "hand.*"
 
+  processManagers:
+    - name: pmg-hand-flow
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-hand-flow
+        tag: "latest"
+      domain: "pmg-hand-flow"
+      port: 50391
+      topics:
+        - "table.*"
+        - "hand.*"
+
+    - name: pmg-buy-in
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-buy-in
+        tag: "latest"
+      domain: "pmg-buy-in"
+      port: 50392
+      topics:
+        - "player.*"
+        - "table.*"
+
+    - name: pmg-registration
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-registration
+        tag: "latest"
+      domain: "pmg-registration"
+      port: 50393
+      topics:
+        - "player.*"
+        - "tournament.*"
+
+    - name: pmg-rebuy
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-rebuy
+        tag: "latest"
+      domain: "pmg-rebuy"
+      port: 50394
+      topics:
+        - "player.*"
+        - "tournament.*"
+        - "table.*"
+
   projectors:
     - name: prj-output
       image:
@@ -58,3 +107,4 @@ applications:
         - "player.*"
         - "table.*"
         - "hand.*"
+        - "tournament.*"
