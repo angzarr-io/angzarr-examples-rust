@@ -27,8 +27,8 @@ pub struct BuyInPmHandler;
 impl ProcessManagerDomainHandler<BuyInState> for BuyInPmHandler {
     fn event_types(&self) -> Vec<String> {
         vec![
-            "BuyInRequested".into(), // Player domain
-            "PlayerSeated".into(),   // Table domain
+            "BuyInRequested".into(),  // Player domain
+            "PlayerSeated".into(),    // Table domain
             "SeatingRejected".into(), // Table domain
         ]
     }
@@ -104,7 +104,6 @@ impl ProcessManagerDomainHandler<BuyInState> for BuyInPmHandler {
 
         Ok(ProcessManagerResponse::default())
     }
-
 }
 
 impl BuyInPmHandler {

@@ -4,9 +4,7 @@ use std::sync::LazyLock;
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::StateRouter;
-use examples_proto::{
-    BuyInCompleted, BuyInFailed, BuyInInitiated, BuyInPhase, BuyInPhaseChanged,
-};
+use examples_proto::{BuyInCompleted, BuyInFailed, BuyInInitiated, BuyInPhase, BuyInPhaseChanged};
 
 /// PM state for tracking a buy-in flow.
 #[derive(Default, Clone, Debug)]

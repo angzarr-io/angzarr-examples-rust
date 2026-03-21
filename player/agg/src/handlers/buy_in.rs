@@ -82,7 +82,9 @@ fn validate_confirm(cmd: &ConfirmBuyIn, state: &PlayerState) -> CommandResult<()
     // Check that this reservation exists in pending buy-ins
     let reservation_hex = hex::encode(&cmd.reservation_id);
     if !state.pending_buy_ins.contains_key(&reservation_hex) {
-        return Err(CommandRejectedError::new("No pending buy-in with this reservation_id"));
+        return Err(CommandRejectedError::new(
+            "No pending buy-in with this reservation_id",
+        ));
     }
 
     Ok(())
@@ -135,7 +137,9 @@ fn validate_release(cmd: &ReleaseBuyIn, state: &PlayerState) -> CommandResult<()
 
     let reservation_hex = hex::encode(&cmd.reservation_id);
     if !state.pending_buy_ins.contains_key(&reservation_hex) {
-        return Err(CommandRejectedError::new("No pending buy-in with this reservation_id"));
+        return Err(CommandRejectedError::new(
+            "No pending buy-in with this reservation_id",
+        ));
     }
 
     Ok(())

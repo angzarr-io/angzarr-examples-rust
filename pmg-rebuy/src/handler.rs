@@ -558,14 +558,11 @@ fn rebuild_tournament_state(event_book: &EventBook) -> CommandResult<TournamentS
             } else if type_url.ends_with("TournamentStarted") {
                 state.status = TournamentStatus::TournamentRunning;
             } else if type_url.ends_with("TournamentPlayerEnrolled") {
-                if let Ok(evt) =
-                    event_any.unpack::<examples_proto::TournamentPlayerEnrolled>()
-                {
+                if let Ok(evt) = event_any.unpack::<examples_proto::TournamentPlayerEnrolled>() {
                     let player_hex = hex::encode(&evt.player_root);
-                    state.registered_players.insert(
-                        player_hex,
-                        PlayerRegistrationHelper { rebuys_used: 0 },
-                    );
+                    state
+                        .registered_players
+                        .insert(player_hex, PlayerRegistrationHelper { rebuys_used: 0 });
                 }
             } else if type_url.ends_with("RebuyProcessed") {
                 if let Ok(evt) = event_any.unpack::<RebuyProcessed>() {

@@ -55,9 +55,9 @@ pub struct PlayerState {
     pub table_reservations: HashMap<String, i64>, // table_root_hex -> amount
     pub status: String,
     // Orchestration pending states
-    pub pending_buy_ins: HashMap<String, PendingBuyIn>,           // reservation_id_hex -> pending
+    pub pending_buy_ins: HashMap<String, PendingBuyIn>, // reservation_id_hex -> pending
     pub pending_registrations: HashMap<String, PendingRegistration>, // reservation_id_hex -> pending
-    pub pending_rebuys: HashMap<String, PendingRebuy>,            // reservation_id_hex -> pending
+    pub pending_rebuys: HashMap<String, PendingRebuy>, // reservation_id_hex -> pending
 }
 
 impl PlayerState {

@@ -14,11 +14,11 @@ use examples_proto::{
     RegistrationRequested, SeatingRejected, TableCreated, TournamentCreated,
     TournamentEnrollmentRejected, TournamentPlayerEnrolled, TournamentStatus,
 };
+use hex;
 use pmg_buy_in::{BuyInPmHandler, BuyInState};
 use pmg_rebuy::{RebuyPmHandler, RebuyState};
 use pmg_registration::{RegistrationPmHandler, RegistrationState};
 use prost_types::Any;
-use hex;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -1021,7 +1021,9 @@ fn then_emits_registration_failed(world: &mut OrchestrationWorld, code: String) 
 fn then_emits_confirm_registration_fee(world: &mut OrchestrationWorld) {
     let commands = world.get_pm_commands();
     assert!(
-        commands.iter().any(|c| c.ends_with("ConfirmRegistrationFee")),
+        commands
+            .iter()
+            .any(|c| c.ends_with("ConfirmRegistrationFee")),
         "Expected ConfirmRegistrationFee command, got: {:?}",
         commands
     );
@@ -1041,7 +1043,9 @@ fn then_emits_registration_completed(world: &mut OrchestrationWorld) {
 fn then_emits_release_registration_fee(world: &mut OrchestrationWorld) {
     let commands = world.get_pm_commands();
     assert!(
-        commands.iter().any(|c| c.ends_with("ReleaseRegistrationFee")),
+        commands
+            .iter()
+            .any(|c| c.ends_with("ReleaseRegistrationFee")),
         "Expected ReleaseRegistrationFee command, got: {:?}",
         commands
     );

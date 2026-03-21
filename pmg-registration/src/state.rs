@@ -36,7 +36,10 @@ fn apply_registration_initiated(state: &mut RegistrationState, event: Registrati
     state.tournament_root = event.tournament_root;
 }
 
-fn apply_registration_phase_changed(state: &mut RegistrationState, event: RegistrationPhaseChanged) {
+fn apply_registration_phase_changed(
+    state: &mut RegistrationState,
+    event: RegistrationPhaseChanged,
+) {
     state.phase = event.to_phase();
 }
 

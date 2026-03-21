@@ -42,7 +42,11 @@ pub fn handle_advance_blind_level(
         (level.small_blind, level.big_blind, level.ante)
     } else if let Some(last_level) = state.blind_structure.last() {
         // Stay at last level
-        (last_level.small_blind, last_level.big_blind, last_level.ante)
+        (
+            last_level.small_blind,
+            last_level.big_blind,
+            last_level.ante,
+        )
     } else {
         return Err(CommandRejectedError::new("No blind structure defined"));
     };

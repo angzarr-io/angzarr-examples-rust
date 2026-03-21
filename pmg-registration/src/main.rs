@@ -18,10 +18,11 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router =
-        ProcessManagerRouter::new("pmg-registration", "pmg-registration", |_| RegistrationState::default())
-            .domain("player", RegistrationPmHandler)
-            .domain("tournament", RegistrationPmHandler);
+    let router = ProcessManagerRouter::new("pmg-registration", "pmg-registration", |_| {
+        RegistrationState::default()
+    })
+    .domain("player", RegistrationPmHandler)
+    .domain("tournament", RegistrationPmHandler);
 
     run_process_manager_server("pmg-registration", 50393, router)
         .await

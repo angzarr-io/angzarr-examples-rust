@@ -73,7 +73,9 @@ impl TableState {
     /// Find seat by player root (returns full seat state).
     pub fn find_seat_by_player(&self, player_root: &[u8]) -> Option<&SeatState> {
         let player_hex = hex::encode(player_root);
-        self.seats.values().find(|seat| hex::encode(&seat.player_root) == player_hex)
+        self.seats
+            .values()
+            .find(|seat| hex::encode(&seat.player_root) == player_hex)
     }
 
     /// Get next available seat.

@@ -26,7 +26,9 @@ fn validate(cmd: &AddRebuyChips, state: &TableState) -> CommandResult<i64> {
     // Find the player's seat
     let seat_opt = state.find_seat_by_player(&cmd.player_root);
     if seat_opt.is_none() {
-        return Err(CommandRejectedError::new("Player is not seated at this table"));
+        return Err(CommandRejectedError::new(
+            "Player is not seated at this table",
+        ));
     }
 
     let seat = seat_opt.unwrap();

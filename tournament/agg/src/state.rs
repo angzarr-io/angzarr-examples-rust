@@ -9,9 +9,9 @@ use angzarr_client::StateRouter;
 use angzarr_client::UnpackAny;
 use examples_proto::{
     BlindLevel, BlindLevelAdvanced, GameVariant, PlayerEliminated, RebuyConfig, RebuyDenied,
-    RebuyProcessed, RegistrationClosed, RegistrationOpened, TournamentCompleted,
-    TournamentCreated, TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled,
-    TournamentResumed, TournamentState as ProtoTournamentState, TournamentStatus,
+    RebuyProcessed, RegistrationClosed, RegistrationOpened, TournamentCompleted, TournamentCreated,
+    TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled, TournamentResumed,
+    TournamentState as ProtoTournamentState, TournamentStatus,
 };
 
 /// Player registration record.
@@ -86,7 +86,8 @@ impl TournamentState {
         }
 
         // Check level cutoff
-        if rebuy_config.rebuy_level_cutoff > 0 && self.current_level > rebuy_config.rebuy_level_cutoff
+        if rebuy_config.rebuy_level_cutoff > 0
+            && self.current_level > rebuy_config.rebuy_level_cutoff
         {
             return false;
         }
