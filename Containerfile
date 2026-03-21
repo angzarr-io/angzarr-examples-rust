@@ -10,6 +10,8 @@
 #   done
 
 ARG RUST_VERSION=1.86
+# Cache-busting arg for proto updates - change to invalidate buf export cache
+ARG PROTO_VERSION=v0.1.2
 
 # ============================================================================
 # Proto generation stage - runs build.rs to generate proto code
@@ -31,8 +33,11 @@ ENV OPENSSL_DIR=/usr
 WORKDIR /app
 
 # Export example protos from buf registry
+# Use explicit version label for cache control
+ARG PROTO_VERSION
 ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
-RUN buf export buf.build/angzarr/examples -o /app/examples-proto
+RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-proto && \
+    ls -la /app/examples-proto/examples/
 
 # Copy what's needed for proto generation
 COPY Cargo.toml Cargo.lock ./
@@ -104,9 +109,11 @@ ENV OPENSSL_DIR=/usr
 
 WORKDIR /app
 
-# Export example protos
+# Export example protos using explicit version for cache control
+ARG PROTO_VERSION
 ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
-RUN buf export buf.build/angzarr/examples -o /app/examples-proto
+RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-proto && \
+    ls -la /app/examples-proto/examples/
 
 # Copy pre-generated proto files
 COPY --from=proto-gen /proto-out/ /proto-cache/
