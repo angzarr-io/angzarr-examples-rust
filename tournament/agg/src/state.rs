@@ -122,7 +122,7 @@ fn apply_registration_opened(state: &mut TournamentState, _event: RegistrationOp
     state.status = TournamentStatus::TournamentRegistrationOpen;
 }
 
-fn apply_registration_closed(state: &mut TournamentState, _event: RegistrationClosed) {
+fn apply_registration_closed(_state: &mut TournamentState, _event: RegistrationClosed) {
     // Status will change to Running when tournament starts
 }
 
@@ -200,6 +200,7 @@ pub static STATE_ROUTER: LazyLock<StateRouter<TournamentState>> = LazyLock::new(
 });
 
 /// Rebuild tournament state from event history.
+#[allow(dead_code)]
 pub fn rebuild_state(event_book: &EventBook) -> TournamentState {
     // Start from snapshot if available
     if let Some(snapshot) = &event_book.snapshot {
@@ -220,6 +221,7 @@ pub fn rebuild_state(event_book: &EventBook) -> TournamentState {
     STATE_ROUTER.with_event_book(event_book)
 }
 
+#[allow(dead_code)]
 fn apply_snapshot(snapshot: &ProtoTournamentState) -> TournamentState {
     let mut registered_players = HashMap::new();
     for (key, proto_reg) in &snapshot.registered_players {
@@ -246,7 +248,7 @@ fn apply_snapshot(snapshot: &ProtoTournamentState) -> TournamentState {
         starting_stack: snapshot.starting_stack,
         max_players: snapshot.max_players,
         min_players: snapshot.min_players,
-        rebuy_config: snapshot.rebuy_config.clone(),
+        rebuy_config: snapshot.rebuy_config,
         blind_structure: snapshot.blind_structure.clone(),
         current_level: snapshot.current_level,
         registered_players,

@@ -46,9 +46,9 @@ fn compute(cmd: &CreateTournament) -> TournamentCreated {
         starting_stack: cmd.starting_stack,
         max_players: cmd.max_players,
         min_players: cmd.min_players,
-        scheduled_start: cmd.scheduled_start.clone(),
-        rebuy_config: cmd.rebuy_config.clone(),
-        addon_config: cmd.addon_config.clone(),
+        scheduled_start: cmd.scheduled_start,
+        rebuy_config: cmd.rebuy_config,
+        addon_config: cmd.addon_config,
         blind_structure: cmd.blind_structure.clone(),
         created_at: Some(angzarr_client::now()),
     }

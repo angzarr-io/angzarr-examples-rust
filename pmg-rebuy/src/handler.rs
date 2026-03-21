@@ -660,7 +660,7 @@ impl TableStateHelper {
     }
 
     fn get_stack(&self, player_root: &[u8]) -> Option<i64> {
-        for (_, (root, stack)) in &self.seats {
+        for (root, stack) in self.seats.values() {
             if root == player_root {
                 return Some(*stack);
             }

@@ -376,7 +376,7 @@ fn rebuild_tournament_state(event_book: &EventBook) -> CommandResult<TournamentS
                 state.buy_in = proto_state.buy_in;
                 state.starting_stack = proto_state.starting_stack;
                 state.registered_count = proto_state.registered_players.len();
-                for (player_hex, _) in &proto_state.registered_players {
+                for player_hex in proto_state.registered_players.keys() {
                     state.registered_players.insert(player_hex.clone());
                 }
             }
