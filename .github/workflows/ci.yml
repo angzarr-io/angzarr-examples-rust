@@ -90,6 +90,9 @@ jobs:
           - saga-hand-table
           - saga-hand-player
           - pmg-hand-flow
+          - pmg-buy-in
+          - pmg-registration
+          - pmg-rebuy
           - prj-output
           - upc-player
     steps:
@@ -172,6 +175,9 @@ jobs:
             "saga-hand-table": "${PREFIX}-saga-hand-table:${TAG}",
             "saga-hand-player": "${PREFIX}-saga-hand-player:${TAG}",
             "pmg-hand-flow": "${PREFIX}-pmg-hand-flow:${TAG}",
+            "pmg-buy-in": "${PREFIX}-pmg-buy-in:${TAG}",
+            "pmg-registration": "${PREFIX}-pmg-registration:${TAG}",
+            "pmg-rebuy": "${PREFIX}-pmg-rebuy:${TAG}",
             "prj-output": "${PREFIX}-prj-output:${TAG}",
             "upc-player": "${PREFIX}-upc-player:${TAG}"
           }
