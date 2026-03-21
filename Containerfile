@@ -11,7 +11,8 @@
 
 ARG RUST_VERSION=1.86
 # Cache-busting arg for proto updates - change to invalidate buf export cache
-ARG PROTO_VERSION=v0.1.2
+# Use BSR label (without 'v' prefix) from angzarr-examples-proto releases
+ARG PROTO_VERSION=0.1.2
 
 # ============================================================================
 # Proto generation stage - runs build.rs to generate proto code
