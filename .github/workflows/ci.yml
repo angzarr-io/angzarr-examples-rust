@@ -27,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -60,17 +63,18 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      # Use justfile.container directly (CI runs without container wrapper)
       - name: Build
-        run: cargo build --workspace
+        run: just -f justfile.container build
 
       - name: Test
-        run: cargo test --workspace
+        run: just -f justfile.container test
 
       - name: Lint
-        run: cargo clippy --workspace -- -D warnings
+        run: just -f justfile.container lint
 
       - name: Format check
-        run: cargo fmt --check
+        run: just -f justfile.container fmt
 
   build-images:
     name: Build & Push Images

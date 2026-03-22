@@ -1,6 +1,6 @@
 # Rust poker examples - container version
 # This file is mounted as 'justfile' inside the container
-# Also used directly in CI container jobs
+# Also used directly in CI
 
 set shell := ["bash", "-c"]
 
@@ -9,40 +9,65 @@ ROOT := `git rev-parse --show-toplevel`
 default:
     @just --list
 
+# Build all workspace crates
 build:
-    cargo build --release
+    cargo build --workspace
 
-build-dev:
-    cargo build
+# Build release binaries
+build-release:
+    cargo build --workspace --release
 
-test-unit:
-    cargo test --lib
+# Run all tests
+test:
+    cargo test --workspace
 
-test-acceptance:
-    cargo test --test '*'
+# Run clippy linter
+lint:
+    cargo clippy --workspace -- -D warnings
 
-test: test-unit test-acceptance
-
-check:
-    cargo check
-
+# Check formatting (use fmt-fix to auto-format)
 fmt:
+    cargo fmt --check
+
+# Auto-format code
+fmt-fix:
     cargo fmt
 
-lint:
-    cargo clippy -- -D warnings
+# Check code compiles
+check:
+    cargo check --workspace
 
+# Run all checks (build + test + lint + fmt)
+check-all: build test lint fmt
+
+# Clean build artifacts
 clean:
     cargo clean
     rm -rf data/
 
-run: build
+# === Additional Targets ===
+
+# Build debug binaries
+build-dev:
+    cargo build --workspace
+
+# Run unit tests only
+test-unit:
+    cargo test --workspace --lib
+
+# Run acceptance/integration tests
+test-acceptance:
+    cargo test --workspace --test '*'
+
+# Run in standalone mode (local development)
+run: build-release
     mkdir -p "{{ROOT}}/data"
     cd "{{ROOT}}" && cargo run \
         --bin angzarr-standalone \
         --features standalone,sqlite \
         -- --config examples/rust/standalone.yaml
 
+# Run in standalone mode (debug build)
 run-dev: build-dev
     mkdir -p "{{ROOT}}/data"
     cargo run --manifest-path "{{ROOT}}/Cargo.toml" \
