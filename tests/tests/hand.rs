@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use agg_hand::{game_rules, handlers, state::rebuild_state};
 use angzarr_client::proto::{
-    event_page, page_header, CommandBook, Cover, EventBook, EventPage, PageHeader, Uuid,
+    event_page, page_header, Cover, EventBook, EventPage, PageHeader, Uuid,
 };
 use angzarr_client::{pack_event, try_unpack, type_name_from_url, CommandRejectedError, UnpackAny};
 use cucumber::{given, then, when, World, WriterExt};
@@ -15,84 +15,8 @@ use examples_proto::{
     PlayerInHand, PlayerStackSnapshot, PostBlind, PotAward, PotAwarded, RequestDraw, RevealCards,
     ShowdownStarted,
 };
-use prost::Message;
+use poker_tests::{command_book, pack_cmd, parse_cards, uuid_for};
 use prost_types::Any;
-use sha2::{Digest, Sha256};
-
-/// Generate deterministic UUID from a seed string.
-fn uuid_for(seed: &str) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(seed.as_bytes());
-    let hash = hasher.finalize();
-    hash[0..16].to_vec()
-}
-
-/// Parse a card string like "As" (Ace of spades) to a Card.
-fn parse_card(s: &str) -> Card {
-    use examples_proto::{Rank, Suit};
-    let s = s.trim();
-    if s.len() < 2 {
-        return Card::default();
-    }
-    let (rank_char, suit_char) = s.split_at(s.len() - 1);
-
-    let rank = match rank_char {
-        "A" => Rank::Ace,
-        "K" => Rank::King,
-        "Q" => Rank::Queen,
-        "J" => Rank::Jack,
-        "T" | "10" => Rank::Ten,
-        "9" => Rank::Nine,
-        "8" => Rank::Eight,
-        "7" => Rank::Seven,
-        "6" => Rank::Six,
-        "5" => Rank::Five,
-        "4" => Rank::Four,
-        "3" => Rank::Three,
-        "2" => Rank::Two,
-        _ => Rank::Two,
-    };
-
-    let suit = match suit_char {
-        "s" => Suit::Spades,
-        "h" => Suit::Hearts,
-        "d" => Suit::Diamonds,
-        "c" => Suit::Clubs,
-        _ => Suit::Spades,
-    };
-
-    Card {
-        rank: rank as i32,
-        suit: suit as i32,
-    }
-}
-
-/// Parse a card string like "As Ks" to a Vec<Card>.
-fn parse_cards(s: &str) -> Vec<Card> {
-    s.split_whitespace().map(parse_card).collect()
-}
-
-/// Pack a command into Any.
-fn pack_cmd<T: Message>(cmd: &T, type_name: &str) -> Any {
-    Any {
-        type_url: format!("type.poker/{}", type_name),
-        value: cmd.encode_to_vec(),
-    }
-}
-
-/// Create a command book with a given root.
-fn command_book(root: &[u8], domain: &str) -> CommandBook {
-    CommandBook {
-        cover: Some(Cover {
-            domain: domain.to_string(),
-            root: Some(Uuid {
-                value: root.to_vec(),
-            }),
-            ..Default::default()
-        }),
-        pages: vec![],
-    }
-}
 
 /// Test world for hand aggregate.
 #[derive(Debug, Default, World)]
@@ -148,6 +72,8 @@ impl HandWorld {
                     }),
                     payload: Some(event_page::Payload::Event(e.clone())),
                     created_at: None,
+                    committed: true,
+                    cascade_id: None,
                 })
                 .collect(),
             snapshot: None,

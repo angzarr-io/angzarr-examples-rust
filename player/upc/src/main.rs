@@ -94,6 +94,8 @@ mod tests {
                 sequence_type: Some(page_header::SequenceType::Sequence(1)),
             }),
             created_at: None,
+            committed: true,
+            cascade_id: None,
         };
 
         let result = handle_upcast(&[page]);
@@ -120,6 +122,8 @@ mod tests {
                     sequence_type: Some(page_header::SequenceType::Sequence(i)),
                 }),
                 created_at: None,
+                committed: true,
+                cascade_id: None,
             })
             .collect();
 

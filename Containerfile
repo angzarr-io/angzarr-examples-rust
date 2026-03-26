@@ -46,34 +46,37 @@ COPY proto/ ./proto/
 
 # Create minimal stubs
 RUN mkdir -p player/agg/src player/upc/src \
-    table/agg/src table/saga-hand/src table/saga-player/src \
+    table/agg/src table/agg-oo/src table/saga-hand/src table/saga-player/src \
     hand/agg/src hand/saga-table/src hand/saga-player/src \
-    tournament/agg/src \
+    hand-flow-oo/src tournament/agg/src \
     pmg-hand-flow/src pmg-buy-in/src pmg-registration/src pmg-rebuy/src \
-    prj-output/src tests/tests && \
-    for d in player/agg player/upc table/agg table/saga-hand table/saga-player \
-             hand/agg hand/saga-table hand/saga-player tournament/agg \
-             pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output; do \
+    prj-output/src prj-output-oo/src tests/tests && \
+    for d in player/agg player/upc table/agg table/agg-oo table/saga-hand table/saga-player \
+             hand/agg hand/saga-table hand/saga-player hand-flow-oo tournament/agg \
+             pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output prj-output-oo; do \
       echo "[package]\nname = \"stub\"\nversion = \"0.1.0\"\nedition = \"2021\"" > $d/Cargo.toml 2>/dev/null || true; \
       echo "fn main() {}" > $d/src/main.rs; \
     done && \
-    for t in player table hand acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
+    for t in player table hand acceptance orchestration; do echo "fn main() {}" > tests/tests/$t.rs; done
 
 # Copy real Cargo.toml files
 COPY player/agg/Cargo.toml ./player/agg/
 COPY player/upc/Cargo.toml ./player/upc/
 COPY table/agg/Cargo.toml ./table/agg/
+COPY table/agg-oo/Cargo.toml ./table/agg-oo/
 COPY table/saga-hand/Cargo.toml ./table/saga-hand/
 COPY table/saga-player/Cargo.toml ./table/saga-player/
 COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
+COPY hand-flow-oo/Cargo.toml ./hand-flow-oo/
 COPY tournament/agg/Cargo.toml ./tournament/agg/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
 COPY pmg-buy-in/Cargo.toml ./pmg-buy-in/
 COPY pmg-registration/Cargo.toml ./pmg-registration/
 COPY pmg-rebuy/Cargo.toml ./pmg-rebuy/
 COPY prj-output/Cargo.toml ./prj-output/
+COPY prj-output-oo/Cargo.toml ./prj-output-oo/
 COPY tests/Cargo.toml ./tests/
 
 # Run cargo build to execute proto build.rs
@@ -125,33 +128,37 @@ COPY proto/ ./proto/
 COPY player/agg/Cargo.toml ./player/agg/
 COPY player/upc/Cargo.toml ./player/upc/
 COPY table/agg/Cargo.toml ./table/agg/
+COPY table/agg-oo/Cargo.toml ./table/agg-oo/
 COPY table/saga-hand/Cargo.toml ./table/saga-hand/
 COPY table/saga-player/Cargo.toml ./table/saga-player/
 COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
+COPY hand-flow-oo/Cargo.toml ./hand-flow-oo/
 COPY tournament/agg/Cargo.toml ./tournament/agg/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
 COPY pmg-buy-in/Cargo.toml ./pmg-buy-in/
 COPY pmg-registration/Cargo.toml ./pmg-registration/
 COPY pmg-rebuy/Cargo.toml ./pmg-rebuy/
 COPY prj-output/Cargo.toml ./prj-output/
+COPY prj-output-oo/Cargo.toml ./prj-output-oo/
 COPY tests/Cargo.toml ./tests/
 
 # Create stubs
 RUN mkdir -p player/agg/src player/upc/src \
-    table/agg/src table/saga-hand/src table/saga-player/src \
+    table/agg/src table/agg-oo/src table/saga-hand/src table/saga-player/src \
     hand/agg/src hand/saga-table/src hand/saga-player/src \
-    tournament/agg/src \
+    hand-flow-oo/src tournament/agg/src \
     pmg-hand-flow/src pmg-buy-in/src pmg-registration/src pmg-rebuy/src \
-    prj-output/src tests/tests && \
+    prj-output/src prj-output-oo/src tests/src tests/tests && \
     echo "fn main() {}" > proto/src/lib.rs && \
-    for d in player/agg player/upc table/agg table/saga-hand table/saga-player \
-             hand/agg hand/saga-table hand/saga-player tournament/agg \
-             pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output; do \
+    echo "" > tests/src/lib.rs && \
+    for d in player/agg player/upc table/agg table/agg-oo table/saga-hand table/saga-player \
+             hand/agg hand/saga-table hand/saga-player hand-flow-oo tournament/agg \
+             pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output prj-output-oo; do \
       echo "fn main() {}" > $d/src/main.rs; \
     done && \
-    for t in player table hand acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
+    for t in player table hand acceptance orchestration; do echo "fn main() {}" > tests/tests/$t.rs; done
 
 # Build dependencies
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
@@ -173,17 +180,21 @@ COPY proto/src ./proto/src
 COPY player/agg/src ./player/agg/src
 COPY player/upc/src ./player/upc/src
 COPY table/agg/src ./table/agg/src
+COPY table/agg-oo/src ./table/agg-oo/src
 COPY table/saga-hand/src ./table/saga-hand/src
 COPY table/saga-player/src ./table/saga-player/src
 COPY hand/agg/src ./hand/agg/src
 COPY hand/saga-table/src ./hand/saga-table/src
 COPY hand/saga-player/src ./hand/saga-player/src
+COPY hand-flow-oo/src ./hand-flow-oo/src
 COPY tournament/agg/src ./tournament/agg/src
 COPY pmg-hand-flow/src ./pmg-hand-flow/src
 COPY pmg-buy-in/src ./pmg-buy-in/src
 COPY pmg-registration/src ./pmg-registration/src
 COPY pmg-rebuy/src ./pmg-rebuy/src
 COPY prj-output/src ./prj-output/src
+COPY prj-output-oo/src ./prj-output-oo/src
+COPY tests/src ./tests/src
 COPY tests/tests ./tests/tests
 
 # Inject pre-generated proto files

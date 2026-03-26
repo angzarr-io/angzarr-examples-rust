@@ -441,6 +441,8 @@ mod tests {
                         "examples.CardsDealt",
                     ))),
                     created_at: None,
+                    committed: true,
+                    cascade_id: None,
                 },
                 EventPage {
                     header: Some(PageHeader {
@@ -451,6 +453,8 @@ mod tests {
                         "examples.CommunityCardsDealt",
                     ))),
                     created_at: None,
+                    committed: true,
+                    cascade_id: None,
                 },
             ],
             snapshot: None,

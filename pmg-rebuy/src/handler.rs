@@ -1,19 +1,24 @@
 //! RebuyOrchestrator PM handler.
+//!
+//! Design Philosophy:
+//! - PM is a coordinator, NOT a decision maker
+//! - PM should NOT rebuild destination state to make business decisions
+//! - Business logic belongs in aggregates (Tournament validates rebuy eligibility)
+//! - PM receives only sequences for command stamping
 
 use angzarr_client::proto::command_page::Payload as CommandPayload;
-use angzarr_client::proto::event_page::Payload as EventPayload;
 use angzarr_client::proto::{
     page_header::SequenceType, CommandBook, CommandPage, Cover, EventBook, EventPage,
     MergeStrategy, PageHeader, Uuid as ProtoUuid,
 };
 use angzarr_client::{
-    pack_event, CommandRejectedError, CommandResult, EventBookExt, ProcessManagerDomainHandler,
+    pack_event, CommandRejectedError, CommandResult, Destinations, ProcessManagerDomainHandler,
     ProcessManagerResponse, UnpackAny,
 };
 use examples_proto::{
     AddRebuyChips, ConfirmRebuyFee, Currency, OrchestrationFailure, ProcessRebuy, RebuyChipsAdded,
     RebuyCompleted, RebuyDenied, RebuyFailed, RebuyInitiated, RebuyPhase, RebuyProcessed,
-    RebuyRequested, ReleaseRebuyFee, TournamentState, TournamentStatus,
+    RebuyRequested, ReleaseRebuyFee,
 };
 use prost::Message;
 use prost_types::Any;
@@ -42,48 +47,29 @@ impl ProcessManagerDomainHandler<RebuyState> for RebuyPmHandler {
     ) -> Vec<angzarr_client::proto::Cover> {
         let type_url = &event.type_url;
 
-        // RebuyRequested from Player → need Tournament + Table state
+        // RebuyRequested from Player → need Tournament sequence
         if type_url.ends_with("RebuyRequested") {
             if let Ok(evt) = event.unpack::<RebuyRequested>() {
-                return vec![
-                    Cover {
-                        domain: "tournament".to_string(),
-                        root: Some(ProtoUuid {
-                            value: evt.tournament_root,
-                        }),
-                        correlation_id: String::new(),
-                        edition: None,
-                    },
-                    Cover {
-                        domain: "table".to_string(),
-                        root: Some(ProtoUuid {
-                            value: evt.table_root,
-                        }),
-                        correlation_id: String::new(),
-                        edition: None,
-                    },
-                ];
+                return vec![Cover {
+                    domain: "tournament".to_string(),
+                    root: Some(ProtoUuid {
+                        value: evt.tournament_root,
+                    }),
+                    correlation_id: String::new(),
+                    edition: None,
+                }];
             }
         }
 
-        // RebuyProcessed → need Table + Player state
+        // RebuyProcessed → need Table sequence (to add chips)
         if type_url.ends_with("RebuyProcessed") {
-            if let Ok(evt) = event.unpack::<RebuyProcessed>() {
-                return vec![
-                    // We need to track the player somehow - for now use the PM state
-                    Cover {
-                        domain: "player".to_string(),
-                        root: Some(ProtoUuid {
-                            value: evt.player_root.clone(),
-                        }),
-                        correlation_id: String::new(),
-                        edition: None,
-                    },
-                ];
+            if let Ok(_evt) = event.unpack::<RebuyProcessed>() {
+                // Table root is stored in PM state from RebuyInitiated
+                return vec![];
             }
         }
 
-        // RebuyDenied → need Player state
+        // RebuyDenied → need Player sequence
         if type_url.ends_with("RebuyDenied") {
             if let Ok(evt) = event.unpack::<RebuyDenied>() {
                 return vec![Cover {
@@ -97,7 +83,7 @@ impl ProcessManagerDomainHandler<RebuyState> for RebuyPmHandler {
             }
         }
 
-        // RebuyChipsAdded → need Player state
+        // RebuyChipsAdded → need Player sequence
         if type_url.ends_with("RebuyChipsAdded") {
             if let Ok(evt) = event.unpack::<RebuyChipsAdded>() {
                 return vec![Cover {
@@ -119,7 +105,7 @@ impl ProcessManagerDomainHandler<RebuyState> for RebuyPmHandler {
         trigger: &EventBook,
         state: &RebuyState,
         event: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let type_url = &event.type_url;
 
@@ -140,13 +126,15 @@ impl ProcessManagerDomainHandler<RebuyState> for RebuyPmHandler {
 impl RebuyPmHandler {
     /// Handle RebuyRequested from Player domain.
     ///
-    /// Validates Tournament + Table state and emits ProcessRebuy command if valid.
+    /// Sends ProcessRebuy command to Tournament. Tournament aggregate validates
+    /// rebuy eligibility and either accepts (emits RebuyProcessed) or denies
+    /// (emits RebuyDenied). This follows the "facts over state rebuilding" philosophy.
     fn handle_rebuy_requested(
         &self,
         trigger: &EventBook,
         _state: &RebuyState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: RebuyRequested = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode RebuyRequested: {}", e))
@@ -160,131 +148,22 @@ impl RebuyPmHandler {
             .map(|r| r.value.clone())
             .ok_or_else(|| CommandRejectedError::new("Missing player root in trigger"))?;
 
-        // Get Tournament and Table EventBooks from destinations
-        if destinations.len() < 2 {
-            return Err(CommandRejectedError::new(
-                "Missing tournament or table destination",
-            ));
-        }
+        // Get tournament sequence from destinations (no state rebuilding!)
+        let tournament_next_seq = destinations
+            .sequence_for("tournament")
+            .ok_or_else(|| {
+                CommandRejectedError::new(
+                    "Missing tournament sequence - check output_domains config",
+                )
+            })?;
 
-        let tournament_event_book = &destinations[0];
-        let table_event_book = &destinations[1];
-
-        // Rebuild states for validation
-        let tournament_state = rebuild_tournament_state(tournament_event_book)?;
-        let table_state = rebuild_table_state(table_event_book)?;
-
-        // Validate tournament is running
-        if tournament_state.status != TournamentStatus::TournamentRunning {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "TOURNAMENT_NOT_RUNNING",
-                "Tournament is not in progress".to_string(),
-            );
-        }
-
-        // Validate rebuy is enabled
-        if !tournament_state.rebuy_enabled {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "REBUY_NOT_ENABLED",
-                "Rebuys are not enabled for this tournament".to_string(),
-            );
-        }
-
-        // Validate rebuy window (level cutoff)
-        if tournament_state.current_level > tournament_state.rebuy_level_cutoff {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "REBUY_WINDOW_CLOSED",
-                format!(
-                    "Rebuy window closed after level {}",
-                    tournament_state.rebuy_level_cutoff
-                ),
-            );
-        }
-
-        // Validate player is registered
-        let player_hex = hex::encode(&player_root);
-        let player_registration = tournament_state.registered_players.get(&player_hex);
-        if player_registration.is_none() {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "NOT_REGISTERED",
-                "Player is not registered for this tournament".to_string(),
-            );
-        }
-
-        let reg = player_registration.unwrap();
-
-        // Validate rebuy count
-        if tournament_state.max_rebuys > 0 && reg.rebuys_used >= tournament_state.max_rebuys {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "MAX_REBUYS_REACHED",
-                format!(
-                    "Maximum rebuys ({}) already used",
-                    tournament_state.max_rebuys
-                ),
-            );
-        }
-
-        // Validate player is seated at table
-        let seat_opt = table_state.find_seat_by_player(&player_root);
-        if seat_opt.is_none() {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "NOT_SEATED",
-                "Player is not seated at the table".to_string(),
-            );
-        }
-
-        let seat_pos = *seat_opt.unwrap();
-        if seat_pos != event.seat {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "SEAT_MISMATCH",
-                "Seat position does not match".to_string(),
-            );
-        }
-
-        // Validate stack threshold
-        let current_stack = table_state.get_stack(&player_root).unwrap_or(0);
-        if current_stack > tournament_state.stack_threshold {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "STACK_TOO_HIGH",
-                format!(
-                    "Stack {} exceeds rebuy threshold {}",
-                    current_stack, tournament_state.stack_threshold
-                ),
-            );
-        }
-
-        // All validations passed - emit ProcessRebuy command to Tournament
+        // Send ProcessRebuy command to Tournament - let aggregate validate
         let process_rebuy = ProcessRebuy {
             player_root: player_root.clone(),
             reservation_id: event.reservation_id.clone(),
         };
 
         let tournament_root = event.tournament_root.clone();
-        let tournament_next_seq = tournament_event_book.next_sequence();
 
         let command_book = make_command_book(
             "tournament",
@@ -294,7 +173,7 @@ impl RebuyPmHandler {
             tournament_next_seq,
         );
 
-        // Emit PM event for tracking
+        // Emit PM event for tracking (includes table_root and seat for later phases)
         let fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
         let pm_event = RebuyInitiated {
             player_root: player_root.clone(),
@@ -306,7 +185,7 @@ impl RebuyPmHandler {
                 amount: fee,
                 currency_code: "USD".to_string(),
             }),
-            chips_to_add: tournament_state.rebuy_chips,
+            chips_to_add: 0, // Will be set by Tournament
             phase: RebuyPhase::RebuyApproving as i32,
             initiated_at: Some(angzarr_client::now()),
         };
@@ -328,30 +207,31 @@ impl RebuyPmHandler {
         _trigger: &EventBook,
         state: &RebuyState,
         event_any: &Any,
-        _destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: RebuyProcessed = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode RebuyProcessed: {}", e))
         })?;
 
-        // We need table_root and seat from PM state (set during RebuyInitiated)
-        // For now, assume we can get it from the event or state
+        // Get table sequence from destinations
+        let table_next_seq = destinations.sequence_for("table").unwrap_or(0);
+
+        // Add chips to table - table_root and seat come from PM state
         let add_chips = AddRebuyChips {
             player_root: event.player_root.clone(),
             reservation_id: event.reservation_id.clone(),
-            seat: state.seat, // From PM state
+            seat: state.seat,
             amount: event.chips_added,
         };
 
-        // Note: We need table_root from PM state
         let table_root = state.table_root.clone();
-        // We don't have the table EventBook here, so use sequence 0 (MergeCommutative will handle)
+
         let command_book = make_command_book(
             "table",
             &table_root,
             "examples.AddRebuyChips",
             &add_chips,
-            0, // Using 0 with commutative merge
+            table_next_seq,
         );
 
         Ok(ProcessManagerResponse {
@@ -369,16 +249,16 @@ impl RebuyPmHandler {
         _trigger: &EventBook,
         _state: &RebuyState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: RebuyDenied = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode RebuyDenied: {}", e))
         })?;
 
-        // Get player EventBook from destinations
-        let player_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing player destination"))?;
+        // Get player sequence from destinations (no state rebuilding!)
+        let player_next_seq = destinations.sequence_for("player").ok_or_else(|| {
+            CommandRejectedError::new("Missing player sequence - check output_domains config")
+        })?;
 
         // Emit ReleaseRebuyFee to Player
         let release = ReleaseRebuyFee {
@@ -387,7 +267,6 @@ impl RebuyPmHandler {
         };
 
         let player_root = event.player_root.clone();
-        let player_next_seq = player_event_book.next_sequence();
 
         let command_book = make_command_book(
             "player",
@@ -421,22 +300,22 @@ impl RebuyPmHandler {
 
     /// Handle RebuyChipsAdded from Table domain.
     ///
-    /// Emits ConfirmRebuyFee to Player.
+    /// Emits ConfirmRebuyFee to Player to finalize.
     fn handle_chips_added(
         &self,
         _trigger: &EventBook,
-        state: &RebuyState,
+        _state: &RebuyState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: RebuyChipsAdded = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode RebuyChipsAdded: {}", e))
         })?;
 
-        // Get player EventBook from destinations
-        let player_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing player destination"))?;
+        // Get player sequence from destinations (no state rebuilding!)
+        let player_next_seq = destinations.sequence_for("player").ok_or_else(|| {
+            CommandRejectedError::new("Missing player sequence - check output_domains config")
+        })?;
 
         // Emit ConfirmRebuyFee to Player
         let confirm = ConfirmRebuyFee {
@@ -444,7 +323,6 @@ impl RebuyPmHandler {
         };
 
         let player_root = event.player_root.clone();
-        let player_next_seq = player_event_book.next_sequence();
 
         let command_book = make_command_book(
             "player",
@@ -457,14 +335,14 @@ impl RebuyPmHandler {
         // Emit PM completion event
         let pm_event = RebuyCompleted {
             player_root: player_root.clone(),
-            tournament_root: state.tournament_root.clone(),
-            table_root: state.table_root.clone(),
+            tournament_root: vec![],
+            table_root: vec![],
             reservation_id: event.reservation_id.clone(),
+            chips_added: event.amount,
             fee: Some(Currency {
-                amount: state.fee,
+                amount: event.amount,
                 currency_code: "USD".to_string(),
             }),
-            chips_added: event.amount,
             completed_at: Some(angzarr_client::now()),
         };
         let pm_event_any = pack_event(&pm_event, "examples.RebuyCompleted");
@@ -475,194 +353,6 @@ impl RebuyPmHandler {
             process_events: Some(pm_event_book),
             facts: vec![],
         })
-    }
-
-    /// Emit a failure response.
-    fn emit_failure(
-        &self,
-        player_root: &[u8],
-        tournament_root: &[u8],
-        reservation_id: &[u8],
-        code: &str,
-        message: String,
-    ) -> CommandResult<ProcessManagerResponse> {
-        let pm_event = RebuyFailed {
-            player_root: player_root.to_vec(),
-            tournament_root: tournament_root.to_vec(),
-            reservation_id: reservation_id.to_vec(),
-            failure: Some(OrchestrationFailure {
-                code: code.to_string(),
-                message,
-                failed_at_phase: "VALIDATION".to_string(),
-                failed_at: Some(angzarr_client::now()),
-            }),
-        };
-        let pm_event_any = pack_event(&pm_event, "examples.RebuyFailed");
-        let pm_event_book = make_pm_event_book(pm_event_any);
-
-        Ok(ProcessManagerResponse {
-            commands: vec![],
-            process_events: Some(pm_event_book),
-            facts: vec![],
-        })
-    }
-}
-
-// Helper to rebuild tournament state
-fn rebuild_tournament_state(event_book: &EventBook) -> CommandResult<TournamentStateHelper> {
-    use angzarr_client::UnpackAny;
-
-    let mut state = TournamentStateHelper::default();
-
-    // Check for snapshot
-    if let Some(snapshot) = &event_book.snapshot {
-        if let Some(state_any) = &snapshot.state {
-            if let Ok(proto_state) = state_any.unpack::<TournamentState>() {
-                state.status = TournamentStatus::try_from(proto_state.status).unwrap_or_default();
-                if let Some(rebuy_config) = &proto_state.rebuy_config {
-                    state.rebuy_enabled = rebuy_config.enabled;
-                    state.max_rebuys = rebuy_config.max_rebuys;
-                    state.rebuy_level_cutoff = rebuy_config.rebuy_level_cutoff;
-                    state.stack_threshold = rebuy_config.stack_threshold;
-                    state.rebuy_chips = rebuy_config.rebuy_chips;
-                }
-                state.current_level = proto_state.current_level;
-                for (player_hex, reg) in &proto_state.registered_players {
-                    state.registered_players.insert(
-                        player_hex.clone(),
-                        PlayerRegistrationHelper {
-                            rebuys_used: reg.rebuys_used,
-                        },
-                    );
-                }
-            }
-        }
-    }
-
-    // Apply events
-    for page in &event_book.pages {
-        if let Some(EventPayload::Event(event_any)) = &page.payload {
-            let type_url = &event_any.type_url;
-
-            if type_url.ends_with("TournamentCreated") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::TournamentCreated>() {
-                    state.status = TournamentStatus::TournamentCreated;
-                    if let Some(rebuy_config) = &evt.rebuy_config {
-                        state.rebuy_enabled = rebuy_config.enabled;
-                        state.max_rebuys = rebuy_config.max_rebuys;
-                        state.rebuy_level_cutoff = rebuy_config.rebuy_level_cutoff;
-                        state.stack_threshold = rebuy_config.stack_threshold;
-                        state.rebuy_chips = rebuy_config.rebuy_chips;
-                    }
-                }
-            } else if type_url.ends_with("TournamentStarted") {
-                state.status = TournamentStatus::TournamentRunning;
-            } else if type_url.ends_with("TournamentPlayerEnrolled") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::TournamentPlayerEnrolled>() {
-                    let player_hex = hex::encode(&evt.player_root);
-                    state
-                        .registered_players
-                        .insert(player_hex, PlayerRegistrationHelper { rebuys_used: 0 });
-                }
-            } else if type_url.ends_with("RebuyProcessed") {
-                if let Ok(evt) = event_any.unpack::<RebuyProcessed>() {
-                    let player_hex = hex::encode(&evt.player_root);
-                    if let Some(reg) = state.registered_players.get_mut(&player_hex) {
-                        reg.rebuys_used = evt.rebuy_count;
-                    }
-                }
-            } else if type_url.ends_with("BlindLevelAdvanced") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::BlindLevelAdvanced>() {
-                    state.current_level = evt.level;
-                }
-            }
-        }
-    }
-
-    Ok(state)
-}
-
-// Helper to rebuild table state
-fn rebuild_table_state(event_book: &EventBook) -> CommandResult<TableStateHelper> {
-    use angzarr_client::UnpackAny;
-
-    let mut state = TableStateHelper::default();
-
-    // Apply events
-    for page in &event_book.pages {
-        if let Some(EventPayload::Event(event_any)) = &page.payload {
-            let type_url = &event_any.type_url;
-
-            if type_url.ends_with("PlayerJoined") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::PlayerJoined>() {
-                    state
-                        .seats
-                        .insert(evt.seat_position, (evt.player_root, evt.stack));
-                }
-            } else if type_url.ends_with("PlayerSeated") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::PlayerSeated>() {
-                    state
-                        .seats
-                        .insert(evt.seat_position, (evt.player_root, evt.stack));
-                }
-            } else if type_url.ends_with("PlayerLeft") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::PlayerLeft>() {
-                    state.seats.remove(&evt.seat_position);
-                }
-            } else if type_url.ends_with("RebuyChipsAdded") {
-                if let Ok(evt) = event_any.unpack::<RebuyChipsAdded>() {
-                    if let Some((_, stack)) = state.seats.get_mut(&evt.seat) {
-                        *stack = evt.new_stack;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(state)
-}
-
-/// Minimal tournament state for PM validation.
-#[derive(Default)]
-struct TournamentStateHelper {
-    status: TournamentStatus,
-    rebuy_enabled: bool,
-    max_rebuys: i32,
-    rebuy_level_cutoff: i32,
-    stack_threshold: i64,
-    rebuy_chips: i64,
-    current_level: i32,
-    registered_players: std::collections::HashMap<String, PlayerRegistrationHelper>,
-}
-
-#[derive(Default, Clone)]
-struct PlayerRegistrationHelper {
-    rebuys_used: i32,
-}
-
-/// Minimal table state for PM validation.
-#[derive(Default)]
-struct TableStateHelper {
-    seats: std::collections::HashMap<i32, (Vec<u8>, i64)>, // position -> (player_root, stack)
-}
-
-impl TableStateHelper {
-    fn find_seat_by_player(&self, player_root: &[u8]) -> Option<&i32> {
-        for (pos, (root, _)) in &self.seats {
-            if root == player_root {
-                return Some(pos);
-            }
-        }
-        None
-    }
-
-    fn get_stack(&self, player_root: &[u8]) -> Option<i64> {
-        for (root, stack) in self.seats.values() {
-            if root == player_root {
-                return Some(*stack);
-            }
-        }
-        None
     }
 }
 
@@ -707,6 +397,8 @@ fn make_pm_event_book(event: Any) -> EventBook {
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
+            committed: true,
+            cascade_id: None,
             payload: Some(Payload::Event(event)),
         }],
         snapshot: None,

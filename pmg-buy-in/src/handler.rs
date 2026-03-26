@@ -1,19 +1,23 @@
 //! BuyInOrchestrator PM handler.
+//!
+//! Design Philosophy:
+//! - PM is a coordinator, NOT a decision maker
+//! - PM should NOT rebuild destination state to make business decisions
+//! - Business logic belongs in aggregates (Table validates seating)
+//! - PM receives only sequences for command stamping
 
 use angzarr_client::proto::command_page::Payload as CommandPayload;
-use angzarr_client::proto::event_page::Payload as EventPayload;
 use angzarr_client::proto::{
     page_header::SequenceType, CommandBook, CommandPage, Cover, EventBook, MergeStrategy,
     PageHeader, Uuid as ProtoUuid,
 };
 use angzarr_client::{
-    pack_event, CommandRejectedError, CommandResult, EventBookExt, ProcessManagerDomainHandler,
-    ProcessManagerResponse, UnpackAny,
+    pack_event, CommandRejectedError, CommandResult, Destinations,
+    ProcessManagerDomainHandler, ProcessManagerResponse, UnpackAny,
 };
 use examples_proto::{
     BuyInCompleted, BuyInFailed, BuyInInitiated, BuyInPhase, BuyInRequested, ConfirmBuyIn,
     Currency, OrchestrationFailure, PlayerSeated, ReleaseBuyIn, SeatPlayer, SeatingRejected,
-    TableState,
 };
 use prost::Message;
 use prost_types::Any;
@@ -41,7 +45,7 @@ impl ProcessManagerDomainHandler<BuyInState> for BuyInPmHandler {
     ) -> Vec<angzarr_client::proto::Cover> {
         let type_url = &event.type_url;
 
-        // BuyInRequested from Player → need Table state
+        // BuyInRequested from Player → need Table sequence
         if type_url.ends_with("BuyInRequested") {
             if let Ok(evt) = event.unpack::<BuyInRequested>() {
                 return vec![Cover {
@@ -55,7 +59,7 @@ impl ProcessManagerDomainHandler<BuyInState> for BuyInPmHandler {
             }
         }
 
-        // PlayerSeated or SeatingRejected from Table → need Player state
+        // PlayerSeated or SeatingRejected from Table → need Player sequence
         if type_url.ends_with("PlayerSeated") {
             if let Ok(evt) = event.unpack::<PlayerSeated>() {
                 return vec![Cover {
@@ -90,7 +94,7 @@ impl ProcessManagerDomainHandler<BuyInState> for BuyInPmHandler {
         trigger: &EventBook,
         state: &BuyInState,
         event: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let type_url = &event.type_url;
 
@@ -109,13 +113,15 @@ impl ProcessManagerDomainHandler<BuyInState> for BuyInPmHandler {
 impl BuyInPmHandler {
     /// Handle BuyInRequested from Player domain.
     ///
-    /// Validates Table state and emits SeatPlayer command if valid.
+    /// Sends SeatPlayer command to Table. Table aggregate validates and either
+    /// accepts (emits PlayerSeated) or rejects (emits SeatingRejected).
+    /// This follows the "facts over state rebuilding" philosophy.
     fn handle_buy_in_requested(
         &self,
         trigger: &EventBook,
         _state: &BuyInState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: BuyInRequested = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode BuyInRequested: {}", e))
@@ -129,82 +135,13 @@ impl BuyInPmHandler {
             .map(|r| r.value.clone())
             .ok_or_else(|| CommandRejectedError::new("Missing player root in trigger"))?;
 
-        // Get table EventBook from destinations
-        let table_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing table destination"))?;
+        // Get table sequence from destinations (no state rebuilding!)
+        let table_next_seq = destinations
+            .sequence_for("table")
+            .ok_or_else(|| CommandRejectedError::new("Missing table sequence - check output_domains config"))?;
 
-        // Rebuild table state to validate
-        let table_state = rebuild_table_state(table_event_book)?;
-
-        // Validate buy-in amount
+        // Send SeatPlayer command to Table - let aggregate validate
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
-        if amount < table_state.min_buy_in {
-            return self.emit_failure(
-                &player_root,
-                &event.table_root,
-                &event.reservation_id,
-                "INVALID_AMOUNT",
-                format!("Buy-in must be at least {}", table_state.min_buy_in),
-            );
-        }
-        if amount > table_state.max_buy_in {
-            return self.emit_failure(
-                &player_root,
-                &event.table_root,
-                &event.reservation_id,
-                "INVALID_AMOUNT",
-                format!("Buy-in must be at most {}", table_state.max_buy_in),
-            );
-        }
-
-        // Validate seat availability
-        let requested_seat = event.seat;
-        if requested_seat >= 0 {
-            // Specific seat requested
-            if requested_seat >= table_state.max_players {
-                return self.emit_failure(
-                    &player_root,
-                    &event.table_root,
-                    &event.reservation_id,
-                    "INVALID_SEAT",
-                    format!("Seat {} does not exist", requested_seat),
-                );
-            }
-            if table_state.seats.contains_key(&requested_seat) {
-                return self.emit_failure(
-                    &player_root,
-                    &event.table_root,
-                    &event.reservation_id,
-                    "SEAT_OCCUPIED",
-                    format!("Seat {} is already occupied", requested_seat),
-                );
-            }
-        } else {
-            // Any seat - check if table has space
-            if table_state.next_available_seat().is_none() {
-                return self.emit_failure(
-                    &player_root,
-                    &event.table_root,
-                    &event.reservation_id,
-                    "TABLE_FULL",
-                    "Table is full".to_string(),
-                );
-            }
-        }
-
-        // Check if player already seated
-        if table_state.find_seat_by_player(&player_root).is_some() {
-            return self.emit_failure(
-                &player_root,
-                &event.table_root,
-                &event.reservation_id,
-                "ALREADY_SEATED",
-                "Player is already seated at this table".to_string(),
-            );
-        }
-
-        // All validations passed - emit SeatPlayer command to Table
         let seat_player = SeatPlayer {
             player_root: player_root.clone(),
             reservation_id: event.reservation_id.clone(),
@@ -213,7 +150,6 @@ impl BuyInPmHandler {
         };
 
         let table_root = event.table_root.clone();
-        let table_next_seq = table_event_book.next_sequence();
 
         let command_book = make_command_book(
             "table",
@@ -237,8 +173,6 @@ impl BuyInPmHandler {
             initiated_at: Some(angzarr_client::now()),
         };
         let pm_event_any = pack_event(&pm_event, "examples.BuyInInitiated");
-
-        // Create PM event book
         let pm_event_book = make_pm_event_book(pm_event_any);
 
         Ok(ProcessManagerResponse {
@@ -256,16 +190,16 @@ impl BuyInPmHandler {
         _trigger: &EventBook,
         _state: &BuyInState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: PlayerSeated = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode PlayerSeated: {}", e))
         })?;
 
-        // Get player EventBook from destinations
-        let player_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing player destination"))?;
+        // Get player sequence from destinations (no state rebuilding!)
+        let player_next_seq = destinations
+            .sequence_for("player")
+            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
 
         // Emit ConfirmBuyIn to Player
         let confirm = ConfirmBuyIn {
@@ -273,7 +207,6 @@ impl BuyInPmHandler {
         };
 
         let player_root = event.player_root.clone();
-        let player_next_seq = player_event_book.next_sequence();
 
         let command_book = make_command_book(
             "player",
@@ -286,7 +219,7 @@ impl BuyInPmHandler {
         // Emit PM completion event
         let pm_event = BuyInCompleted {
             player_root: player_root.clone(),
-            table_root: vec![], // We don't have table_root in PlayerSeated, could track in PM state
+            table_root: vec![],
             reservation_id: event.reservation_id.clone(),
             seat: event.seat_position,
             amount: Some(Currency {
@@ -313,16 +246,16 @@ impl BuyInPmHandler {
         _trigger: &EventBook,
         _state: &BuyInState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: SeatingRejected = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode SeatingRejected: {}", e))
         })?;
 
-        // Get player EventBook from destinations
-        let player_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing player destination"))?;
+        // Get player sequence from destinations (no state rebuilding!)
+        let player_next_seq = destinations
+            .sequence_for("player")
+            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
 
         // Emit ReleaseBuyIn to Player
         let release = ReleaseBuyIn {
@@ -331,7 +264,6 @@ impl BuyInPmHandler {
         };
 
         let player_root = event.player_root.clone();
-        let player_next_seq = player_event_book.next_sequence();
 
         let command_book = make_command_book(
             "player",
@@ -361,116 +293,6 @@ impl BuyInPmHandler {
             process_events: Some(pm_event_book),
             facts: vec![],
         })
-    }
-
-    /// Emit a failure response (no commands, just PM failure event).
-    fn emit_failure(
-        &self,
-        player_root: &[u8],
-        table_root: &[u8],
-        reservation_id: &[u8],
-        code: &str,
-        message: String,
-    ) -> CommandResult<ProcessManagerResponse> {
-        let pm_event = BuyInFailed {
-            player_root: player_root.to_vec(),
-            table_root: table_root.to_vec(),
-            reservation_id: reservation_id.to_vec(),
-            failure: Some(OrchestrationFailure {
-                code: code.to_string(),
-                message,
-                failed_at_phase: "VALIDATION".to_string(),
-                failed_at: Some(angzarr_client::now()),
-            }),
-        };
-        let pm_event_any = pack_event(&pm_event, "examples.BuyInFailed");
-        let pm_event_book = make_pm_event_book(pm_event_any);
-
-        Ok(ProcessManagerResponse {
-            commands: vec![],
-            process_events: Some(pm_event_book),
-            facts: vec![],
-        })
-    }
-}
-
-// Helper to rebuild table state from EventBook
-fn rebuild_table_state(event_book: &EventBook) -> CommandResult<TableStateHelper> {
-    use angzarr_client::UnpackAny;
-
-    let mut state = TableStateHelper::default();
-
-    // Check for snapshot first
-    if let Some(snapshot) = &event_book.snapshot {
-        if let Some(state_any) = &snapshot.state {
-            if let Ok(proto_state) = state_any.unpack::<TableState>() {
-                state.table_id = proto_state.table_id;
-                state.table_name = proto_state.table_name;
-                state.min_buy_in = proto_state.min_buy_in;
-                state.max_buy_in = proto_state.max_buy_in;
-                state.max_players = proto_state.max_players;
-                for seat in &proto_state.seats {
-                    state.seats.insert(seat.position, seat.player_root.clone());
-                }
-            }
-        }
-    }
-
-    // Apply events
-    for page in &event_book.pages {
-        if let Some(EventPayload::Event(event_any)) = &page.payload {
-            let type_url = &event_any.type_url;
-
-            if type_url.ends_with("TableCreated") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::TableCreated>() {
-                    state.table_id = format!("table_{}", evt.table_name);
-                    state.table_name = evt.table_name;
-                    state.min_buy_in = evt.min_buy_in;
-                    state.max_buy_in = evt.max_buy_in;
-                    state.max_players = evt.max_players;
-                }
-            } else if type_url.ends_with("PlayerJoined") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::PlayerJoined>() {
-                    state.seats.insert(evt.seat_position, evt.player_root);
-                }
-            } else if type_url.ends_with("PlayerSeated") {
-                if let Ok(evt) = event_any.unpack::<PlayerSeated>() {
-                    state.seats.insert(evt.seat_position, evt.player_root);
-                }
-            } else if type_url.ends_with("PlayerLeft") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::PlayerLeft>() {
-                    state.seats.remove(&evt.seat_position);
-                }
-            }
-        }
-    }
-
-    Ok(state)
-}
-
-/// Minimal table state for PM validation.
-#[derive(Default)]
-struct TableStateHelper {
-    table_id: String,
-    table_name: String,
-    min_buy_in: i64,
-    max_buy_in: i64,
-    max_players: i32,
-    seats: std::collections::HashMap<i32, Vec<u8>>, // position -> player_root
-}
-
-impl TableStateHelper {
-    fn find_seat_by_player(&self, player_root: &[u8]) -> Option<i32> {
-        for (pos, root) in &self.seats {
-            if root == player_root {
-                return Some(*pos);
-            }
-        }
-        None
-    }
-
-    fn next_available_seat(&self) -> Option<i32> {
-        (0..self.max_players).find(|i| !self.seats.contains_key(i))
     }
 }
 
@@ -510,12 +332,14 @@ fn make_pm_event_book(event: Any) -> EventBook {
     use angzarr_client::proto::EventPage;
 
     EventBook {
-        cover: None, // PM cover is set by framework
+        cover: None,
         pages: vec![EventPage {
             header: Some(PageHeader {
-                sequence_type: Some(SequenceType::Sequence(0)), // Framework sets correct seq
+                sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
+            committed: true,
+            cascade_id: None,
             payload: Some(Payload::Event(event)),
         }],
         snapshot: None,

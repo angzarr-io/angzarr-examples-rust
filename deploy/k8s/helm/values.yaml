@@ -4,6 +4,13 @@
 # Uses angzarr chart defaults for storage (postgres), messaging (rabbitmq), and gateway.
 # Only application definitions below.
 
+# Infrastructure services
+infrastructure:
+  gateway:
+    enabled: true
+    # Route to player aggregate coordinator for acceptance tests
+    grpcTarget: "player-aggregate:1310"
+
 # Poker domain applications
 applications:
   business:

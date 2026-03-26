@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use agg_table::{handlers, state::rebuild_state};
 use angzarr_client::proto::{
-    event_page, page_header, CommandBook, Cover, EventBook, EventPage, PageHeader, Uuid,
+    event_page, page_header, Cover, EventBook, EventPage, PageHeader, Uuid,
 };
 use angzarr_client::{
     pack_event, try_unpack, type_matches, type_name_from_url, CommandRejectedError, UnpackAny,
@@ -14,47 +14,8 @@ use examples_proto::{
     CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable, PlayerJoined,
     PlayerLeft, PotResult, StartHand, TableCreated,
 };
-use prost::Message;
+use poker_tests::{command_book, generate_hand_root, pack_cmd, uuid_for};
 use prost_types::Any;
-use sha2::{Digest, Sha256};
-
-/// Generate deterministic UUID from a seed string.
-fn uuid_for(seed: &str) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(seed.as_bytes());
-    let hash = hasher.finalize();
-    hash[0..16].to_vec()
-}
-
-/// Pack a command into Any.
-fn pack_cmd<T: Message>(cmd: &T, type_name: &str) -> Any {
-    Any {
-        type_url: format!("type.poker/{}", type_name),
-        value: cmd.encode_to_vec(),
-    }
-}
-
-/// Create a command book with a given root.
-fn command_book(root: &[u8], domain: &str) -> CommandBook {
-    CommandBook {
-        cover: Some(Cover {
-            domain: domain.to_string(),
-            root: Some(Uuid {
-                value: root.to_vec(),
-            }),
-            ..Default::default()
-        }),
-        pages: vec![],
-    }
-}
-
-/// Generate hand root from table root and hand number.
-fn generate_hand_root(table_root: &[u8], hand_number: i64) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(table_root);
-    hasher.update(hand_number.to_be_bytes());
-    hasher.finalize().to_vec()
-}
 
 /// Test world for table aggregate.
 #[derive(Debug, Default, World)]
@@ -99,6 +60,8 @@ impl TableWorld {
                     }),
                     payload: Some(event_page::Payload::Event(e.clone())),
                     created_at: None,
+                    committed: true,
+                    cascade_id: None,
                 })
                 .collect(),
             snapshot: None,
@@ -438,7 +401,7 @@ fn when_end_hand_with_results(world: &mut TableWorld, step: &cucumber::gherkin::
 }
 
 #[when("I rebuild the table state")]
-fn when_rebuild_state(world: &mut TableWorld) {
+fn when_rebuild_state(_world: &mut TableWorld) {
     // State is rebuilt in Then steps
 }
 

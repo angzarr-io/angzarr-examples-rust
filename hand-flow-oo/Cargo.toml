@@ -8,8 +8,10 @@ name = "hand-flow-oo"
 path = "src/main.rs"
 
 [dependencies]
+examples-proto.workspace = true
 angzarr-client.workspace = true
-prost = { workspace = true }
-prost-types = { workspace = true }
-tokio = { workspace = true }
-tracing-subscriber = { workspace = true }
+prost.workspace = true
+prost-types.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

@@ -11,8 +11,8 @@
 
 use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
 use angzarr_client::{
-    run_saga_server, CommandRejectedError, CommandResult, SagaDomainHandler, SagaHandlerResponse,
-    SagaRouter, UnpackAny,
+    run_saga_server, CommandRejectedError, CommandResult, Destinations, SagaDomainHandler,
+    SagaHandlerResponse, SagaRouter, UnpackAny,
 };
 use examples_proto::{EndHand, HandComplete, PotResult};
 use prost::Message;
@@ -28,7 +28,12 @@ impl SagaDomainHandler for HandTableSagaHandler {
         vec!["HandComplete".into()]
     }
 
-    fn handle(&self, source: &EventBook, event: &Any) -> CommandResult<SagaHandlerResponse> {
+    fn handle(
+        &self,
+        source: &EventBook,
+        event: &Any,
+        _destinations: &Destinations,
+    ) -> CommandResult<SagaHandlerResponse> {
         if event.type_url.ends_with("HandComplete") {
             return Self::handle_hand_complete(source, event);
         }

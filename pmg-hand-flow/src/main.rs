@@ -10,8 +10,8 @@
 
 use angzarr_client::proto::{Cover, EventBook, Uuid};
 use angzarr_client::{
-    run_process_manager_server, CommandRejectedError, CommandResult, ProcessManagerDomainHandler,
-    ProcessManagerResponse, ProcessManagerRouter, UnpackAny,
+    run_process_manager_server, CommandRejectedError, CommandResult, Destinations,
+    ProcessManagerDomainHandler, ProcessManagerResponse, ProcessManagerRouter, UnpackAny,
 };
 use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, CommunityCardsDealt, HandComplete, HandStarted,
@@ -85,7 +85,7 @@ impl ProcessManagerDomainHandler<HandFlowState> for HandFlowPmHandler {
         _trigger: &EventBook,
         state: &HandFlowState,
         event: &Any,
-        _destinations: &[EventBook],
+        _destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         // Clone state for mutation (PM state is rebuilt from events, not mutated in-place)
         let mut local_state = state.clone();

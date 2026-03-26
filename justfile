@@ -103,6 +103,24 @@ ANGZARR_CHART_VERSION := "0.2.2"
 # Ensure we use Docker Engine, not Podman socket
 export DOCKER_HOST := ""
 
+# Deploy everything to kind cluster (repeatable, uses registry images)
+up: kind-create kind-load-coordinators deploy-infra deploy-apps
+    @echo "=== Deployment complete ==="
+    @just status
+
+# Tear down kind cluster
+down:
+    kind delete cluster --name {{CLUSTER_NAME}} || true
+
+# Show cluster status
+status:
+    #!/usr/bin/env bash
+    echo "=== Pods ==="
+    kubectl get pods -n angzarr-test -o wide 2>/dev/null || echo "Namespace not found"
+    echo ""
+    echo "=== Services ==="
+    kubectl get svc -n angzarr-test 2>/dev/null || echo "Namespace not found"
+
 # Create kind cluster for acceptance tests
 kind-create:
     #!/usr/bin/env bash

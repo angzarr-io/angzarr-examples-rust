@@ -4,11 +4,11 @@
 //! Writes formatted game logs to a file.
 //!
 //! This demonstrates the OO pattern where:
-//! - `#[projector(name, inputs)]` decorates the impl block
-//! - `#[handles(EventType, domain = "...")]` marks event handler methods
+//! - `#[projector(name)]` decorates the impl block
+//! - `#[projects(EventType)]` marks event handler methods
 
 use angzarr_client::proto::Projection;
-use angzarr_client::{handles, projector, run_projector_server};
+use angzarr_client::{projector, run_projector_server};
 use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted,
     PlayerJoined, PlayerRegistered, PotAwarded, TableCreated,
@@ -47,10 +47,10 @@ fn truncate_id(player_root: &[u8]) -> String {
 /// Output projector using OO-style decorators with multi-domain support.
 pub struct OutputProjector;
 
-#[projector(name = "output", inputs = ["player", "table", "hand"])]
+#[projector(name = "output")]
 impl OutputProjector {
-    #[handles(PlayerRegistered, domain = "player")]
-    fn project_registered(&self, event: &PlayerRegistered) -> Projection {
+    #[projects(PlayerRegistered)]
+    fn project_registered(&self, event: PlayerRegistered) -> Projection {
         write_log(&format!(
             "PLAYER registered: {} ({})",
             event.display_name, event.email
@@ -58,16 +58,16 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(FundsDeposited, domain = "player")]
-    fn project_deposited(&self, event: &FundsDeposited) -> Projection {
+    #[projects(FundsDeposited)]
+    fn project_deposited(&self, event: FundsDeposited) -> Projection {
         let amount = event.amount.as_ref().map(|m| m.amount).unwrap_or(0);
         let balance = event.new_balance.as_ref().map(|m| m.amount).unwrap_or(0);
         write_log(&format!("PLAYER deposited {}, balance: {}", amount, balance));
         Projection::default()
     }
 
-    #[handles(TableCreated, domain = "table")]
-    fn project_table_created(&self, event: &TableCreated) -> Projection {
+    #[projects(TableCreated)]
+    fn project_table_created(&self, event: TableCreated) -> Projection {
         write_log(&format!(
             "TABLE created: {} (variant {})",
             event.table_name, event.game_variant
@@ -75,8 +75,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(PlayerJoined, domain = "table")]
-    fn project_player_joined(&self, event: &PlayerJoined) -> Projection {
+    #[projects(PlayerJoined)]
+    fn project_player_joined(&self, event: PlayerJoined) -> Projection {
         let player_id = truncate_id(&event.player_root);
         write_log(&format!(
             "TABLE player {} joined with {} chips",
@@ -85,8 +85,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(HandStarted, domain = "table")]
-    fn project_hand_started(&self, event: &HandStarted) -> Projection {
+    #[projects(HandStarted)]
+    fn project_hand_started(&self, event: HandStarted) -> Projection {
         write_log(&format!(
             "TABLE hand #{} started, {} players, dealer at position {}",
             event.hand_number,
@@ -96,8 +96,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(CardsDealt, domain = "hand")]
-    fn project_cards_dealt(&self, event: &CardsDealt) -> Projection {
+    #[projects(CardsDealt)]
+    fn project_cards_dealt(&self, event: CardsDealt) -> Projection {
         write_log(&format!(
             "HAND cards dealt to {} players",
             event.player_cards.len()
@@ -105,8 +105,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(BlindPosted, domain = "hand")]
-    fn project_blind_posted(&self, event: &BlindPosted) -> Projection {
+    #[projects(BlindPosted)]
+    fn project_blind_posted(&self, event: BlindPosted) -> Projection {
         let player_id = truncate_id(&event.player_root);
         write_log(&format!(
             "HAND player {} posted {:?} blind: {}",
@@ -115,8 +115,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(ActionTaken, domain = "hand")]
-    fn project_action_taken(&self, event: &ActionTaken) -> Projection {
+    #[projects(ActionTaken)]
+    fn project_action_taken(&self, event: ActionTaken) -> Projection {
         let player_id = truncate_id(&event.player_root);
         write_log(&format!(
             "HAND player {}: {:?} {}",
@@ -125,8 +125,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(PotAwarded, domain = "hand")]
-    fn project_pot_awarded(&self, event: &PotAwarded) -> Projection {
+    #[projects(PotAwarded)]
+    fn project_pot_awarded(&self, event: PotAwarded) -> Projection {
         let winners: Vec<String> = event
             .winners
             .iter()
@@ -136,8 +136,8 @@ impl OutputProjector {
         Projection::default()
     }
 
-    #[handles(HandComplete, domain = "hand")]
-    fn project_hand_complete(&self, event: &HandComplete) -> Projection {
+    #[projects(HandComplete)]
+    fn project_hand_complete(&self, event: HandComplete) -> Projection {
         write_log(&format!("HAND #{} complete", event.hand_number));
         Projection::default()
     }
@@ -154,9 +154,9 @@ async fn main() {
     println!("Starting Output projector (OO pattern)");
 
     let projector = OutputProjector;
-    let router = projector.into_router();
+    let handler = projector.into_handler();
 
-    run_projector_server("output", 50391, router)
+    run_projector_server("output", 50391, handler)
         .await
         .expect("Server failed");
 }

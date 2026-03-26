@@ -15,36 +15,12 @@ use angzarr_client::proto::{
 use angzarr_client::{pack_event, try_unpack, type_matches, UnpackAny};
 use cucumber::{given, then, when, World};
 use examples_proto::{
-    Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn,
-    PlayerRegistered, PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
+    DepositFunds, FundsDeposited, FundsReleased, FundsReserved, FundsWithdrawn, PlayerRegistered,
+    PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds, WithdrawFunds,
 };
+use poker_tests::{currency, pack_cmd, uuid_for};
 use prost_types::Any;
-use sha2::{Digest, Sha256};
 // docs:end:bdd_imports
-
-/// Helper to create a deterministic UUID from a string.
-fn uuid_for(name: &str) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(name.as_bytes());
-    let result = hasher.finalize();
-    result[..16].to_vec()
-}
-
-/// Helper to create a Currency value.
-fn currency(amount: i64) -> Currency {
-    Currency {
-        amount,
-        currency_code: "CHIPS".to_string(),
-    }
-}
-
-/// Helper to pack a command into Any.
-fn pack_command<M: prost::Message>(msg: &M, type_name: &str) -> Any {
-    Any {
-        type_url: format!("type.poker/{}", type_name),
-        value: msg.encode_to_vec(),
-    }
-}
 
 // docs:start:world_struct
 /// Test context for player scenarios.
@@ -115,6 +91,8 @@ impl PlayerWorld {
             }),
             payload: Some(event_page::Payload::Event(event_any)),
             created_at: Some(angzarr_client::now()),
+            committed: true,
+            cascade_id: None,
         });
         self.next_sequence += 1;
     }
@@ -197,7 +175,7 @@ fn handle_register_player_cmd(world: &mut PlayerWorld, name: String, email: Stri
         ai_model_id: String::new(),
     };
 
-    let cmd_any = pack_command(&cmd, "examples.RegisterPlayer");
+    let cmd_any = pack_cmd(&cmd, "examples.RegisterPlayer");
     let cmd_book = world.build_command_book(cmd_any.clone());
     let state = world.rebuild_state();
 
@@ -223,7 +201,7 @@ fn handle_register_player_ai_cmd(world: &mut PlayerWorld, name: String, email: S
         ai_model_id: "gpt-4".to_string(),
     };
 
-    let cmd_any = pack_command(&cmd, "examples.RegisterPlayer");
+    let cmd_any = pack_cmd(&cmd, "examples.RegisterPlayer");
     let cmd_book = world.build_command_book(cmd_any.clone());
     let state = world.rebuild_state();
 
@@ -245,7 +223,7 @@ fn handle_deposit_funds_cmd(world: &mut PlayerWorld, amount: i64) {
         amount: Some(currency(amount)),
     };
 
-    let cmd_any = pack_command(&cmd, "examples.DepositFunds");
+    let cmd_any = pack_cmd(&cmd, "examples.DepositFunds");
     let cmd_book = world.build_command_book(cmd_any.clone());
     let state = world.rebuild_state();
 
@@ -267,7 +245,7 @@ fn handle_withdraw_funds_cmd(world: &mut PlayerWorld, amount: i64) {
         amount: Some(currency(amount)),
     };
 
-    let cmd_any = pack_command(&cmd, "examples.WithdrawFunds");
+    let cmd_any = pack_cmd(&cmd, "examples.WithdrawFunds");
     let cmd_book = world.build_command_book(cmd_any.clone());
     let state = world.rebuild_state();
 
@@ -290,7 +268,7 @@ fn handle_reserve_funds_cmd(world: &mut PlayerWorld, amount: i64, table_name: St
         amount: Some(currency(amount)),
     };
 
-    let cmd_any = pack_command(&cmd, "examples.ReserveFunds");
+    let cmd_any = pack_cmd(&cmd, "examples.ReserveFunds");
     let cmd_book = world.build_command_book(cmd_any.clone());
     let state = world.rebuild_state();
 
@@ -312,7 +290,7 @@ fn handle_release_funds_cmd(world: &mut PlayerWorld, table_name: String) {
         table_root: uuid_for(&table_name),
     };
 
-    let cmd_any = pack_command(&cmd, "examples.ReleaseFunds");
+    let cmd_any = pack_cmd(&cmd, "examples.ReleaseFunds");
     let cmd_book = world.build_command_book(cmd_any.clone());
     let state = world.rebuild_state();
 

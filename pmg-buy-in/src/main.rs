@@ -1,11 +1,10 @@
 //! BuyInOrchestrator Process Manager - coordinates buy-in flows across Player ↔ Table.
 //!
-//! This PM handles the synchronous cascade flow for buy-ins:
+//! Following "facts over state rebuilding" philosophy:
 //! 1. Player emits BuyInRequested
-//! 2. PM checks Table state (seat availability, buy-in range)
-//! 3. PM emits SeatPlayer command to Table
-//! 4. Table emits PlayerSeated or SeatingRejected
-//! 5. PM emits ConfirmBuyIn or ReleaseBuyIn to Player
+//! 2. PM emits SeatPlayer command to Table (no state validation - let aggregate decide)
+//! 3. Table emits PlayerSeated or SeatingRejected
+//! 4. PM emits ConfirmBuyIn or ReleaseBuyIn to Player
 
 use angzarr_client::{run_process_manager_server, ProcessManagerRouter};
 use pmg_buy_in::{BuyInPmHandler, BuyInState};

@@ -1,20 +1,18 @@
 //! RegistrationOrchestrator PM handler.
 
 use angzarr_client::proto::command_page::Payload as CommandPayload;
-use angzarr_client::proto::event_page::Payload as EventPayload;
 use angzarr_client::proto::{
     page_header::SequenceType, CommandBook, CommandPage, Cover, EventBook, EventPage,
     MergeStrategy, PageHeader, Uuid as ProtoUuid,
 };
 use angzarr_client::{
-    pack_event, CommandRejectedError, CommandResult, EventBookExt, ProcessManagerDomainHandler,
+    pack_event, CommandRejectedError, CommandResult, Destinations, ProcessManagerDomainHandler,
     ProcessManagerResponse, UnpackAny,
 };
 use examples_proto::{
     ConfirmRegistrationFee, Currency, EnrollPlayer, OrchestrationFailure, RegistrationCompleted,
     RegistrationFailed, RegistrationInitiated, RegistrationPhase, RegistrationRequested,
     ReleaseRegistrationFee, TournamentEnrollmentRejected, TournamentPlayerEnrolled,
-    TournamentState, TournamentStatus,
 };
 use prost::Message;
 use prost_types::Any;
@@ -91,7 +89,7 @@ impl ProcessManagerDomainHandler<RegistrationState> for RegistrationPmHandler {
         trigger: &EventBook,
         state: &RegistrationState,
         event: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let type_url = &event.type_url;
 
@@ -110,13 +108,16 @@ impl ProcessManagerDomainHandler<RegistrationState> for RegistrationPmHandler {
 impl RegistrationPmHandler {
     /// Handle RegistrationRequested from Player domain.
     ///
-    /// Validates Tournament state and emits EnrollPlayer command if valid.
+    /// Sends EnrollPlayer command to Tournament. Tournament aggregate validates
+    /// and either accepts (emits TournamentPlayerEnrolled) or rejects.
+    /// This follows the "facts over state rebuilding" philosophy - PM doesn't
+    /// rebuild destination state to make business decisions.
     fn handle_registration_requested(
         &self,
         trigger: &EventBook,
         _state: &RegistrationState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: RegistrationRequested = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode RegistrationRequested: {}", e))
@@ -130,56 +131,18 @@ impl RegistrationPmHandler {
             .map(|r| r.value.clone())
             .ok_or_else(|| CommandRejectedError::new("Missing player root in trigger"))?;
 
-        // Get tournament EventBook from destinations
-        let tournament_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing tournament destination"))?;
+        // Get tournament sequence from destinations (no state rebuilding!)
+        let tournament_next_seq = destinations
+            .sequence_for("tournament")
+            .ok_or_else(|| CommandRejectedError::new("Missing tournament sequence - check output_domains config"))?;
 
-        // Rebuild tournament state to validate
-        let tournament_state = rebuild_tournament_state(tournament_event_book)?;
-
-        // Validate registration is open
-        if tournament_state.status != TournamentStatus::TournamentRegistrationOpen {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "REGISTRATION_CLOSED",
-                "Tournament registration is not open".to_string(),
-            );
-        }
-
-        // Validate capacity
-        if tournament_state.registered_count >= tournament_state.max_players as usize {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "TOURNAMENT_FULL",
-                "Tournament is full".to_string(),
-            );
-        }
-
-        // Check if player already registered
-        let player_hex = hex::encode(&player_root);
-        if tournament_state.registered_players.contains(&player_hex) {
-            return self.emit_failure(
-                &player_root,
-                &event.tournament_root,
-                &event.reservation_id,
-                "ALREADY_REGISTERED",
-                "Player is already registered for this tournament".to_string(),
-            );
-        }
-
-        // All validations passed - emit EnrollPlayer command to Tournament
+        // Send EnrollPlayer command to Tournament - let aggregate validate
         let enroll_player = EnrollPlayer {
             player_root: player_root.clone(),
             reservation_id: event.reservation_id.clone(),
         };
 
         let tournament_root = event.tournament_root.clone();
-        let tournament_next_seq = tournament_event_book.next_sequence();
 
         let command_book = make_command_book(
             "tournament",
@@ -220,16 +183,16 @@ impl RegistrationPmHandler {
         _trigger: &EventBook,
         _state: &RegistrationState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: TournamentPlayerEnrolled = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!("Failed to decode TournamentPlayerEnrolled: {}", e))
         })?;
 
-        // Get player EventBook from destinations
-        let player_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing player destination"))?;
+        // Get player sequence from destinations (no state rebuilding!)
+        let player_next_seq = destinations
+            .sequence_for("player")
+            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
 
         // Emit ConfirmRegistrationFee to Player
         let confirm = ConfirmRegistrationFee {
@@ -237,7 +200,6 @@ impl RegistrationPmHandler {
         };
 
         let player_root = event.player_root.clone();
-        let player_next_seq = player_event_book.next_sequence();
 
         let command_book = make_command_book(
             "player",
@@ -277,7 +239,7 @@ impl RegistrationPmHandler {
         _trigger: &EventBook,
         _state: &RegistrationState,
         event_any: &Any,
-        destinations: &[EventBook],
+        destinations: &Destinations,
     ) -> CommandResult<ProcessManagerResponse> {
         let event: TournamentEnrollmentRejected = event_any.unpack().map_err(|e| {
             CommandRejectedError::new(format!(
@@ -286,10 +248,10 @@ impl RegistrationPmHandler {
             ))
         })?;
 
-        // Get player EventBook from destinations
-        let player_event_book = destinations
-            .first()
-            .ok_or_else(|| CommandRejectedError::new("Missing player destination"))?;
+        // Get player sequence from destinations (no state rebuilding!)
+        let player_next_seq = destinations
+            .sequence_for("player")
+            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
 
         // Emit ReleaseRegistrationFee to Player
         let release = ReleaseRegistrationFee {
@@ -298,7 +260,6 @@ impl RegistrationPmHandler {
         };
 
         let player_root = event.player_root.clone();
-        let player_next_seq = player_event_book.next_sequence();
 
         let command_book = make_command_book(
             "player",
@@ -330,109 +291,6 @@ impl RegistrationPmHandler {
         })
     }
 
-    /// Emit a failure response (no commands, just PM failure event).
-    fn emit_failure(
-        &self,
-        player_root: &[u8],
-        tournament_root: &[u8],
-        reservation_id: &[u8],
-        code: &str,
-        message: String,
-    ) -> CommandResult<ProcessManagerResponse> {
-        let pm_event = RegistrationFailed {
-            player_root: player_root.to_vec(),
-            tournament_root: tournament_root.to_vec(),
-            reservation_id: reservation_id.to_vec(),
-            failure: Some(OrchestrationFailure {
-                code: code.to_string(),
-                message,
-                failed_at_phase: "VALIDATION".to_string(),
-                failed_at: Some(angzarr_client::now()),
-            }),
-        };
-        let pm_event_any = pack_event(&pm_event, "examples.RegistrationFailed");
-        let pm_event_book = make_pm_event_book(pm_event_any);
-
-        Ok(ProcessManagerResponse {
-            commands: vec![],
-            process_events: Some(pm_event_book),
-            facts: vec![],
-        })
-    }
-}
-
-// Helper to rebuild tournament state from EventBook
-fn rebuild_tournament_state(event_book: &EventBook) -> CommandResult<TournamentStateHelper> {
-    use angzarr_client::UnpackAny;
-
-    let mut state = TournamentStateHelper::default();
-
-    // Check for snapshot first
-    if let Some(snapshot) = &event_book.snapshot {
-        if let Some(state_any) = &snapshot.state {
-            if let Ok(proto_state) = state_any.unpack::<TournamentState>() {
-                state.status = TournamentStatus::try_from(proto_state.status).unwrap_or_default();
-                state.max_players = proto_state.max_players;
-                state.buy_in = proto_state.buy_in;
-                state.starting_stack = proto_state.starting_stack;
-                state.registered_count = proto_state.registered_players.len();
-                for player_hex in proto_state.registered_players.keys() {
-                    state.registered_players.insert(player_hex.clone());
-                }
-            }
-        }
-    }
-
-    // Apply events
-    for page in &event_book.pages {
-        if let Some(EventPayload::Event(event_any)) = &page.payload {
-            let type_url = &event_any.type_url;
-
-            if type_url.ends_with("TournamentCreated") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::TournamentCreated>() {
-                    state.status = TournamentStatus::TournamentCreated;
-                    state.max_players = evt.max_players;
-                    state.buy_in = evt.buy_in;
-                    state.starting_stack = evt.starting_stack;
-                }
-            } else if type_url.ends_with("RegistrationOpened") {
-                state.status = TournamentStatus::TournamentRegistrationOpen;
-            } else if type_url.ends_with("RegistrationClosed") {
-                state.status = TournamentStatus::TournamentRunning;
-            } else if type_url.ends_with("TournamentPlayerEnrolled") {
-                if let Ok(evt) = event_any.unpack::<TournamentPlayerEnrolled>() {
-                    let player_hex = hex::encode(&evt.player_root);
-                    state.registered_players.insert(player_hex);
-                    state.registered_count = state.registered_players.len();
-                }
-            } else if type_url.ends_with("PlayerUnregistered") {
-                if let Ok(evt) = event_any.unpack::<examples_proto::PlayerUnregistered>() {
-                    let player_hex = hex::encode(&evt.player_root);
-                    state.registered_players.remove(&player_hex);
-                    state.registered_count = state.registered_players.len();
-                }
-            } else if type_url.ends_with("TournamentStarted") {
-                state.status = TournamentStatus::TournamentRunning;
-            } else if type_url.ends_with("TournamentCompleted") {
-                state.status = TournamentStatus::TournamentCompleted;
-            } else if type_url.ends_with("TournamentPaused") {
-                state.status = TournamentStatus::TournamentPaused;
-            }
-        }
-    }
-
-    Ok(state)
-}
-
-/// Minimal tournament state for PM validation.
-#[derive(Default)]
-struct TournamentStateHelper {
-    status: TournamentStatus,
-    max_players: i32,
-    buy_in: i64,
-    starting_stack: i64,
-    registered_count: usize,
-    registered_players: std::collections::HashSet<String>, // player_root hex
 }
 
 /// Helper to create a CommandBook for PM commands.
@@ -476,6 +334,8 @@ fn make_pm_event_book(event: Any) -> EventBook {
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
+            committed: true, // PM events are immediately committed
+            cascade_id: None,
             payload: Some(Payload::Event(event)),
         }],
         snapshot: None,
