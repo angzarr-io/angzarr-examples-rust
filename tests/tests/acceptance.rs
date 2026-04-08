@@ -219,7 +219,10 @@ async fn test_register_and_deposit() {
         }
     }
     if let Some(status) = last_err {
-        panic!("DepositFunds failed after {} attempts: {:?}", max_attempts, status);
+        panic!(
+            "DepositFunds failed after {} attempts: {:?}",
+            max_attempts, status
+        );
     }
 }
 
