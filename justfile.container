@@ -9,10 +9,10 @@ ROOT := `git rev-parse --show-toplevel`
 default:
     @just --list
 
-# Export proto definitions from Buf registry
+# Export proto definitions (core from BSR, examples from local submodule)
 proto-gen:
-    buf export buf.build/angzarr/examples -o examples-proto
     buf export buf.build/angzarr/angzarr -o angzarr-proto
+    buf export angzarr-project/proto -o examples-proto
 
 # Build all workspace crates
 build: proto-gen
