@@ -68,6 +68,7 @@ fn make_command_request_at_seq(
         }),
         sync_mode: SyncMode::Simple as i32,
         cascade_error_mode: 0,
+        cascade_id: None,
     }
 }
 
