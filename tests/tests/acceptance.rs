@@ -175,7 +175,9 @@ async fn test_register_and_deposit() {
     );
     println!("Player registered successfully");
 
-    // Now deposit funds (sequence 1 since registration was sequence 0)
+    // Now deposit funds (sequence 1 since registration was sequence 0).
+    // Retry with backoff because the aggregate may not have finished
+    // processing the registration event yet (eventual consistency).
     let deposit_cmd = DepositFunds {
         amount: Some(Currency {
             amount: 1000,
@@ -183,29 +185,41 @@ async fn test_register_and_deposit() {
         }),
     };
 
-    let deposit_request = make_command_request_at_seq(
-        "player",
-        player_id.clone(),
-        pack_command(&deposit_cmd, "examples.DepositFunds"),
-        1, // Sequence 1 after registration
-    );
+    let max_attempts = 10;
+    let mut last_err = None;
+    for attempt in 1..=max_attempts {
+        let deposit_request = make_command_request_at_seq(
+            "player",
+            player_id.clone(),
+            pack_command(&deposit_cmd, "examples.DepositFunds"),
+            1, // Sequence 1 after registration
+        );
 
-    let deposit_response = send_player_command(deposit_request).await;
-
-    match deposit_response {
-        Ok(resp) => {
-            println!("DepositFunds response: {:?}", resp);
-            assert!(resp.events.is_some(), "Response should contain events");
-            let events = resp.events.unwrap();
-            assert!(!events.pages.is_empty(), "Should have deposited event");
-            println!(
-                "Successfully deposited funds, got {} event(s)",
-                events.pages.len()
-            );
+        match send_player_command(deposit_request).await {
+            Ok(resp) => {
+                println!("DepositFunds response: {:?}", resp);
+                assert!(resp.events.is_some(), "Response should contain events");
+                let events = resp.events.unwrap();
+                assert!(!events.pages.is_empty(), "Should have deposited event");
+                println!(
+                    "Successfully deposited funds, got {} event(s)",
+                    events.pages.len()
+                );
+                last_err = None;
+                break;
+            }
+            Err(status) => {
+                println!(
+                    "DepositFunds attempt {}/{} failed: {:?}",
+                    attempt, max_attempts, status
+                );
+                last_err = Some(status);
+                tokio::time::sleep(std::time::Duration::from_millis(250 * attempt)).await;
+            }
         }
-        Err(status) => {
-            panic!("DepositFunds failed: {:?}", status);
-        }
+    }
+    if let Some(status) = last_err {
+        panic!("DepositFunds failed after {} attempts: {:?}", max_attempts, status);
     }
 }
 
