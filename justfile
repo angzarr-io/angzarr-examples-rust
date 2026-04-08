@@ -98,7 +98,7 @@ COORDINATOR_VERSION := "latest"
 
 # OCI chart references
 CHART_REGISTRY := "oci://ghcr.io/angzarr-io/charts"
-ANGZARR_CHART_VERSION := "0.2.2"
+ANGZARR_CHART_VERSION := "0.5.0"
 
 # Ensure we use Docker Engine, not Podman socket
 export DOCKER_HOST := ""

@@ -190,8 +190,23 @@ jobs:
             kind load docker-image "$base:latest" --name angzarr-test
           done
 
-      - name: Pull and load provided example images
-        if: steps.images.outputs.build-examples == 'false'
+      - name: Download image artifacts
+        if: steps.images.outputs.build-examples == 'false' && github.event_name == 'pull_request'
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/images
+          pattern: image-*
+
+      - name: Load example images from artifacts (PR)
+        if: steps.images.outputs.build-examples == 'false' && github.event_name == 'pull_request'
+        run: |
+          for tarball in /tmp/images/image-*/*.tar; do
+            echo "Loading $tarball..."
+            kind load image-archive "$tarball" --name angzarr-test
+          done
+
+      - name: Pull and load provided example images (push)
+        if: steps.images.outputs.build-examples == 'false' && github.event_name != 'pull_request'
         run: |
           IMAGES='${{ steps.images.outputs.examples }}'
           echo "Pulling provided example images..."
