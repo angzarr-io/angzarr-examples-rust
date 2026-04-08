@@ -4,6 +4,24 @@
 # Uses angzarr chart defaults for storage (postgres), messaging (rabbitmq), and gateway.
 # Only application definitions below.
 
+# Storage configuration
+# Service names match Helm release names from deploy-infra
+storage:
+  type: postgres
+  postgres:
+    host: "angzarr-db"
+    port: 5432
+    uri: "postgres://angzarr:angzarr@angzarr-db:5432/angzarr"
+
+# Messaging configuration
+messaging:
+  type: amqp
+  amqp:
+    enabled: true
+    host: "angzarr-mq"
+    port: 5672
+    url: "amqp://angzarr:angzarr@angzarr-mq:5672/%2F"
+
 # Infrastructure services
 infrastructure:
   gateway:
