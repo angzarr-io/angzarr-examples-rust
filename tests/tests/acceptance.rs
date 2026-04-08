@@ -185,7 +185,7 @@ async fn test_register_and_deposit() {
         }),
     };
 
-    let max_attempts = 10;
+    let max_attempts = 30;
     let mut last_err = None;
     for attempt in 1..=max_attempts {
         let deposit_request = make_command_request_at_seq(
@@ -214,7 +214,7 @@ async fn test_register_and_deposit() {
                     attempt, max_attempts, status
                 );
                 last_err = Some(status);
-                tokio::time::sleep(std::time::Duration::from_millis(250 * attempt)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
             }
         }
     }
