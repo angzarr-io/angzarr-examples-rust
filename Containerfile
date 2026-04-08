@@ -43,6 +43,7 @@ RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-prot
 # Copy what's needed for proto generation
 COPY Cargo.toml Cargo.lock ./
 COPY proto/ ./proto/
+COPY angzarr-client-rust/ ./angzarr-client-rust/
 
 # Create minimal stubs
 RUN mkdir -p player/agg/src player/upc/src \
@@ -125,6 +126,7 @@ COPY --from=proto-gen /proto-out/ /proto-cache/
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
 COPY proto/ ./proto/
+COPY angzarr-client-rust/ ./angzarr-client-rust/
 COPY player/agg/Cargo.toml ./player/agg/
 COPY player/upc/Cargo.toml ./player/upc/
 COPY table/agg/Cargo.toml ./table/agg/
