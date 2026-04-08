@@ -10,8 +10,8 @@
 use angzarr_client::proto::Projection;
 use angzarr_client::{projector, run_projector_server};
 use examples_proto::{
-    ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted,
-    PlayerJoined, PlayerRegistered, PotAwarded, TableCreated,
+    ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted, PlayerJoined,
+    PlayerRegistered, PotAwarded, TableCreated,
 };
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -62,7 +62,10 @@ impl OutputProjector {
     fn project_deposited(&self, event: FundsDeposited) -> Projection {
         let amount = event.amount.as_ref().map(|m| m.amount).unwrap_or(0);
         let balance = event.new_balance.as_ref().map(|m| m.amount).unwrap_or(0);
-        write_log(&format!("PLAYER deposited {}, balance: {}", amount, balance));
+        write_log(&format!(
+            "PLAYER deposited {}, balance: {}",
+            amount, balance
+        ));
         Projection::default()
     }
 

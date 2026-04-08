@@ -107,7 +107,7 @@ pub fn event_book(root: &[u8], domain: &str, events: &[Any]) -> EventBook {
                 }),
                 payload: Some(event_page::Payload::Event(e.clone())),
                 created_at: None,
-                committed: true,
+                no_commit: false,
                 cascade_id: None,
             })
             .collect(),
@@ -247,11 +247,7 @@ pub fn format_card(card: &Card) -> String {
 
 /// Format multiple cards to a human-readable string.
 pub fn format_cards(cards: &[Card]) -> String {
-    cards
-        .iter()
-        .map(format_card)
-        .collect::<Vec<_>>()
-        .join(" ")
+    cards.iter().map(format_card).collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

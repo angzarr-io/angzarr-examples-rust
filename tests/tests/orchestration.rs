@@ -6,7 +6,9 @@ use angzarr_client::proto::{
     command_page, event_page, page_header, Cover, EventBook, EventPage, PageHeader,
     Uuid as ProtoUuid,
 };
-use angzarr_client::{pack_event, type_name_from_url, Destinations, ProcessManagerDomainHandler, UnpackAny};
+use angzarr_client::{
+    pack_event, type_name_from_url, Destinations, ProcessManagerDomainHandler, UnpackAny,
+};
 use cucumber::{given, then, when, World, WriterExt};
 use examples_proto::{
     BuyInFailed, BuyInRequested, Currency, PlayerJoined, PlayerSeated, RebuyChipsAdded,
@@ -50,7 +52,7 @@ fn make_event_book(domain: &str, root: &[u8], events: &[Any]) -> EventBook {
                 }),
                 payload: Some(event_page::Payload::Event(e.clone())),
                 created_at: Some(angzarr_client::now()),
-                committed: true,
+                no_commit: false,
                 cascade_id: None,
             })
             .collect(),
@@ -677,9 +679,8 @@ fn when_buy_in_pm_handles(world: &mut OrchestrationWorld) {
 
     let trigger = world.trigger_event_book();
     let event = world.trigger_event.as_ref().expect("No trigger event");
-    let destinations = Destinations::from_sequences(
-        [("table".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("table".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, event, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -703,9 +704,8 @@ fn when_buy_in_pm_handles_seated(world: &mut OrchestrationWorld) {
 
     world.trigger_domain = "table".to_string();
     let trigger = make_event_book("table", &world.table_root, &[event_any.clone()]);
-    let destinations = Destinations::from_sequences(
-        [("player".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("player".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -729,9 +729,8 @@ fn when_buy_in_pm_handles_rejected(world: &mut OrchestrationWorld) {
 
     world.trigger_domain = "table".to_string();
     let trigger = make_event_book("table", &world.table_root, &[event_any.clone()]);
-    let destinations = Destinations::from_sequences(
-        [("player".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("player".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -746,9 +745,8 @@ fn when_registration_pm_handles(world: &mut OrchestrationWorld) {
 
     let trigger = world.trigger_event_book();
     let event = world.trigger_event.as_ref().expect("No trigger event");
-    let destinations = Destinations::from_sequences(
-        [("tournament".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("tournament".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, event, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -773,9 +771,8 @@ fn when_registration_pm_handles_enrolled(world: &mut OrchestrationWorld) {
 
     world.trigger_domain = "tournament".to_string();
     let trigger = make_event_book("tournament", &world.tournament_root, &[event_any.clone()]);
-    let destinations = Destinations::from_sequences(
-        [("player".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("player".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -798,9 +795,8 @@ fn when_registration_pm_handles_rejected(world: &mut OrchestrationWorld) {
 
     world.trigger_domain = "tournament".to_string();
     let trigger = make_event_book("tournament", &world.tournament_root, &[event_any.clone()]);
-    let destinations = Destinations::from_sequences(
-        [("player".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("player".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -816,7 +812,12 @@ fn when_rebuy_pm_handles(world: &mut OrchestrationWorld) {
     let trigger = world.trigger_event_book();
     let event = world.trigger_event.as_ref().expect("No trigger event");
     let destinations = Destinations::from_sequences(
-        [("tournament".to_string(), 0u32), ("table".to_string(), 0u32)].into_iter().collect()
+        [
+            ("tournament".to_string(), 0u32),
+            ("table".to_string(), 0u32),
+        ]
+        .into_iter()
+        .collect(),
     );
 
     match handler.handle(&trigger, &state, event, &destinations) {
@@ -843,7 +844,9 @@ fn when_rebuy_pm_handles_processed(world: &mut OrchestrationWorld) {
     world.trigger_domain = "tournament".to_string();
     let trigger = make_event_book("tournament", &world.tournament_root, &[event_any.clone()]);
     let destinations = Destinations::from_sequences(
-        [("table".to_string(), 0u32), ("player".to_string(), 0u32)].into_iter().collect()
+        [("table".to_string(), 0u32), ("player".to_string(), 0u32)]
+            .into_iter()
+            .collect(),
     );
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
@@ -869,9 +872,8 @@ fn when_rebuy_pm_handles_chips_added(world: &mut OrchestrationWorld) {
 
     world.trigger_domain = "table".to_string();
     let trigger = make_event_book("table", &world.table_root, &[event_any.clone()]);
-    let destinations = Destinations::from_sequences(
-        [("player".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("player".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
         Ok(response) => world.pm_result = Some(response),
@@ -894,9 +896,8 @@ fn when_rebuy_pm_handles_denied(world: &mut OrchestrationWorld) {
 
     world.trigger_domain = "tournament".to_string();
     let trigger = make_event_book("tournament", &world.tournament_root, &[event_any.clone()]);
-    let destinations = Destinations::from_sequences(
-        [("player".to_string(), 0u32)].into_iter().collect()
-    );
+    let destinations =
+        Destinations::from_sequences([("player".to_string(), 0u32)].into_iter().collect());
 
     match handler.handle(&trigger, &state, &event_any, &destinations) {
         Ok(response) => world.pm_result = Some(response),

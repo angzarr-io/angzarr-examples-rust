@@ -14,7 +14,7 @@ use angzarr_client::proto::{
     command_page, page_header, CommandBook, CommandPage, CommandRequest, CommandResponse, Cover,
     PageHeader, SyncMode, Uuid as ProtoUuid,
 };
-use examples_proto::{Currency, DepositFunds, RegisterPlayer, PlayerType};
+use examples_proto::{Currency, DepositFunds, PlayerType, RegisterPlayer};
 use prost::Message;
 use prost_types::Any;
 use std::env;
@@ -43,7 +43,12 @@ fn make_command_request(domain: &str, root: ProtoUuid, command: Any) -> CommandR
     make_command_request_at_seq(domain, root, command, 0)
 }
 
-fn make_command_request_at_seq(domain: &str, root: ProtoUuid, command: Any, sequence: u32) -> CommandRequest {
+fn make_command_request_at_seq(
+    domain: &str,
+    root: ProtoUuid,
+    command: Any,
+    sequence: u32,
+) -> CommandRequest {
     CommandRequest {
         command: Some(CommandBook {
             cover: Some(Cover {
@@ -66,7 +71,8 @@ fn make_command_request_at_seq(domain: &str, root: ProtoUuid, command: Any, sequ
     }
 }
 
-async fn get_player_client() -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
+async fn get_player_client(
+) -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
     let url = player_url();
     let channel = Channel::from_shared(url.clone())
         .expect("Invalid player URL")
@@ -129,7 +135,10 @@ async fn test_register_player() {
             let events = resp.events.unwrap();
             assert!(events.cover.is_some(), "Event book should have a cover");
             assert!(!events.pages.is_empty(), "Should have at least one event");
-            println!("Successfully registered player, got {} event(s)", events.pages.len());
+            println!(
+                "Successfully registered player, got {} event(s)",
+                events.pages.len()
+            );
         }
         Err(status) => {
             panic!("RegisterPlayer failed: {:?}", status);
@@ -158,7 +167,11 @@ async fn test_register_and_deposit() {
     );
 
     let register_response = send_player_command(register_request).await;
-    assert!(register_response.is_ok(), "Registration should succeed: {:?}", register_response.err());
+    assert!(
+        register_response.is_ok(),
+        "Registration should succeed: {:?}",
+        register_response.err()
+    );
     println!("Player registered successfully");
 
     // Now deposit funds (sequence 1 since registration was sequence 0)
@@ -173,7 +186,7 @@ async fn test_register_and_deposit() {
         "player",
         player_id.clone(),
         pack_command(&deposit_cmd, "examples.DepositFunds"),
-        1,  // Sequence 1 after registration
+        1, // Sequence 1 after registration
     );
 
     let deposit_response = send_player_command(deposit_request).await;
@@ -184,7 +197,10 @@ async fn test_register_and_deposit() {
             assert!(resp.events.is_some(), "Response should contain events");
             let events = resp.events.unwrap();
             assert!(!events.pages.is_empty(), "Should have deposited event");
-            println!("Successfully deposited funds, got {} event(s)", events.pages.len());
+            println!(
+                "Successfully deposited funds, got {} event(s)",
+                events.pages.len()
+            );
         }
         Err(status) => {
             panic!("DepositFunds failed: {:?}", status);
@@ -230,7 +246,10 @@ async fn test_duplicate_registration_fails() {
             panic!("Duplicate registration should have failed");
         }
         Err(status) => {
-            println!("Duplicate registration correctly rejected: {:?}", status.code());
+            println!(
+                "Duplicate registration correctly rejected: {:?}",
+                status.code()
+            );
             assert!(
                 status.code() == tonic::Code::AlreadyExists
                     || status.code() == tonic::Code::FailedPrecondition,

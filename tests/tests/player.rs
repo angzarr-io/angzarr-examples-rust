@@ -91,7 +91,7 @@ impl PlayerWorld {
             }),
             payload: Some(event_page::Payload::Event(event_any)),
             created_at: Some(angzarr_client::now()),
-            committed: true,
+            no_commit: false,
             cascade_id: None,
         });
         self.next_sequence += 1;

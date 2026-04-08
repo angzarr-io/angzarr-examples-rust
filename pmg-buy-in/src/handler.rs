@@ -12,8 +12,8 @@ use angzarr_client::proto::{
     PageHeader, Uuid as ProtoUuid,
 };
 use angzarr_client::{
-    pack_event, CommandRejectedError, CommandResult, Destinations,
-    ProcessManagerDomainHandler, ProcessManagerResponse, UnpackAny,
+    pack_event, CommandRejectedError, CommandResult, Destinations, ProcessManagerDomainHandler,
+    ProcessManagerResponse, UnpackAny,
 };
 use examples_proto::{
     BuyInCompleted, BuyInFailed, BuyInInitiated, BuyInPhase, BuyInRequested, ConfirmBuyIn,
@@ -136,9 +136,9 @@ impl BuyInPmHandler {
             .ok_or_else(|| CommandRejectedError::new("Missing player root in trigger"))?;
 
         // Get table sequence from destinations (no state rebuilding!)
-        let table_next_seq = destinations
-            .sequence_for("table")
-            .ok_or_else(|| CommandRejectedError::new("Missing table sequence - check output_domains config"))?;
+        let table_next_seq = destinations.sequence_for("table").ok_or_else(|| {
+            CommandRejectedError::new("Missing table sequence - check output_domains config")
+        })?;
 
         // Send SeatPlayer command to Table - let aggregate validate
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
@@ -197,9 +197,9 @@ impl BuyInPmHandler {
         })?;
 
         // Get player sequence from destinations (no state rebuilding!)
-        let player_next_seq = destinations
-            .sequence_for("player")
-            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
+        let player_next_seq = destinations.sequence_for("player").ok_or_else(|| {
+            CommandRejectedError::new("Missing player sequence - check output_domains config")
+        })?;
 
         // Emit ConfirmBuyIn to Player
         let confirm = ConfirmBuyIn {
@@ -253,9 +253,9 @@ impl BuyInPmHandler {
         })?;
 
         // Get player sequence from destinations (no state rebuilding!)
-        let player_next_seq = destinations
-            .sequence_for("player")
-            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
+        let player_next_seq = destinations.sequence_for("player").ok_or_else(|| {
+            CommandRejectedError::new("Missing player sequence - check output_domains config")
+        })?;
 
         // Emit ReleaseBuyIn to Player
         let release = ReleaseBuyIn {
@@ -338,7 +338,7 @@ fn make_pm_event_book(event: Any) -> EventBook {
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
-            committed: true,
+            no_commit: false,
             cascade_id: None,
             payload: Some(Payload::Event(event)),
         }],

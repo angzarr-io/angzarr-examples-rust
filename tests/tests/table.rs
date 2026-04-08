@@ -60,7 +60,7 @@ impl TableWorld {
                     }),
                     payload: Some(event_page::Payload::Event(e.clone())),
                     created_at: None,
-                    committed: true,
+                    no_commit: false,
                     cascade_id: None,
                 })
                 .collect(),
