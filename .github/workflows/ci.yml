@@ -47,11 +47,6 @@ jobs:
         with:
           setup_only: true
 
-      - name: Export protos from Buf registry
-        run: |
-          buf export buf.build/angzarr/examples -o examples-proto
-          buf export buf.build/angzarr/angzarr -o angzarr-proto
-
       - name: Update client dependency (on dispatch)
         if: github.event_name == 'repository_dispatch'
         run: cargo update angzarr-client
