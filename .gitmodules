@@ -1,3 +1,6 @@
-[submodule "tests/features"]
-	path = tests/features
-	url = https://github.com/angzarr-io/examples-features.git
+[submodule "angzarr-client-rust"]
+	path = angzarr-client-rust
+	url = https://github.com/angzarr-io/angzarr-client-rust.git
+[submodule "angzarr-project"]
+	path = angzarr-project
+	url = https://github.com/angzarr-io/angzarr-project.git
