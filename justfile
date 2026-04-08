@@ -293,22 +293,33 @@ deploy-all: deploy-infra
 test-e2e:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Wait for gateway to be ready
-    echo "Waiting for gateway pod..."
-    kubectl wait --for=condition=ready pod -l angzarr.io/service=grpc-gateway -n angzarr-test --timeout=180s || {
-        echo "Gateway pod not ready, checking status..."
+    # Wait for player aggregate to be ready
+    echo "Waiting for player aggregate pod..."
+    kubectl wait --for=condition=ready pod -l angzarr.io/domain=player -n angzarr-test --timeout=180s || {
+        echo "Player aggregate pod not ready, checking status..."
         kubectl get pods -n angzarr-test
         exit 1
     }
-    # Port-forward gateway for tests (service name: {release}-angzarr-grpc-gateway)
-    kubectl port-forward -n angzarr-test svc/poker-angzarr-grpc-gateway 8080:8080 &
+    # Port-forward player aggregate coordinator for tests
+    # Service name follows chart convention: {domain}-aggregate (port 1310)
+    kubectl port-forward -n angzarr-test svc/player-aggregate 1310:1310 &
     PF_PID=$!
     trap "kill $PF_PID 2>/dev/null || true" EXIT
-    sleep 3
+    # Wait for port-forward to establish and verify connectivity
+    for i in $(seq 1 10); do
+        if curl -sf -o /dev/null http://localhost:1310 2>/dev/null || nc -z localhost 1310 2>/dev/null; then
+            echo "Port-forward to player-aggregate:1310 established"
+            break
+        fi
+        if [ $i -eq 10 ]; then
+            echo "WARNING: Port-forward may not be ready, proceeding anyway..."
+        fi
+        sleep 1
+    done
     # Run acceptance tests
     # Note: Unset ANGZARR_PROTO_ROOT so angzarr-client uses pre-generated protos
     # EXAMPLES_PROTO_ROOT is still needed for examples-proto crate
-    export GATEWAY_URL="http://localhost:8080"
+    export PLAYER_URL="http://localhost:1310"
     unset ANGZARR_PROTO_ROOT
     cargo test --test acceptance --features acceptance-test || exit_code=$?
     kill $PF_PID 2>/dev/null || true
