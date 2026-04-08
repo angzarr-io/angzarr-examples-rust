@@ -273,11 +273,18 @@ deploy-apps-ci example_tag="latest" coordinator_version="latest":
       --set images.saga.tag="${coord_ver}" \
       --set images.projector.tag="${coord_ver}" \
       --set images.processManager.tag="${coord_ver}" \
+      --set images.stream.tag="${coord_ver}" \
+      --set images.gateway.tag="${coord_ver}" \
+      --set images.log.tag="${coord_ver}" \
       --set "applications.business[0].image.tag=${example_tag}" \
       --set "applications.business[1].image.tag=${example_tag}" \
       --set "applications.business[2].image.tag=${example_tag}" \
       --set "applications.sagas[0].image.tag=${example_tag}" \
       --set "applications.sagas[1].image.tag=${example_tag}" \
+      --set "applications.processManagers[0].image.tag=${example_tag}" \
+      --set "applications.processManagers[1].image.tag=${example_tag}" \
+      --set "applications.processManagers[2].image.tag=${example_tag}" \
+      --set "applications.processManagers[3].image.tag=${example_tag}" \
       --set "applications.projectors[0].image.tag=${example_tag}" \
       --namespace angzarr-test \
       --wait --timeout 5m

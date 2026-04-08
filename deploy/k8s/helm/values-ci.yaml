@@ -29,8 +29,15 @@ images:
     pullPolicy: IfNotPresent
   processManager:
     pullPolicy: IfNotPresent
+  stream:
+    pullPolicy: IfNotPresent
+  gateway:
+    pullPolicy: IfNotPresent
+  log:
+    pullPolicy: IfNotPresent
 
 # Override applications with pullPolicy for CI (images loaded into Kind)
+# Note: agg-tournament excluded — not built in CI (no Containerfile target)
 applications:
   business:
     - name: agg-player
@@ -78,6 +85,52 @@ applications:
       topics:
         - "hand.*"
 
+  processManagers:
+    - name: pmg-hand-flow
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-hand-flow
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "pmg-hand-flow"
+      port: 50391
+      topics:
+        - "table.*"
+        - "hand.*"
+
+    - name: pmg-buy-in
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-buy-in
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "pmg-buy-in"
+      port: 50392
+      topics:
+        - "player.*"
+        - "table.*"
+
+    - name: pmg-registration
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-registration
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "pmg-registration"
+      port: 50393
+      topics:
+        - "player.*"
+        - "tournament.*"
+
+    - name: pmg-rebuy
+      image:
+        repository: ghcr.io/angzarr-io/examples-rust-pmg-rebuy
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      domain: "pmg-rebuy"
+      port: 50394
+      topics:
+        - "player.*"
+        - "tournament.*"
+        - "table.*"
+
   projectors:
     - name: prj-output
       image:
@@ -90,3 +143,4 @@ applications:
         - "player.*"
         - "table.*"
         - "hand.*"
+        - "tournament.*"

@@ -53,13 +53,6 @@ applications:
       domain: "hand"
       port: 50003
 
-    - name: agg-tournament
-      image:
-        repository: ghcr.io/angzarr-io/examples-rust-agg-tournament
-        tag: "latest"
-      domain: "tournament"
-      port: 50004
-
   sagas:
     - name: saga-table-hand
       image:
