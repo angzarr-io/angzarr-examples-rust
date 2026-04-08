@@ -11,8 +11,13 @@ default:
 
 # Export proto definitions from angzarr-project submodule
 proto-gen:
-    buf export angzarr-project/proto -o angzarr-proto
-    cp -r angzarr-proto examples-proto
+    buf export angzarr-project/proto -o _proto_export
+    rm -rf angzarr-proto examples-proto
+    cp -r _proto_export angzarr-proto
+    mkdir -p examples-proto/examples
+    cp _proto_export/examples/*.proto examples-proto/examples/
+    rm -f examples-proto/examples/ai_sidecar.proto
+    rm -rf _proto_export
 
 # Build all workspace crates
 build: proto-gen
