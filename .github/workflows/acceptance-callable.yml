@@ -62,6 +62,7 @@ jobs:
         with:
           repository: angzarr-io/angzarr-examples-rust
           ref: ${{ steps.ref.outputs.ref }}
+          submodules: true
 
       - name: Install tools
         run: |
