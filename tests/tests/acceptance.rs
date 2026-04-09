@@ -505,7 +505,7 @@ async fn test_hand_lifecycle() {
     // --- Create table ---
     let table_id = new_uuid();
     let create_cmd = CreateTable {
-        table_name: format!("lifecycle-{}", hex::encode(&table_id.value)[..8]),
+        table_name: format!("lifecycle-{}", &hex::encode(&table_id.value)[..8]),
         game_variant: GameVariant::TexasHoldem as i32,
         small_blind: 10,
         big_blind: 20,
