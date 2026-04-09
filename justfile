@@ -300,37 +300,43 @@ deploy-all: deploy-infra
 test-e2e:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Wait for player aggregate to be ready
-    echo "Waiting for player aggregate pod..."
-    kubectl wait --for=condition=ready pod -l angzarr.io/domain=player -n angzarr-test --timeout=180s || {
-        echo "Player aggregate pod not ready, checking status..."
-        kubectl get pods -n angzarr-test
-        exit 1
-    }
-    # Port-forward player aggregate coordinator for tests
-    # Service name follows chart convention: {domain}-aggregate (port 1310)
+    # Wait for aggregate pods to be ready
+    echo "Waiting for aggregate pods..."
+    for domain in player table hand; do
+        kubectl wait --for=condition=ready pod -l angzarr.io/domain=$domain \
+            -n angzarr-test --timeout=180s || {
+            echo "$domain aggregate pod not ready"
+            kubectl get pods -n angzarr-test
+            exit 1
+        }
+    done
+    # Port-forward all aggregate coordinators
     kubectl port-forward -n angzarr-test svc/player-aggregate 1310:1310 &
-    PF_PID=$!
-    trap "kill $PF_PID 2>/dev/null || true" EXIT
-    # Wait for port-forward to establish and verify connectivity
-    for i in $(seq 1 10); do
-        if curl -sf -o /dev/null http://localhost:1310 2>/dev/null || nc -z localhost 1310 2>/dev/null; then
-            echo "Port-forward to player-aggregate:1310 established"
-            break
-        fi
-        if [ $i -eq 10 ]; then
-            echo "WARNING: Port-forward may not be ready, proceeding anyway..."
-        fi
-        sleep 1
+    PF1=$!
+    kubectl port-forward -n angzarr-test svc/table-aggregate 1311:1310 &
+    PF2=$!
+    kubectl port-forward -n angzarr-test svc/hand-aggregate 1312:1310 &
+    PF3=$!
+    trap "kill $PF1 $PF2 $PF3 2>/dev/null || true" EXIT
+    # Wait for port-forwards to establish
+    for port in 1310 1311 1312; do
+        for i in $(seq 1 10); do
+            if nc -z localhost $port 2>/dev/null; then
+                echo "Port-forward to localhost:$port established"
+                break
+            fi
+            [ $i -eq 10 ] && echo "WARNING: Port $port may not be ready"
+            sleep 1
+        done
     done
     # Run acceptance tests
-    # Note: Unset ANGZARR_PROTO_ROOT so angzarr-client uses pre-generated protos
-    # EXAMPLES_PROTO_ROOT is still needed for examples-proto crate
+    # Stream service is on NodePort 1340 (no port-forward needed)
     export PLAYER_URL="http://localhost:1310"
+    export TABLE_URL="http://localhost:1311"
+    export HAND_URL="http://localhost:1312"
+    export STREAM_URL="http://localhost:1340"
     unset ANGZARR_PROTO_ROOT
-    cargo test --test acceptance --features acceptance-test || exit_code=$?
-    kill $PF_PID 2>/dev/null || true
-    exit ${exit_code:-0}
+    cargo test --test acceptance --features acceptance-test
 
 # Full local setup: build images, create cluster, deploy everything
 # This mirrors what CI does, so local and CI behave identically
