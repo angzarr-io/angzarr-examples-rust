@@ -19,10 +19,9 @@
 
 use angzarr_client::proto::{
     command_handler_coordinator_service_client::CommandHandlerCoordinatorServiceClient,
-    command_page, event_page,
-    event_stream_service_client::EventStreamServiceClient,
-    page_header, CommandBook, CommandPage, CommandRequest, CommandResponse, Cover, EventBook,
-    EventStreamFilter, PageHeader, SyncMode, Uuid as ProtoUuid,
+    command_page, event_page, event_stream_service_client::EventStreamServiceClient, page_header,
+    CommandBook, CommandPage, CommandRequest, CommandResponse, Cover, EventBook, EventStreamFilter,
+    PageHeader, SyncMode, Uuid as ProtoUuid,
 };
 use examples_proto::{
     CreateTable, Currency, DepositFunds, GameVariant, JoinTable, PlayerType, RegisterPlayer,
@@ -152,7 +151,9 @@ fn make_command_request_correlated_at_seq(
 // Domain client helpers
 // =============================================================================
 
-async fn connect(url: &str) -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
+async fn connect(
+    url: &str,
+) -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
     let channel = Channel::from_shared(url.to_string())
         .expect("Invalid URL")
         .connect()
@@ -161,15 +162,18 @@ async fn connect(url: &str) -> Result<CommandHandlerCoordinatorServiceClient<Cha
     Ok(CommandHandlerCoordinatorServiceClient::new(channel))
 }
 
-async fn get_player_client() -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
+async fn get_player_client(
+) -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
     connect(&player_url()).await
 }
 
-async fn get_table_client() -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
+async fn get_table_client() -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status>
+{
     connect(&table_url()).await
 }
 
-async fn get_hand_client() -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status> {
+async fn get_hand_client() -> Result<CommandHandlerCoordinatorServiceClient<Channel>, tonic::Status>
+{
     connect(&hand_url()).await
 }
 
@@ -517,7 +521,10 @@ async fn test_hand_lifecycle() {
     ))
     .await
     .expect("CreateTable should succeed");
-    assert!(create_resp.events.is_some(), "CreateTable should produce events");
+    assert!(
+        create_resp.events.is_some(),
+        "CreateTable should produce events"
+    );
     println!("Table created");
 
     // --- Join both players ---
@@ -589,9 +596,7 @@ async fn test_hand_lifecycle() {
     println!("StartHand succeeded, waiting for saga events on stream...");
 
     // Wait for the stream to receive CardsDealt (proves saga completed)
-    let stream_events = stream_handle
-        .await
-        .expect("Stream task should not panic");
+    let stream_events = stream_handle.await.expect("Stream task should not panic");
 
     // Verify we got the expected events
     assert!(
