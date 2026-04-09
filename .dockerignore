@@ -1,0 +1,14 @@
+# Exclude local cargo config (patches crates.io with local paths)
+.cargo/
+
+# Build artifacts
+target/
+
+# Git
+.git/
+
+# IDE/OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
