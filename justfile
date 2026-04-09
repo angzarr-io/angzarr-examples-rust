@@ -310,16 +310,26 @@ test-e2e:
             exit 1
         }
     done
-    # Port-forward all aggregate coordinators
+    # Wait for stream service
+    echo "Waiting for stream pod..."
+    kubectl wait --for=condition=ready pod -l angzarr.io/service=stream \
+        -n angzarr-test --timeout=180s || {
+        echo "Stream pod not ready"
+        kubectl get pods -n angzarr-test
+        exit 1
+    }
+    # Port-forward all aggregate coordinators + stream service
     kubectl port-forward -n angzarr-test svc/player-aggregate 1310:1310 &
     PF1=$!
     kubectl port-forward -n angzarr-test svc/table-aggregate 1311:1310 &
     PF2=$!
     kubectl port-forward -n angzarr-test svc/hand-aggregate 1312:1310 &
     PF3=$!
-    trap "kill $PF1 $PF2 $PF3 2>/dev/null || true" EXIT
+    kubectl port-forward -n angzarr-test svc/poker-angzarr-stream 1340:1310 &
+    PF4=$!
+    trap "kill $PF1 $PF2 $PF3 $PF4 2>/dev/null || true" EXIT
     # Wait for port-forwards to establish
-    for port in 1310 1311 1312; do
+    for port in 1310 1311 1312 1340; do
         for i in $(seq 1 10); do
             if nc -z localhost $port 2>/dev/null; then
                 echo "Port-forward to localhost:$port established"
@@ -330,7 +340,6 @@ test-e2e:
         done
     done
     # Run acceptance tests
-    # Stream service is on NodePort 1340 (no port-forward needed)
     export PLAYER_URL="http://localhost:1310"
     export TABLE_URL="http://localhost:1311"
     export HAND_URL="http://localhost:1312"
