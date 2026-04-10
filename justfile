@@ -317,11 +317,11 @@ test-e2e:
     PF2=$!
     kubectl port-forward -n angzarr-test svc/hand-aggregate 1312:1310 &
     PF3=$!
-    kubectl port-forward -n angzarr-test svc/poker-angzarr-stream 1340:1310 &
+    kubectl port-forward -n angzarr-test svc/poker-angzarr-stream 1340:1310 &>/dev/null &
     PF4=$!
     trap "kill $PF1 $PF2 $PF3 $PF4 2>/dev/null || true" EXIT
-    # Wait for port-forwards to establish
-    for port in 1310 1311 1312 1340; do
+    # Wait for port-forwards to establish (stream is optional)
+    for port in 1310 1311 1312; do
         for i in $(seq 1 10); do
             if nc -z localhost $port 2>/dev/null; then
                 echo "Port-forward to localhost:$port established"
