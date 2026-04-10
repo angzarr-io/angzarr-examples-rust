@@ -36,7 +36,7 @@ pub fn uuid_for(seed: &str) -> Vec<u8> {
 ///
 /// let table_root = uuid_for("test-table");
 /// let hand_root = generate_hand_root(&table_root, 1);
-/// assert_eq!(hand_root.len(), 32); // SHA-256 output
+/// assert_eq!(hand_root.len(), 16); // UUID v5 output
 /// ```
 pub fn generate_hand_root(table_root: &[u8], hand_number: i64) -> Vec<u8> {
     let mut data = table_root.to_vec();
