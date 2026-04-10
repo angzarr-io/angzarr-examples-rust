@@ -17,7 +17,9 @@ fn guard(state: &PlayerState) -> CommandResult<()> {
 fn validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(CommandRejectedError::invalid_argument("amount must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "amount must be positive",
+        ));
     }
     if amount > state.available_balance() {
         return Err(CommandRejectedError::new("insufficient available balance"));

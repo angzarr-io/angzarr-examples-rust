@@ -48,15 +48,18 @@ impl PMWorld {
 
     fn init_default_players(process: &mut HandProcess) {
         for i in 0..2 {
-            process.players.insert(i, PMPlayer {
-                position: i,
-                stack: 500,
-                player_root: format!("player-{}", i + 1),
-                bet_this_round: 0,
-                has_acted: false,
-                has_folded: false,
-                is_all_in: false,
-            });
+            process.players.insert(
+                i,
+                PMPlayer {
+                    position: i,
+                    stack: 500,
+                    player_root: format!("player-{}", i + 1),
+                    bet_this_round: 0,
+                    has_acted: false,
+                    has_folded: false,
+                    is_all_in: false,
+                },
+            );
         }
     }
 
@@ -69,11 +72,13 @@ impl PMWorld {
         } else {
             match process.betting_phase.as_str() {
                 "PREFLOP" => {
-                    self.emitted_commands.push("DealCommunityCards:3".to_string());
+                    self.emitted_commands
+                        .push("DealCommunityCards:3".to_string());
                     process.phase = "DEALING_COMMUNITY".to_string();
                 }
                 "FLOP" | "TURN" => {
-                    self.emitted_commands.push("DealCommunityCards:1".to_string());
+                    self.emitted_commands
+                        .push("DealCommunityCards:1".to_string());
                     process.phase = "DEALING_COMMUNITY".to_string();
                 }
                 "RIVER" | "DRAW" => {
@@ -130,15 +135,18 @@ fn given_process_with_players(world: &mut PMWorld, count: i32) {
         ..Default::default()
     };
     for i in 0..count {
-        process.players.insert(i, PMPlayer {
-            position: i,
-            stack: 500,
-            player_root: format!("player-{}", i + 1),
-            bet_this_round: 0,
-            has_acted: false,
-            has_folded: false,
-            is_all_in: false,
-        });
+        process.players.insert(
+            i,
+            PMPlayer {
+                position: i,
+                stack: 500,
+                player_root: format!("player-{}", i + 1),
+                bet_this_round: 0,
+                has_acted: false,
+                has_folded: false,
+                is_all_in: false,
+            },
+        );
     }
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -173,14 +181,30 @@ fn given_process_with_player_stack(world: &mut PMWorld, player_id: String, stack
         phase: "BETTING".to_string(),
         ..Default::default()
     };
-    process.players.insert(0, PMPlayer {
-        position: 0, stack, player_root: player_id,
-        bet_this_round: 0, has_acted: false, has_folded: false, is_all_in: false,
-    });
-    process.players.insert(1, PMPlayer {
-        position: 1, stack: 500, player_root: "player-2".to_string(),
-        bet_this_round: 0, has_acted: false, has_folded: false, is_all_in: false,
-    });
+    process.players.insert(
+        0,
+        PMPlayer {
+            position: 0,
+            stack,
+            player_root: player_id,
+            bet_this_round: 0,
+            has_acted: false,
+            has_folded: false,
+            is_all_in: false,
+        },
+    );
+    process.players.insert(
+        1,
+        PMPlayer {
+            position: 1,
+            stack: 500,
+            player_root: "player-2".to_string(),
+            bet_this_round: 0,
+            has_acted: false,
+            has_folded: false,
+            is_all_in: false,
+        },
+    );
     world.process = Some(process);
     world.emitted_commands.clear();
 }
@@ -220,12 +244,18 @@ fn given_action_at_position(world: &mut PMWorld, pos: i32, action: String) {
     }
     if action == "RAISE" {
         for (k, p) in process.players.iter_mut() {
-            if *k != pos { p.has_acted = false; }
+            if *k != pos {
+                p.has_acted = false;
+            }
         }
     } else if action == "FOLD" {
-        if let Some(p) = process.players.get_mut(&pos) { p.has_folded = true; }
+        if let Some(p) = process.players.get_mut(&pos) {
+            p.has_folded = true;
+        }
     } else if action == "ALL_IN" {
-        if let Some(p) = process.players.get_mut(&pos) { p.is_all_in = true; }
+        if let Some(p) = process.players.get_mut(&pos) {
+            p.is_all_in = true;
+        }
     }
 }
 
@@ -233,11 +263,19 @@ fn given_action_at_position(world: &mut PMWorld, pos: i32, action: String) {
 fn given_players_all_acted(world: &mut PMWorld, p1: i32, p2: i32, p3: i32) {
     let process = world.process.as_mut().unwrap();
     for pos in [p1, p2, p3] {
-        process.players.entry(pos).or_insert(PMPlayer {
-            position: pos, stack: 500,
-            player_root: format!("player-{}", pos + 1),
-            bet_this_round: 0, has_acted: false, has_folded: false, is_all_in: false,
-        }).has_acted = true;
+        process
+            .players
+            .entry(pos)
+            .or_insert(PMPlayer {
+                position: pos,
+                stack: 500,
+                player_root: format!("player-{}", pos + 1),
+                bet_this_round: 0,
+                has_acted: false,
+                has_folded: false,
+                is_all_in: false,
+            })
+            .has_acted = true;
     }
 }
 
@@ -270,11 +308,17 @@ fn given_action_event(world: &mut PMWorld, action: String) {
     let process = world.process.as_mut().unwrap();
     if action == "FOLD" {
         for p in process.players.values_mut() {
-            if !p.has_folded { p.has_folded = true; break; }
+            if !p.has_folded {
+                p.has_folded = true;
+                break;
+            }
         }
     } else if action == "ALL_IN" {
         for p in process.players.values_mut() {
-            if !p.is_all_in && !p.has_folded { p.is_all_in = true; break; }
+            if !p.is_all_in && !p.has_folded {
+                p.is_all_in = true;
+                break;
+            }
         }
     }
 }
@@ -300,7 +344,9 @@ fn given_current_bet(world: &mut PMWorld, amount: i64) {
 fn given_action_player_bet(world: &mut PMWorld, amount: i64) {
     let process = world.process.as_mut().unwrap();
     let pos = process.action_on;
-    if let Some(p) = process.players.get_mut(&pos) { p.bet_this_round = amount; }
+    if let Some(p) = process.players.get_mut(&pos) {
+        p.bet_this_round = amount;
+    }
 }
 
 #[given(expr = "betting_phase {word}")]
@@ -380,7 +426,9 @@ fn when_pm_handles(world: &mut PMWorld) {
             let mut next = (process.action_on + 1) % n;
             for _ in 0..n {
                 if let Some(p) = process.players.get(&next) {
-                    if !p.has_folded && !p.is_all_in { break; }
+                    if !p.has_folded && !p.is_all_in {
+                        break;
+                    }
                 }
                 next = (next + 1) % n;
             }
@@ -395,7 +443,9 @@ fn when_pm_handles(world: &mut PMWorld) {
             }
 
             // Check betting complete
-            let all_acted = process.players.values()
+            let all_acted = process
+                .players
+                .values()
                 .filter(|p| !p.has_folded && !p.is_all_in)
                 .all(|p| p.has_acted);
             if all_acted {
@@ -409,12 +459,16 @@ fn when_pm_handles(world: &mut PMWorld) {
                         "PREFLOP" => {
                             process.phase = "DEALING_COMMUNITY".to_string();
                             drop(process);
-                            world.emitted_commands.push("DealCommunityCards:3".to_string());
+                            world
+                                .emitted_commands
+                                .push("DealCommunityCards:3".to_string());
                         }
                         "FLOP" | "TURN" => {
                             process.phase = "DEALING_COMMUNITY".to_string();
                             drop(process);
-                            world.emitted_commands.push("DealCommunityCards:1".to_string());
+                            world
+                                .emitted_commands
+                                .push("DealCommunityCards:1".to_string());
                         }
                         "RIVER" | "DRAW" => {
                             process.phase = "SHOWDOWN".to_string();
@@ -452,7 +506,9 @@ fn when_timeout(world: &mut PMWorld) {
             }
         }
     }
-    world.emitted_commands.push("PlayerAction:CHECK".to_string());
+    world
+        .emitted_commands
+        .push("PlayerAction:CHECK".to_string());
 }
 
 #[when("the process manager handles the last draw")]
@@ -493,12 +549,18 @@ fn then_phase_is(world: &mut PMWorld, phase: String) {
 
 #[then("a PostBlind command is sent for small blind")]
 fn then_post_small(world: &mut PMWorld) {
-    assert!(world.emitted_commands.iter().any(|c| c.contains("PostBlind") && c.contains("small")));
+    assert!(world
+        .emitted_commands
+        .iter()
+        .any(|c| c.contains("PostBlind") && c.contains("small")));
 }
 
 #[then("a PostBlind command is sent for big blind")]
 fn then_post_big(world: &mut PMWorld) {
-    assert!(world.emitted_commands.iter().any(|c| c.contains("PostBlind") && c.contains("big")));
+    assert!(world
+        .emitted_commands
+        .iter()
+        .any(|c| c.contains("PostBlind") && c.contains("big")));
 }
 
 #[then("action_on is set to UTG position")]
@@ -531,29 +593,51 @@ fn then_advances(_world: &mut PMWorld) {}
 #[then(expr = "a DealCommunityCards command is sent with count {int}")]
 fn then_deal_community(world: &mut PMWorld, count: i32) {
     let expected = format!("DealCommunityCards:{}", count);
-    assert!(world.emitted_commands.iter().any(|c| *c == expected),
-        "Expected {}, got {:?}", expected, world.emitted_commands);
+    assert!(
+        world.emitted_commands.iter().any(|c| *c == expected),
+        "Expected {}, got {:?}",
+        expected,
+        world.emitted_commands
+    );
 }
 
 #[then("an AwardPot command is sent")]
 fn then_award_pot(world: &mut PMWorld) {
-    assert!(world.emitted_commands.iter().any(|c| c.contains("AwardPot")));
+    assert!(world
+        .emitted_commands
+        .iter()
+        .any(|c| c.contains("AwardPot")));
 }
 
 #[then("an AwardPot command is sent to the remaining player")]
 fn then_award_remaining(world: &mut PMWorld) {
-    assert!(world.emitted_commands.iter().any(|c| c.contains("AwardPot")));
+    assert!(world
+        .emitted_commands
+        .iter()
+        .any(|c| c.contains("AwardPot")));
 }
 
 #[then("the player is marked as is_all_in")]
 fn then_all_in(world: &mut PMWorld) {
-    assert!(world.process.as_ref().unwrap().players.values().any(|p| p.is_all_in));
+    assert!(world
+        .process
+        .as_ref()
+        .unwrap()
+        .players
+        .values()
+        .any(|p| p.is_all_in));
 }
 
 #[then("the player is not included in active players for betting")]
 fn then_excluded(world: &mut PMWorld) {
-    let active = world.process.as_ref().unwrap().players.values()
-        .filter(|p| !p.has_folded && !p.is_all_in).count();
+    let active = world
+        .process
+        .as_ref()
+        .unwrap()
+        .players
+        .values()
+        .filter(|p| !p.has_folded && !p.is_all_in)
+        .count();
     assert!(active < world.process.as_ref().unwrap().players.len());
 }
 
@@ -566,7 +650,11 @@ fn then_auto_action(world: &mut PMWorld, action: String) {
 #[then(expr = "all players have bet_this_round reset to {int}")]
 fn then_bets_reset(world: &mut PMWorld, amount: i64) {
     for p in world.process.as_ref().unwrap().players.values() {
-        assert_eq!(p.bet_this_round, amount, "Player {} bet not reset", p.position);
+        assert_eq!(
+            p.bet_this_round, amount,
+            "Player {} bet not reset",
+            p.position
+        );
     }
 }
 
@@ -596,7 +684,12 @@ fn then_pot_total(world: &mut PMWorld, amount: i64) {
 
 #[then(expr = "{string} stack is {int}")]
 fn then_player_stack(world: &mut PMWorld, player_id: String, amount: i64) {
-    let found = world.process.as_ref().unwrap().players.values()
+    let found = world
+        .process
+        .as_ref()
+        .unwrap()
+        .players
+        .values()
         .find(|p| p.player_root == player_id)
         .expect(&format!("Player {} not found", player_id));
     assert_eq!(found.stack, amount);

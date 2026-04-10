@@ -76,21 +76,30 @@ impl SagaWorld {
     }
 
     fn get_command_types(&self) -> Vec<String> {
-        self.result_commands.iter()
-            .flat_map(|cb| cb.pages.iter().filter_map(|p| {
-                if let Some(command_page::Payload::Command(cmd)) = &p.payload {
-                    Some(type_name_from_url(&cmd.type_url).to_string())
-                } else { None }
-            }))
+        self.result_commands
+            .iter()
+            .flat_map(|cb| {
+                cb.pages.iter().filter_map(|p| {
+                    if let Some(command_page::Payload::Command(cmd)) = &p.payload {
+                        Some(type_name_from_url(&cmd.type_url).to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
             .collect()
     }
 }
 
 #[given("a TableSyncSaga")]
-fn given_table_sync(world: &mut SagaWorld) { world.saga_type = "TableSyncSaga".to_string(); }
+fn given_table_sync(world: &mut SagaWorld) {
+    world.saga_type = "TableSyncSaga".to_string();
+}
 
 #[given("a HandResultsSaga")]
-fn given_hand_results(world: &mut SagaWorld) { world.saga_type = "HandResultsSaga".to_string(); }
+fn given_hand_results(world: &mut SagaWorld) {
+    world.saga_type = "HandResultsSaga".to_string();
+}
 
 // Data table steps — cucumber-rs doesn't pass tables, so we create default events
 // matching the feature file's expected values.
@@ -114,8 +123,16 @@ fn given_hand_started(world: &mut SagaWorld) {
 fn given_active_players(world: &mut SagaWorld) {
     // Default: 2 players matching the feature's data table
     world.active_players = vec![
-        SeatSnapshot { player_root: uuid_for("player-1"), position: 0, stack: 500 },
-        SeatSnapshot { player_root: uuid_for("player-2"), position: 1, stack: 500 },
+        SeatSnapshot {
+            player_root: uuid_for("player-1"),
+            position: 0,
+            stack: 500,
+        },
+        SeatSnapshot {
+            player_root: uuid_for("player-2"),
+            position: 1,
+            stack: 500,
+        },
     ];
     if let Some(ref event_any) = world.source_event {
         if let Ok(mut hs) = event_any.unpack::<HandStarted>() {
@@ -230,8 +247,16 @@ fn given_hand_started_simple(world: &mut SagaWorld) {
         game_variant: GameVariant::TexasHoldem as i32,
         dealer_position: 0,
         active_players: vec![
-            SeatSnapshot { player_root: uuid_for("player-1"), position: 0, stack: 500 },
-            SeatSnapshot { player_root: uuid_for("player-2"), position: 1, stack: 500 },
+            SeatSnapshot {
+                player_root: uuid_for("player-1"),
+                position: 0,
+                stack: 500,
+            },
+            SeatSnapshot {
+                player_root: uuid_for("player-2"),
+                position: 1,
+                stack: 500,
+            },
         ],
         started_at: Some(angzarr_client::now()),
         ..Default::default()
@@ -248,17 +273,28 @@ fn given_event_book(world: &mut SagaWorld, step: &cucumber::gherkin::Step) {
     world.event_count = table.rows.len() - 1;
     world.source_domain = "table".to_string();
     world.source_root = uuid_for("table-test");
-    world.source_event = Some(pack_event(&HandStarted {
-        hand_root: uuid_for("hand-1"),
-        hand_number: 1,
-        game_variant: GameVariant::TexasHoldem as i32,
-        active_players: vec![
-            SeatSnapshot { player_root: uuid_for("player-1"), position: 0, stack: 500 },
-            SeatSnapshot { player_root: uuid_for("player-2"), position: 1, stack: 500 },
-        ],
-        started_at: Some(angzarr_client::now()),
-        ..Default::default()
-    }, "examples.HandStarted"));
+    world.source_event = Some(pack_event(
+        &HandStarted {
+            hand_root: uuid_for("hand-1"),
+            hand_number: 1,
+            game_variant: GameVariant::TexasHoldem as i32,
+            active_players: vec![
+                SeatSnapshot {
+                    player_root: uuid_for("player-1"),
+                    position: 0,
+                    stack: 500,
+                },
+                SeatSnapshot {
+                    player_root: uuid_for("player-2"),
+                    position: 1,
+                    stack: 500,
+                },
+            ],
+            started_at: Some(angzarr_client::now()),
+            ..Default::default()
+        },
+        "examples.HandStarted",
+    ));
 }
 
 // =========================================================================
@@ -268,7 +304,11 @@ fn given_event_book(world: &mut SagaWorld, step: &cucumber::gherkin::Step) {
 #[when("the saga handles the event")]
 fn when_saga_handles(world: &mut SagaWorld) {
     world.result_commands.clear();
-    let event = world.source_event.as_ref().expect("No source event").clone();
+    let event = world
+        .source_event
+        .as_ref()
+        .expect("No source event")
+        .clone();
     let source = world.source_event_book();
     let destinations = Destinations::from_sequences(HashMap::new());
 
@@ -315,7 +355,11 @@ fn when_saga_handles(world: &mut SagaWorld) {
 fn when_router_routes(world: &mut SagaWorld) {
     world.result_commands.clear();
     world.handled_by.clear();
-    let event = world.source_event.as_ref().expect("No source event").clone();
+    let event = world
+        .source_event
+        .as_ref()
+        .expect("No source event")
+        .clone();
     let source = world.source_event_book();
     let destinations = Destinations::from_sequences(HashMap::new());
 
@@ -326,7 +370,11 @@ fn when_router_routes(world: &mut SagaWorld) {
             }
             "TableSyncSaga" => {
                 let handler = saga_table_hand::TableHandSagaHandler;
-                if handler.event_types().iter().any(|t| event.type_url.ends_with(t)) {
+                if handler
+                    .event_types()
+                    .iter()
+                    .any(|t| event.type_url.ends_with(t))
+                {
                     if let Ok(response) = handler.handle(&source, &event, &destinations) {
                         if !response.commands.is_empty() {
                             world.handled_by.push("TableSyncSaga".to_string());
@@ -337,7 +385,11 @@ fn when_router_routes(world: &mut SagaWorld) {
             }
             "HandResultsSaga" => {
                 let handler = saga_hand_player::HandPlayerSagaHandler;
-                if handler.event_types().iter().any(|t| event.type_url.ends_with(t)) {
+                if handler
+                    .event_types()
+                    .iter()
+                    .any(|t| event.type_url.ends_with(t))
+                {
                     if let Ok(response) = handler.handle(&source, &event, &destinations) {
                         if !response.commands.is_empty() {
                             world.handled_by.push("HandResultsSaga".to_string());
@@ -354,7 +406,11 @@ fn when_router_routes(world: &mut SagaWorld) {
 #[when("the router routes the events")]
 fn when_router_routes_events(world: &mut SagaWorld) {
     world.result_commands.clear();
-    let event = world.source_event.as_ref().expect("No source event").clone();
+    let event = world
+        .source_event
+        .as_ref()
+        .expect("No source event")
+        .clone();
     let source = world.source_event_book();
     let destinations = Destinations::from_sequences(HashMap::new());
 
@@ -362,7 +418,11 @@ fn when_router_routes_events(world: &mut SagaWorld) {
         for saga_name in world.saga_router_sagas.clone() {
             if saga_name == "TableSyncSaga" {
                 let handler = saga_table_hand::TableHandSagaHandler;
-                if handler.event_types().iter().any(|t| event.type_url.ends_with(t)) {
+                if handler
+                    .event_types()
+                    .iter()
+                    .any(|t| event.type_url.ends_with(t))
+                {
                     if let Ok(response) = handler.handle(&source, &event, &destinations) {
                         world.result_commands.extend(response.commands);
                     }
@@ -379,9 +439,16 @@ fn when_router_routes_events(world: &mut SagaWorld) {
 #[then("the saga emits a DealCards command to hand domain")]
 fn then_deal_cards(world: &mut SagaWorld) {
     assert!(!world.result_commands.is_empty(), "No commands emitted");
-    assert_eq!(world.result_commands[0].cover.as_ref().unwrap().domain, "hand");
+    assert_eq!(
+        world.result_commands[0].cover.as_ref().unwrap().domain,
+        "hand"
+    );
     let types = world.get_command_types();
-    assert!(types.iter().any(|t| t.ends_with("DealCards")), "Expected DealCards, got {:?}", types);
+    assert!(
+        types.iter().any(|t| t.ends_with("DealCards")),
+        "Expected DealCards, got {:?}",
+        types
+    );
 }
 
 #[then(expr = "the command has game_variant {word}")]
@@ -419,7 +486,10 @@ fn then_hand_number(world: &mut SagaWorld, num: i64) {
 #[then("the saga emits an EndHand command to table domain")]
 fn then_end_hand(world: &mut SagaWorld) {
     assert!(!world.result_commands.is_empty());
-    assert_eq!(world.result_commands[0].cover.as_ref().unwrap().domain, "table");
+    assert_eq!(
+        world.result_commands[0].cover.as_ref().unwrap().domain,
+        "table"
+    );
 }
 
 #[then(expr = "the command has {int} result")]
@@ -435,11 +505,16 @@ fn then_result_winner(world: &mut SagaWorld, player: String, amount: i64) {
     if let Some(command_page::Payload::Command(cmd)) = &world.result_commands[0].pages[0].payload {
         let eh: EndHand = cmd.unpack().expect("decode EndHand");
         let expected_root = uuid_for(&player);
-        let result = eh.results.iter()
+        let result = eh
+            .results
+            .iter()
             .find(|r| r.winner_root == expected_root)
             .unwrap_or_else(|| panic!("No result found for player {}", player));
-        assert_eq!(result.amount, amount,
-            "Expected amount {} for {}, got {}", amount, player, result.amount);
+        assert_eq!(
+            result.amount, amount,
+            "Expected amount {} for {}, got {}",
+            amount, player, result.amount
+        );
     } else {
         panic!("No command payload found");
     }
@@ -464,15 +539,20 @@ fn then_deposit_funds(world: &mut SagaWorld, count: usize) {
 #[then(expr = "the first command has amount {int} for {string}")]
 fn then_first_amount(world: &mut SagaWorld, amount: i64, player: String) {
     let expected_root = uuid_for(&player);
-    let cb = world.result_commands.iter()
+    let cb = world
+        .result_commands
+        .iter()
         .find(|cb| {
-            cb.cover.as_ref()
+            cb.cover
+                .as_ref()
                 .and_then(|c| c.root.as_ref())
                 .map(|r| r.value == expected_root)
                 .unwrap_or(false)
         })
         .unwrap_or_else(|| panic!("No command targeting player {}", player));
-    let cmd_any = cb.pages.first()
+    let cmd_any = cb
+        .pages
+        .first()
         .and_then(|p| match &p.payload {
             Some(command_page::Payload::Command(c)) => Some(c),
             _ => None,
@@ -480,7 +560,11 @@ fn then_first_amount(world: &mut SagaWorld, amount: i64, player: String) {
         .expect("No command payload");
     let df: DepositFunds = cmd_any.unpack().expect("decode DepositFunds");
     let actual = df.amount.as_ref().map(|c| c.amount).unwrap_or(0);
-    assert_eq!(actual, amount, "Expected amount {} for {}, got {}", amount, player, actual);
+    assert_eq!(
+        actual, amount,
+        "Expected amount {} for {}, got {}",
+        amount, player, actual
+    );
 }
 
 #[then(expr = "the second command has amount {int} for {string}")]
@@ -502,7 +586,9 @@ fn then_deal_count(world: &mut SagaWorld, count: usize) {
 }
 
 #[then("TableSyncSaga still emits its command")]
-fn then_still_emits(world: &mut SagaWorld) { then_deal_cards(world); }
+fn then_still_emits(world: &mut SagaWorld) {
+    then_deal_cards(world);
+}
 
 #[then("no exception is raised")]
 fn then_no_exception(_world: &mut SagaWorld) {}
@@ -510,7 +596,11 @@ fn then_no_exception(_world: &mut SagaWorld) {}
 #[tokio::main]
 async fn main() {
     SagaWorld::cucumber()
-        .with_writer(cucumber::writer::Basic::stdout().summarized().assert_normalized())
+        .with_writer(
+            cucumber::writer::Basic::stdout()
+                .summarized()
+                .assert_normalized(),
+        )
         .run("features/unit/saga.feature")
         .await;
 }

@@ -15,23 +15,37 @@ pub struct ProjectorWorld {
 }
 
 impl ProjectorWorld {
-    fn new() -> Self { Self::default() }
+    fn new() -> Self {
+        Self::default()
+    }
 
     fn resolve_name(&self, id: &str) -> String {
-        self.player_names.get(id).cloned()
+        self.player_names
+            .get(id)
+            .cloned()
             .unwrap_or_else(|| format!("Player_{}", id.replace("player-", "")))
     }
 
     fn format_card(rank: i32, suit: i32) -> String {
         let r = match rank {
-            14 => "A", 13 => "K", 12 => "Q", 11 => "J", 10 => "T",
+            14 => "A",
+            13 => "K",
+            12 => "Q",
+            11 => "J",
+            10 => "T",
             n => return format!("{}{}", n, Self::suit_char(suit)),
         };
         format!("{}{}", r, Self::suit_char(suit))
     }
 
     fn suit_char(suit: i32) -> char {
-        match suit { 0 => 'c', 1 => 'd', 2 => 'h', 3 => 's', _ => '?' }
+        match suit {
+            0 => 'c',
+            1 => 'd',
+            2 => 'h',
+            3 => 's',
+            _ => '?',
+        }
     }
 
     fn format_money(amount: i64) -> String {
@@ -39,7 +53,9 @@ impl ProjectorWorld {
             let s = amount.to_string();
             let mut result = String::new();
             for (i, c) in s.chars().rev().enumerate() {
-                if i > 0 && i % 3 == 0 { result.push(','); }
+                if i > 0 && i % 3 == 0 {
+                    result.push(',');
+                }
                 result.push(c);
             }
             result.chars().rev().collect()
@@ -71,18 +87,27 @@ fn given_player_registered(world: &mut ProjectorWorld, name: String) {
 
 #[given(expr = "a FundsDeposited event with amount {int} and new_balance {int}")]
 fn given_funds_deposited(world: &mut ProjectorWorld, amount: i64, balance: i64) {
-    world.render(format!("Deposited ${} — balance: ${}",
-        ProjectorWorld::format_money(amount), ProjectorWorld::format_money(balance)));
+    world.render(format!(
+        "Deposited ${} — balance: ${}",
+        ProjectorWorld::format_money(amount),
+        ProjectorWorld::format_money(balance)
+    ));
 }
 
 #[given(expr = "a FundsWithdrawn event with amount {int} and new_balance {int}")]
 fn given_funds_withdrawn(world: &mut ProjectorWorld, amount: i64, _balance: i64) {
-    world.render(format!("Withdrew ${}", ProjectorWorld::format_money(amount)));
+    world.render(format!(
+        "Withdrew ${}",
+        ProjectorWorld::format_money(amount)
+    ));
 }
 
 #[given(expr = "a FundsReserved event with amount {int}")]
 fn given_funds_reserved(world: &mut ProjectorWorld, amount: i64) {
-    world.render(format!("Reserved ${}", ProjectorWorld::format_money(amount)));
+    world.render(format!(
+        "Reserved ${}",
+        ProjectorWorld::format_money(amount)
+    ));
 }
 
 #[given(expr = "an OutputProjector with player name {string}")]
@@ -150,7 +175,9 @@ fn then_output_contains(world: &mut ProjectorWorld, expected: String) {
     let combined = world.output_lines.join("\n");
     assert!(
         combined.to_lowercase().contains(&expected.to_lowercase()),
-        "Expected output to contain '{}' but got '{}'", expected, combined
+        "Expected output to contain '{}' but got '{}'",
+        expected,
+        combined
     );
 }
 
@@ -163,14 +190,22 @@ fn then_output_uses(world: &mut ProjectorWorld, name: String) {
 #[then(expr = "the output uses {string} prefix")]
 fn then_output_uses_prefix(world: &mut ProjectorWorld, prefix: String) {
     let combined = world.output_lines.join("\n");
-    assert!(combined.contains(&prefix), "Expected prefix '{}' in output", prefix);
+    assert!(
+        combined.contains(&prefix),
+        "Expected prefix '{}' in output",
+        prefix
+    );
 }
 
 #[then(expr = "the output starts with {string}")]
 fn then_starts_with(world: &mut ProjectorWorld, expected: String) {
     assert!(!world.output_lines.is_empty());
-    assert!(world.output_lines[0].starts_with(&expected),
-        "Expected output to start with '{}' but got '{}'", expected, world.output_lines[0]);
+    assert!(
+        world.output_lines[0].starts_with(&expected),
+        "Expected output to start with '{}' but got '{}'",
+        expected,
+        world.output_lines[0]
+    );
 }
 
 #[then(expr = "the output does not start with {string}")]
@@ -187,15 +222,22 @@ fn then_both_rendered(world: &mut ProjectorWorld) {
 #[then(expr = "ranks {int}-{int} display as digits")]
 fn then_ranks_as_digits(world: &mut ProjectorWorld, from: i32, to: i32) {
     for rank in from..=to {
-        assert!(world.last_output.contains(&rank.to_string()),
-            "Expected rank {} in output", rank);
+        assert!(
+            world.last_output.contains(&rank.to_string()),
+            "Expected rank {} in output",
+            rank
+        );
     }
 }
 
 #[then(expr = "rank {int} displays as {string}")]
 fn then_rank_displays(world: &mut ProjectorWorld, _rank: i32, display: String) {
-    assert!(world.last_output.contains(&display),
-        "Expected '{}' in output '{}'", display, world.last_output);
+    assert!(
+        world.last_output.contains(&display),
+        "Expected '{}' in output '{}'",
+        display,
+        world.last_output
+    );
 }
 
 // =========================================================================
@@ -205,20 +247,44 @@ fn then_rank_displays(world: &mut ProjectorWorld, _rank: i32, display: String) {
 #[given("a TableCreated event with:")]
 fn given_table_created(world: &mut ProjectorWorld) {
     // Feature always uses: Main Table | TEXAS_HOLDEM | 5 | 10 | 200 | 1000
-    world.render(format!("Main Table — TEXAS_HOLDEM ${}/${} buy-in ${} - ${}",
-        5, 10, ProjectorWorld::format_money(200), ProjectorWorld::format_money(1000)));
+    world.render(format!(
+        "Main Table — TEXAS_HOLDEM ${}/${} buy-in ${} - ${}",
+        5,
+        10,
+        ProjectorWorld::format_money(200),
+        ProjectorWorld::format_money(1000)
+    ));
 }
 
 #[given(expr = "a PlayerJoined event at seat {int} with buy_in {int}")]
 fn given_player_joined(world: &mut ProjectorWorld, seat: i32, buy_in: i64) {
-    let name = world.player_names.values().next().cloned().unwrap_or("Unknown".to_string());
-    world.render(format!("{} joined at seat {} with ${}", name, seat, ProjectorWorld::format_money(buy_in)));
+    let name = world
+        .player_names
+        .values()
+        .next()
+        .cloned()
+        .unwrap_or("Unknown".to_string());
+    world.render(format!(
+        "{} joined at seat {} with ${}",
+        name,
+        seat,
+        ProjectorWorld::format_money(buy_in)
+    ));
 }
 
 #[given(expr = "a PlayerLeft event with chips_cashed_out {int}")]
 fn given_player_left(world: &mut ProjectorWorld, chips: i64) {
-    let name = world.player_names.values().next().cloned().unwrap_or("Unknown".to_string());
-    world.render(format!("{} left with ${}", name, ProjectorWorld::format_money(chips)));
+    let name = world
+        .player_names
+        .values()
+        .next()
+        .cloned()
+        .unwrap_or("Unknown".to_string());
+    world.render(format!(
+        "{} left with ${}",
+        name,
+        ProjectorWorld::format_money(chips)
+    ));
 }
 
 #[given(expr = "a HandStarted event with:")]
@@ -227,12 +293,23 @@ fn given_hand_started(world: &mut ProjectorWorld, step: &cucumber::gherkin::Step
         let row = &table.rows[1];
         let hand_num = &row[0];
         let dealer = &row[1];
-        world.render(format!("=== HAND #{} ===\nDealer: Seat {}", hand_num, dealer));
+        world.render(format!(
+            "=== HAND #{} ===\nDealer: Seat {}",
+            hand_num, dealer
+        ));
     }
 }
 
 #[given(expr = "active players {string}, {string}, {string} at seats {int}, {int}, {int}")]
-fn given_active_players(world: &mut ProjectorWorld, p1: String, p2: String, p3: String, _s1: i32, _s2: i32, _s3: i32) {
+fn given_active_players(
+    world: &mut ProjectorWorld,
+    p1: String,
+    p2: String,
+    p3: String,
+    _s1: i32,
+    _s2: i32,
+    _s3: i32,
+) {
     world.player_names.insert(p1.clone(), p1.clone());
     world.player_names.insert(p2.clone(), p2.clone());
     world.player_names.insert(p3.clone(), p3.clone());
@@ -244,7 +321,11 @@ fn given_active_players(world: &mut ProjectorWorld, p1: String, p2: String, p3: 
 
 #[given(expr = "a HandEnded event with winner {string} amount {int}")]
 fn given_hand_ended(world: &mut ProjectorWorld, winner: String, amount: i64) {
-    world.render(format!("{} wins ${}", winner, ProjectorWorld::format_money(amount)));
+    world.render(format!(
+        "{} wins ${}",
+        winner,
+        ProjectorWorld::format_money(amount)
+    ));
 }
 
 #[given(expr = "a CardsDealt event with player {string} holding {word} {word}")]
@@ -256,7 +337,12 @@ fn given_cards_dealt(world: &mut ProjectorWorld, player: String, c1: String, c2:
 #[given(expr = "a BlindPosted event for {string} type {string} amount {int}")]
 fn given_blind_posted(world: &mut ProjectorWorld, player: String, blind_type: String, amount: i64) {
     world.player_names.insert(player.clone(), player.clone());
-    world.render(format!("{} posts {} ${}", player, blind_type.to_uppercase(), amount));
+    world.render(format!(
+        "{} posts {} ${}",
+        player,
+        blind_type.to_uppercase(),
+        amount
+    ));
 }
 
 #[given(expr = "an ActionTaken event for {string} action {word}")]
@@ -271,10 +357,21 @@ fn given_action_taken(world: &mut ProjectorWorld, player: String, action: String
 }
 
 #[given(expr = "an ActionTaken event for {string} action {word} amount {int} pot_total {int}")]
-fn given_action_with_amount(world: &mut ProjectorWorld, player: String, action: String, amount: i64, pot: i64) {
+fn given_action_with_amount(
+    world: &mut ProjectorWorld,
+    player: String,
+    action: String,
+    amount: i64,
+    pot: i64,
+) {
     world.player_names.insert(player.clone(), player.clone());
     let text = match action.as_str() {
-        "CALL" => format!("{} calls ${} (pot: ${})", player, amount, ProjectorWorld::format_money(pot)),
+        "CALL" => format!(
+            "{} calls ${} (pot: ${})",
+            player,
+            amount,
+            ProjectorWorld::format_money(pot)
+        ),
         "RAISE" => format!("{} raises to ${}", player, amount),
         "ALL_IN" => format!("{} all-in ${}", player, amount),
         "BET" => format!("{} bets ${}", player, amount),
@@ -284,7 +381,13 @@ fn given_action_with_amount(world: &mut ProjectorWorld, player: String, action: 
 }
 
 #[given(expr = "a CommunityCardsDealt event for {word} with cards {word} {word} {word}")]
-fn given_community_3(world: &mut ProjectorWorld, phase: String, c1: String, c2: String, c3: String) {
+fn given_community_3(
+    world: &mut ProjectorWorld,
+    phase: String,
+    c1: String,
+    c2: String,
+    c3: String,
+) {
     let p = phase.chars().next().unwrap().to_uppercase().to_string() + &phase[1..].to_lowercase();
     world.render(format!("{}: [{} {} {}]\nBoard:", p, c1, c2, c3));
 }
@@ -301,7 +404,13 @@ fn given_showdown(world: &mut ProjectorWorld) {
 }
 
 #[given(expr = "a CardsRevealed event for {string} with cards {word} {word} and ranking {word}")]
-fn given_cards_revealed(world: &mut ProjectorWorld, player: String, c1: String, c2: String, ranking: String) {
+fn given_cards_revealed(
+    world: &mut ProjectorWorld,
+    player: String,
+    c1: String,
+    c2: String,
+    ranking: String,
+) {
     world.player_names.insert(player.clone(), player.clone());
     let r = ranking.replace("_", " ");
     let r = r.chars().next().unwrap().to_uppercase().to_string() + &r[1..].to_lowercase();
@@ -317,7 +426,11 @@ fn given_cards_mucked(world: &mut ProjectorWorld, player: String) {
 #[given(expr = "a PotAwarded event with winner {string} amount {int}")]
 fn given_pot_awarded(world: &mut ProjectorWorld, winner: String, amount: i64) {
     world.player_names.insert(winner.clone(), winner.clone());
-    world.render(format!("{} wins ${}", winner, ProjectorWorld::format_money(amount)));
+    world.render(format!(
+        "{} wins ${}",
+        winner,
+        ProjectorWorld::format_money(amount)
+    ));
 }
 
 #[given(expr = "a HandComplete event with final stacks:")]
@@ -330,7 +443,9 @@ fn given_hand_complete(world: &mut ProjectorWorld, step: &cucumber::gherkin::Ste
             let folded: bool = row[2].parse().unwrap_or(false);
             world.player_names.insert(name.clone(), name.clone());
             text += &format!("  {}: ${}", name, ProjectorWorld::format_money(stack));
-            if folded { text += " (folded)"; }
+            if folded {
+                text += " (folded)";
+            }
             text += "\n";
         }
     }
@@ -340,7 +455,11 @@ fn given_hand_complete(world: &mut ProjectorWorld, step: &cucumber::gherkin::Ste
 #[given(expr = "a PlayerTimedOut event for {string} with default_action {word}")]
 fn given_timed_out(world: &mut ProjectorWorld, player: String, action: String) {
     world.player_names.insert(player.clone(), player.clone());
-    let auto_action = if action == "FOLD" { "auto folds" } else { "auto checks" };
+    let auto_action = if action == "FOLD" {
+        "auto folds"
+    } else {
+        "auto checks"
+    };
     world.render(format!("{} timed out — {}", player, auto_action));
 }
 
@@ -356,7 +475,12 @@ fn given_event_with_default_time(world: &mut ProjectorWorld) {
 
 #[given("an event book with PlayerJoined and BlindPosted events")]
 fn given_event_book(world: &mut ProjectorWorld) {
-    let name = world.player_names.values().next().cloned().unwrap_or("Test".to_string());
+    let name = world
+        .player_names
+        .values()
+        .next()
+        .cloned()
+        .unwrap_or("Test".to_string());
     world.render(format!("{} joined at seat 0 with $500", name));
     world.render(format!("{} posts SMALL $5", name));
 }
@@ -372,7 +496,11 @@ fn when_formatting_cards(world: &mut ProjectorWorld, step: &cucumber::gherkin::S
     if let Some(table) = &step.table {
         for row in &table.rows[1..] {
             let suit = match row[0].as_str() {
-                "CLUBS" => 0, "DIAMONDS" => 1, "HEARTS" => 2, "SPADES" => 3, _ => 0,
+                "CLUBS" => 0,
+                "DIAMONDS" => 1,
+                "HEARTS" => 2,
+                "SPADES" => 3,
+                _ => 0,
             };
             let rank: i32 = row[1].parse().unwrap_or(2);
             parts.push(ProjectorWorld::format_card(rank, suit));

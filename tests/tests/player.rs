@@ -382,7 +382,10 @@ fn command_fails_with_status(world: &mut PlayerWorld, status: String) {
 fn error_message_contains(world: &mut PlayerWorld, expected: String) {
     let error = world.last_error.as_ref().expect("No error found");
     assert!(
-        error.reason.to_lowercase().contains(&expected.to_lowercase()),
+        error
+            .reason
+            .to_lowercase()
+            .contains(&expected.to_lowercase()),
         "Expected error to contain '{}' but got '{}'",
         expected,
         error.reason

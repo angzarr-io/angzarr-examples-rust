@@ -30,7 +30,9 @@ fn validate(cmd: &JoinTable, state: &TableState) -> CommandResult<i32> {
         )));
     }
     if cmd.buy_in_amount > state.max_buy_in {
-        return Err(CommandRejectedError::invalid_argument("Buy-in above maximum"));
+        return Err(CommandRejectedError::invalid_argument(
+            "Buy-in above maximum",
+        ));
     }
 
     let seat_position = if cmd.preferred_seat >= 0 && cmd.preferred_seat < state.max_players {

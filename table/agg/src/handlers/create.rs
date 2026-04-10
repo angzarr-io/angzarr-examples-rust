@@ -19,7 +19,9 @@ fn validate(cmd: &CreateTable) -> CommandResult<()> {
         return Err(CommandRejectedError::new("table_name is required"));
     }
     if cmd.small_blind <= 0 {
-        return Err(CommandRejectedError::invalid_argument("small_blind must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "small_blind must be positive",
+        ));
     }
     if cmd.big_blind <= 0 || cmd.big_blind < cmd.small_blind {
         return Err(CommandRejectedError::new(
@@ -27,7 +29,9 @@ fn validate(cmd: &CreateTable) -> CommandResult<()> {
         ));
     }
     if cmd.min_buy_in <= 0 {
-        return Err(CommandRejectedError::invalid_argument("min_buy_in must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "min_buy_in must be positive",
+        ));
     }
     if cmd.max_buy_in < cmd.min_buy_in {
         return Err(CommandRejectedError::new(
