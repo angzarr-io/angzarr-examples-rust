@@ -39,10 +39,11 @@ pub fn uuid_for(seed: &str) -> Vec<u8> {
 /// assert_eq!(hand_root.len(), 32); // SHA-256 output
 /// ```
 pub fn generate_hand_root(table_root: &[u8], hand_number: i64) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(table_root);
-    hasher.update(hand_number.to_be_bytes());
-    hasher.finalize().to_vec()
+    let mut data = table_root.to_vec();
+    data.extend_from_slice(&hand_number.to_be_bytes());
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &data)
+        .as_bytes()
+        .to_vec()
 }
 
 /// Pack a protobuf command message into a prost Any.

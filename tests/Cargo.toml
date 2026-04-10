@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [features]
 default = []
-acceptance-test = ["tonic", "uuid", "tokio-stream"]
+acceptance-test = ["tonic", "tokio-stream"]
 
 [dependencies]
 examples-proto.workspace = true
@@ -35,7 +35,7 @@ sha2 = "0.10"
 regex = "1"
 tonic = { workspace = true, optional = true }
 tokio-stream = { version = "0.1", optional = true }
-uuid = { version = "1", features = ["v4"], optional = true }
+uuid = { version = "1", features = ["v4", "v5"] }
 
 [[test]]
 name = "player"
