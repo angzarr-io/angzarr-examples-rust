@@ -386,3 +386,4 @@ kind-status:
     echo ""
     echo "=== Services ==="
     kubectl get svc -n angzarr-test 2>/dev/null || echo "Namespace not found"
+# Trigger CI
