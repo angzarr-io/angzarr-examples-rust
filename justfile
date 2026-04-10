@@ -317,7 +317,7 @@ test-e2e:
     PF2=$!
     kubectl port-forward -n angzarr-test svc/hand-aggregate 1312:1310 &
     PF3=$!
-    kubectl port-forward -n angzarr-test svc/poker-angzarr-stream 1340:1310 &
+    kubectl port-forward -n angzarr-test svc/poker-angzarr-stream 1340:1340 &
     PF4=$!
     trap "kill $PF1 $PF2 $PF3 $PF4 2>/dev/null || true" EXIT
     # Wait for port-forwards to establish

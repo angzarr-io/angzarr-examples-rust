@@ -30,6 +30,8 @@ infrastructure:
     grpcTarget: "player-aggregate:1310"
   stream:
     enabled: true
+    replicas: 1
+    port: 1340
 
 # Poker domain applications
 applications:
