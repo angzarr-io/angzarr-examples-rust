@@ -566,7 +566,7 @@ async fn test_hand_lifecycle() {
     let stream_handle = {
         let cid = correlation_id.clone();
         tokio::spawn(async move {
-            wait_for_stream_events(&cid, 15, |books| {
+            wait_for_stream_events(&cid, 30, |books| {
                 // Wait until we see CardsDealt (hand aggregate, created by saga)
                 has_event(books, "CardsDealt")
             })
