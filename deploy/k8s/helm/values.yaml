@@ -28,6 +28,8 @@ infrastructure:
     enabled: true
     # Route to player aggregate coordinator for acceptance tests
     grpcTarget: "player-aggregate:1310"
+  stream:
+    enabled: true
 
 # Poker domain applications
 applications:
