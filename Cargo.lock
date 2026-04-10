@@ -2358,6 +2358,7 @@ dependencies = [
  "regex",
  "sha2",
  "tokio",
+ "tokio-stream",
  "tonic",
  "uuid",
 ]

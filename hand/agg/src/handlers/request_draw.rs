@@ -20,7 +20,7 @@ fn guard(state: &HandState) -> CommandResult<()> {
         return Err(CommandRejectedError::new("Hand already complete"));
     }
     if state.game_variant != GameVariant::FiveCardDraw {
-        return Err(CommandRejectedError::new(
+        return Err(CommandRejectedError::invalid_argument(
             "Draw not supported in this game variant",
         ));
     }

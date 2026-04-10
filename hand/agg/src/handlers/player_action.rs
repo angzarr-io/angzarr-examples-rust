@@ -54,7 +54,7 @@ fn validate<'a>(
         }
         ActionType::Check => {
             if amount_to_call > 0 {
-                return Err(CommandRejectedError::new("Cannot check, must call or fold"));
+                return Err(CommandRejectedError::invalid_argument("Cannot check, must call or fold"));
             }
             chips_put_in = 0;
             event_amount = 0;
@@ -68,10 +68,10 @@ fn validate<'a>(
         }
         ActionType::Bet => {
             if state.current_bet > 0 {
-                return Err(CommandRejectedError::new("Cannot bet, use raise"));
+                return Err(CommandRejectedError::invalid_argument("Cannot bet, use raise"));
             }
             if cmd.amount < state.min_raise {
-                return Err(CommandRejectedError::new(format!(
+                return Err(CommandRejectedError::invalid_argument(format!(
                     "Bet must be at least {}",
                     state.min_raise
                 )));
@@ -81,11 +81,11 @@ fn validate<'a>(
         }
         ActionType::Raise => {
             if state.current_bet <= 0 {
-                return Err(CommandRejectedError::new("Cannot raise, use bet"));
+                return Err(CommandRejectedError::invalid_argument("Cannot raise, use bet"));
             }
             let raise_amount = cmd.amount - state.current_bet;
             if raise_amount < state.min_raise {
-                return Err(CommandRejectedError::new("Raise below minimum"));
+                return Err(CommandRejectedError::invalid_argument("Raise below minimum"));
             }
             let to_put_in = cmd.amount - player.bet_this_round;
             chips_put_in = to_put_in.min(player.stack);

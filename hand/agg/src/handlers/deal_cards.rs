@@ -20,7 +20,7 @@ fn guard(state: &HandState) -> CommandResult<()> {
 
 fn validate(cmd: &DealCards) -> CommandResult<()> {
     if cmd.players.len() < 2 {
-        return Err(CommandRejectedError::new("Need at least 2 players"));
+        return Err(CommandRejectedError::invalid_argument("Need at least 2 players"));
     }
     Ok(())
 }

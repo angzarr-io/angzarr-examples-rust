@@ -23,7 +23,7 @@ fn validate<'a>(cmd: &PostBlind, state: &'a HandState) -> CommandResult<&'a Play
         .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
 
     if cmd.amount <= 0 {
-        return Err(CommandRejectedError::new("Amount must be positive"));
+        return Err(CommandRejectedError::invalid_argument("Amount must be positive"));
     }
 
     Ok(player)
