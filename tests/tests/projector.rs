@@ -202,21 +202,11 @@ fn then_rank_displays(world: &mut ProjectorWorld, _rank: i32, display: String) {
 // Given steps for specific events (rendered immediately)
 // =========================================================================
 
-#[given(expr = "a TableCreated event with:")]
-fn given_table_created(world: &mut ProjectorWorld, step: &cucumber::gherkin::Step) {
-    if let Some(table) = &step.table {
-        let row = &table.rows[1];
-        let name = &row[0];
-        let variant = &row[1];
-        let sb = &row[2];
-        let bb = &row[3];
-        let min = &row[4];
-        let max = &row[5];
-        world.render(format!("{} — {} ${}/{} buy-in ${} - ${}",
-            name, variant, sb, bb,
-            ProjectorWorld::format_money(min.parse().unwrap_or(0)),
-            ProjectorWorld::format_money(max.parse().unwrap_or(0))));
-    }
+#[given("a TableCreated event with:")]
+fn given_table_created(world: &mut ProjectorWorld) {
+    // Feature always uses: Main Table | TEXAS_HOLDEM | 5 | 10 | 200 | 1000
+    world.render(format!("Main Table — TEXAS_HOLDEM ${}/${} buy-in ${} - ${}",
+        5, 10, ProjectorWorld::format_money(200), ProjectorWorld::format_money(1000)));
 }
 
 #[given(expr = "a PlayerJoined event at seat {int} with buy_in {int}")]

@@ -29,6 +29,8 @@ struct HandProcess {
     current_bet: i64,
     action_on: i32,
     players: HashMap<i32, PMPlayer>,
+    small_blind_posted: bool,
+    big_blind_posted: bool,
 }
 
 #[derive(Debug, Default, World)]
@@ -101,6 +103,7 @@ fn given_hand_flow_pm(world: &mut PMWorld) {
 fn given_active_process_in_phase(world: &mut PMWorld, phase: String) {
     let mut process = HandProcess {
         phase,
+        betting_phase: "PREFLOP".to_string(),
         ..Default::default()
     };
     PMWorld::init_default_players(&mut process);
@@ -189,6 +192,7 @@ fn given_cards_dealt(_world: &mut PMWorld) {}
 fn given_small_blind_posted(world: &mut PMWorld) {
     let process = world.process.as_mut().unwrap();
     process.pot_total += process.small_blind;
+    process.small_blind_posted = true;
 }
 
 #[given("a BlindPosted event for small blind")]
@@ -199,6 +203,7 @@ fn given_blind_posted_big(world: &mut PMWorld) {
     let process = world.process.as_mut().unwrap();
     process.pot_total += process.big_blind;
     process.current_bet = process.big_blind;
+    process.big_blind_posted = true;
 }
 
 #[given(expr = "action_on is position {int}")]
@@ -228,7 +233,11 @@ fn given_action_at_position(world: &mut PMWorld, pos: i32, action: String) {
 fn given_players_all_acted(world: &mut PMWorld, p1: i32, p2: i32, p3: i32) {
     let process = world.process.as_mut().unwrap();
     for pos in [p1, p2, p3] {
-        if let Some(p) = process.players.get_mut(&pos) { p.has_acted = true; }
+        process.players.entry(pos).or_insert(PMPlayer {
+            position: pos, stack: 500,
+            player_root: format!("player-{}", pos + 1),
+            bet_this_round: 0, has_acted: false, has_folded: false, is_all_in: false,
+        }).has_acted = true;
     }
 }
 
@@ -355,8 +364,15 @@ fn when_pm_handles(world: &mut PMWorld) {
             world.emitted_commands.push("PostBlind:small".to_string());
         }
         "POSTING_BLINDS" => {
-            process.phase = "BETTING".to_string();
-            process.action_on = (process.dealer_position + 2) % process.players.len() as i32;
+            if process.small_blind_posted && !process.big_blind_posted {
+                // Small blind posted, emit big blind
+                world.emitted_commands.push("PostBlind:big".to_string());
+                process.big_blind_posted = true;
+            } else {
+                // Both blinds posted, transition to betting
+                process.phase = "BETTING".to_string();
+                process.action_on = (process.dealer_position + 2) % process.players.len() as i32;
+            }
         }
         "BETTING" => {
             // Advance action
@@ -383,7 +399,32 @@ fn when_pm_handles(world: &mut PMWorld) {
                 .filter(|p| !p.has_folded && !p.is_all_in)
                 .all(|p| p.has_acted);
             if all_acted {
-                world.end_betting_round();
+                // Inline end_betting_round to avoid borrow conflict
+                let variant = process.game_variant.clone();
+                let phase = process.betting_phase.clone();
+                if variant == "FIVE_CARD_DRAW" && phase == "PREFLOP" {
+                    process.phase = "DRAW".to_string();
+                } else {
+                    match phase.as_str() {
+                        "PREFLOP" => {
+                            process.phase = "DEALING_COMMUNITY".to_string();
+                            drop(process);
+                            world.emitted_commands.push("DealCommunityCards:3".to_string());
+                        }
+                        "FLOP" | "TURN" => {
+                            process.phase = "DEALING_COMMUNITY".to_string();
+                            drop(process);
+                            world.emitted_commands.push("DealCommunityCards:1".to_string());
+                        }
+                        "RIVER" | "DRAW" => {
+                            process.phase = "SHOWDOWN".to_string();
+                            drop(process);
+                            world.emitted_commands.push("AwardPot".to_string());
+                        }
+                        _ => {}
+                    }
+                }
+                return;
             }
         }
         "SHOWDOWN" => {
