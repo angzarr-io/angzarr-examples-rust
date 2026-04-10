@@ -310,6 +310,13 @@ test-e2e:
             exit 1
         }
     done
+    # Wait for stream pod
+    echo "Waiting for stream pod..."
+    kubectl wait --for=condition=ready pod -l angzarr.io/service=stream \
+        -n angzarr-test --timeout=120s || {
+        echo "Stream pod not ready — hand lifecycle test may fail"
+        kubectl get pods -n angzarr-test
+    }
     # Port-forward all aggregate coordinators + stream service
     kubectl port-forward -n angzarr-test svc/player-aggregate 1310:1310 &
     PF1=$!
