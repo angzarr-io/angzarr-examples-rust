@@ -4,12 +4,34 @@
 # Uses angzarr chart defaults for storage (postgres), messaging (rabbitmq), and gateway.
 # Only application definitions below.
 
+# Storage configuration
+# Service names match Helm release names from deploy-infra
+storage:
+  type: postgres
+  postgres:
+    host: "angzarr-db"
+    port: 5432
+    uri: "postgres://angzarr:angzarr@angzarr-db:5432/angzarr"
+
+# Messaging configuration
+messaging:
+  type: amqp
+  amqp:
+    enabled: true
+    host: "angzarr-mq"
+    port: 5672
+    url: "amqp://angzarr:angzarr@angzarr-mq:5672/%2F"
+
 # Infrastructure services
 infrastructure:
   gateway:
     enabled: true
     # Route to player aggregate coordinator for acceptance tests
     grpcTarget: "player-aggregate:1310"
+  stream:
+    enabled: true
+    replicas: 1
+    port: 1340
 
 # Poker domain applications
 applications:
@@ -34,13 +56,6 @@ applications:
         tag: "latest"
       domain: "hand"
       port: 50003
-
-    - name: agg-tournament
-      image:
-        repository: ghcr.io/angzarr-io/examples-rust-agg-tournament
-        tag: "latest"
-      domain: "tournament"
-      port: 50004
 
   sagas:
     - name: saga-table-hand

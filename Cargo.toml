@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["angzarr-client-rust"]
 members = [
     "proto",
     "player/agg",
@@ -23,7 +24,8 @@ members = [
 ]
 
 [workspace.dependencies]
-angzarr-client = { path = "../../client-rust/main" }
+# Imported via git submodule
+angzarr-client = { path = "angzarr-client-rust" }
 examples-proto = { path = "proto" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 prost = "0.14"

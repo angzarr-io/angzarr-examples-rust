@@ -72,7 +72,7 @@ impl HandWorld {
                     }),
                     payload: Some(event_page::Payload::Event(e.clone())),
                     created_at: None,
-                    committed: true,
+                    no_commit: false,
                     cascade_id: None,
                 })
                 .collect(),
@@ -980,9 +980,14 @@ fn then_result_is_an_event(world: &mut HandWorld, event_type: String) {
 }
 
 #[then(expr = "the command fails with status {string}")]
-fn then_command_fails(world: &mut HandWorld, _status: String) {
+fn then_command_fails(world: &mut HandWorld, status: String) {
     let result = world.result.as_ref().expect("No result");
-    assert!(result.is_err(), "Expected command to fail but it succeeded");
+    let err = result.as_ref().unwrap_err();
+    assert_eq!(
+        err.status_code, status,
+        "Expected status {}, got {}",
+        status, err.status_code
+    );
 }
 
 #[then(expr = "the error message contains {string}")]

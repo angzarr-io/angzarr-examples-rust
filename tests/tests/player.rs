@@ -31,7 +31,7 @@ pub struct PlayerWorld {
     root: Vec<u8>,
     events: Vec<EventPage>,
     next_sequence: u32,
-    last_error: Option<String>,
+    last_error: Option<angzarr_client::CommandRejectedError>,
     last_event_book: Option<EventBook>,
     last_state: Option<PlayerState>,
 }
@@ -91,7 +91,7 @@ impl PlayerWorld {
             }),
             payload: Some(event_page::Payload::Event(event_any)),
             created_at: Some(angzarr_client::now()),
-            committed: true,
+            no_commit: false,
             cascade_id: None,
         });
         self.next_sequence += 1;
@@ -185,7 +185,7 @@ fn handle_register_player_cmd(world: &mut PlayerWorld, name: String, email: Stri
             world.last_error = None;
         }
         Err(e) => {
-            world.last_error = Some(e.to_string());
+            world.last_error = Some(e);
             world.last_event_book = None;
         }
     }
@@ -211,7 +211,7 @@ fn handle_register_player_ai_cmd(world: &mut PlayerWorld, name: String, email: S
             world.last_error = None;
         }
         Err(e) => {
-            world.last_error = Some(e.to_string());
+            world.last_error = Some(e);
             world.last_event_book = None;
         }
     }
@@ -233,7 +233,7 @@ fn handle_deposit_funds_cmd(world: &mut PlayerWorld, amount: i64) {
             world.last_error = None;
         }
         Err(e) => {
-            world.last_error = Some(e.to_string());
+            world.last_error = Some(e);
             world.last_event_book = None;
         }
     }
@@ -255,7 +255,7 @@ fn handle_withdraw_funds_cmd(world: &mut PlayerWorld, amount: i64) {
             world.last_error = None;
         }
         Err(e) => {
-            world.last_error = Some(e.to_string());
+            world.last_error = Some(e);
             world.last_event_book = None;
         }
     }
@@ -278,7 +278,7 @@ fn handle_reserve_funds_cmd(world: &mut PlayerWorld, amount: i64, table_name: St
             world.last_error = None;
         }
         Err(e) => {
-            world.last_error = Some(e.to_string());
+            world.last_error = Some(e);
             world.last_event_book = None;
         }
     }
@@ -300,7 +300,7 @@ fn handle_release_funds_cmd(world: &mut PlayerWorld, table_name: String) {
             world.last_error = None;
         }
         Err(e) => {
-            world.last_error = Some(e.to_string());
+            world.last_error = Some(e);
             world.last_event_book = None;
         }
     }
@@ -366,10 +366,15 @@ fn result_is_funds_released(world: &mut PlayerWorld) {
 }
 
 #[then(expr = "the command fails with status {string}")]
-fn command_fails_with_status(world: &mut PlayerWorld, _status: String) {
-    assert!(
-        world.last_error.is_some(),
-        "Expected command to fail but it succeeded"
+fn command_fails_with_status(world: &mut PlayerWorld, status: String) {
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to fail but it succeeded");
+    assert_eq!(
+        err.status_code, status,
+        "Expected status {}, got {}",
+        status, err.status_code
     );
 }
 
@@ -377,10 +382,13 @@ fn command_fails_with_status(world: &mut PlayerWorld, _status: String) {
 fn error_message_contains(world: &mut PlayerWorld, expected: String) {
     let error = world.last_error.as_ref().expect("No error found");
     assert!(
-        error.to_lowercase().contains(&expected.to_lowercase()),
+        error
+            .reason
+            .to_lowercase()
+            .contains(&expected.to_lowercase()),
         "Expected error to contain '{}' but got '{}'",
         expected,
-        error
+        error.reason
     );
 }
 

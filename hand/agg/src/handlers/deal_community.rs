@@ -24,7 +24,7 @@ fn guard(state: &HandState) -> CommandResult<()> {
 
     let rules = game_rules::get_rules(state.game_variant);
     if !rules.uses_community_cards() {
-        return Err(CommandRejectedError::new(
+        return Err(CommandRejectedError::invalid_argument(
             "Community cards not used in this variant",
         ));
     }

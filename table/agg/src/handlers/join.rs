@@ -24,13 +24,15 @@ fn validate(cmd: &JoinTable, state: &TableState) -> CommandResult<i32> {
     }
 
     if cmd.buy_in_amount < state.min_buy_in {
-        return Err(CommandRejectedError::new(format!(
+        return Err(CommandRejectedError::invalid_argument(format!(
             "Buy-in must be at least {}",
             state.min_buy_in
         )));
     }
     if cmd.buy_in_amount > state.max_buy_in {
-        return Err(CommandRejectedError::new("Buy-in above maximum"));
+        return Err(CommandRejectedError::invalid_argument(
+            "Buy-in above maximum",
+        ));
     }
 
     let seat_position = if cmd.preferred_seat >= 0 && cmd.preferred_seat < state.max_players {

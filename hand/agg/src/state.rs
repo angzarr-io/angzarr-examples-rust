@@ -441,7 +441,7 @@ mod tests {
                         "examples.CardsDealt",
                     ))),
                     created_at: None,
-                    committed: true,
+                    no_commit: false,
                     cascade_id: None,
                 },
                 EventPage {
@@ -453,7 +453,7 @@ mod tests {
                         "examples.CommunityCardsDealt",
                     ))),
                     created_at: None,
-                    committed: true,
+                    no_commit: false,
                     cascade_id: None,
                 },
             ],

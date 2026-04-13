@@ -1,7 +1,5 @@
 //! StartHand command handler.
 
-use sha2::{Digest, Sha256};
-
 use angzarr_client::proto::{CommandBook, EventBook};
 use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
 use examples_proto::{HandStarted, SeatSnapshot, StartHand};
@@ -84,10 +82,11 @@ pub fn handle_start_hand(
 
 /// Generate deterministic hand root from table root and hand number.
 fn generate_hand_root(table_root: &[u8], hand_number: i64) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(table_root);
-    hasher.update(hand_number.to_be_bytes());
-    hasher.finalize().to_vec()
+    // Generate a deterministic UUID v5 (SHA-1 based, RFC 4122) from table root + hand number
+    let mut data = table_root.to_vec();
+    data.extend_from_slice(&hand_number.to_be_bytes());
+    let id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &data);
+    id.as_bytes().to_vec()
 }
 
 /// Find the next active (non-sitting-out) player position.

@@ -8,7 +8,7 @@ imagePullSecrets: []
 storage:
   type: postgres
   postgres:
-    host: "angzarr-db-rw"
+    host: "angzarr-db"
     port: 5432
     database: "angzarr"
     username: "angzarr"

@@ -20,7 +20,9 @@ fn validate(cmd: &AddRebuyChips, state: &TableState) -> CommandResult<i64> {
     }
 
     if cmd.amount <= 0 {
-        return Err(CommandRejectedError::new("amount must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "amount must be positive",
+        ));
     }
 
     // Find the player's seat

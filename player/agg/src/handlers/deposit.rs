@@ -20,7 +20,9 @@ fn guard(state: &PlayerState) -> CommandResult<()> {
 fn validate(cmd: &DepositFunds) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(CommandRejectedError::new("amount must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "amount must be positive",
+        ));
     }
     Ok(amount)
 }

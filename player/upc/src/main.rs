@@ -94,7 +94,7 @@ mod tests {
                 sequence_type: Some(page_header::SequenceType::Sequence(1)),
             }),
             created_at: None,
-            committed: true,
+            no_commit: false,
             cascade_id: None,
         };
 
@@ -122,7 +122,7 @@ mod tests {
                     sequence_type: Some(page_header::SequenceType::Sequence(i)),
                 }),
                 created_at: None,
-                committed: true,
+                no_commit: false,
                 cascade_id: None,
             })
             .collect();

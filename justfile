@@ -98,7 +98,7 @@ COORDINATOR_VERSION := "latest"
 
 # OCI chart references
 CHART_REGISTRY := "oci://ghcr.io/angzarr-io/charts"
-ANGZARR_CHART_VERSION := "0.2.2"
+ANGZARR_CHART_VERSION := "0.5.1"
 
 # Ensure we use Docker Engine, not Podman socket
 export DOCKER_HOST := ""
@@ -216,11 +216,11 @@ deploy-infra: setup-namespace
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Deploying PostgreSQL..."
-    helm upgrade --install postgres {{CHART_REGISTRY}}/angzarr-db-postgres-simple \
+    helm upgrade --install angzarr-db {{CHART_REGISTRY}}/angzarr-db-postgres-simple \
       --namespace angzarr-test \
       --wait --timeout 2m
     echo "Deploying RabbitMQ..."
-    helm upgrade --install rabbitmq {{CHART_REGISTRY}}/angzarr-mq-rabbitmq-simple \
+    helm upgrade --install angzarr-mq {{CHART_REGISTRY}}/angzarr-mq-rabbitmq-simple \
       --namespace angzarr-test \
       --wait --timeout 3m
     echo "Infrastructure deployed"
@@ -273,11 +273,18 @@ deploy-apps-ci example_tag="latest" coordinator_version="latest":
       --set images.saga.tag="${coord_ver}" \
       --set images.projector.tag="${coord_ver}" \
       --set images.processManager.tag="${coord_ver}" \
+      --set images.stream.tag="${coord_ver}" \
+      --set images.gateway.tag="${coord_ver}" \
+      --set images.log.tag="${coord_ver}" \
       --set "applications.business[0].image.tag=${example_tag}" \
       --set "applications.business[1].image.tag=${example_tag}" \
       --set "applications.business[2].image.tag=${example_tag}" \
       --set "applications.sagas[0].image.tag=${example_tag}" \
       --set "applications.sagas[1].image.tag=${example_tag}" \
+      --set "applications.processManagers[0].image.tag=${example_tag}" \
+      --set "applications.processManagers[1].image.tag=${example_tag}" \
+      --set "applications.processManagers[2].image.tag=${example_tag}" \
+      --set "applications.processManagers[3].image.tag=${example_tag}" \
       --set "applications.projectors[0].image.tag=${example_tag}" \
       --namespace angzarr-test \
       --wait --timeout 5m
@@ -293,26 +300,51 @@ deploy-all: deploy-infra
 test-e2e:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Wait for gateway to be ready
-    echo "Waiting for gateway pod..."
-    kubectl wait --for=condition=ready pod -l angzarr.io/service=grpc-gateway -n angzarr-test --timeout=180s || {
-        echo "Gateway pod not ready, checking status..."
+    # Wait for aggregate pods to be ready
+    echo "Waiting for aggregate pods..."
+    for domain in player table hand; do
+        kubectl wait --for=condition=ready pod -l angzarr.io/domain=$domain \
+            -n angzarr-test --timeout=180s || {
+            echo "$domain aggregate pod not ready"
+            kubectl get pods -n angzarr-test
+            exit 1
+        }
+    done
+    # Wait for stream pod
+    echo "Waiting for stream pod..."
+    kubectl wait --for=condition=ready pod -l angzarr.io/service=stream \
+        -n angzarr-test --timeout=120s || {
+        echo "Stream pod not ready — hand lifecycle test may fail"
         kubectl get pods -n angzarr-test
-        exit 1
     }
-    # Port-forward gateway for tests (service name: {release}-angzarr-grpc-gateway)
-    kubectl port-forward -n angzarr-test svc/poker-angzarr-grpc-gateway 8080:8080 &
-    PF_PID=$!
-    trap "kill $PF_PID 2>/dev/null || true" EXIT
-    sleep 3
+    # Port-forward all aggregate coordinators + stream service
+    kubectl port-forward -n angzarr-test svc/player-aggregate 1310:1310 &
+    PF1=$!
+    kubectl port-forward -n angzarr-test svc/table-aggregate 1311:1310 &
+    PF2=$!
+    kubectl port-forward -n angzarr-test svc/hand-aggregate 1312:1310 &
+    PF3=$!
+    kubectl port-forward -n angzarr-test svc/poker-angzarr-stream 1340:1340 &
+    PF4=$!
+    trap "kill $PF1 $PF2 $PF3 $PF4 2>/dev/null || true" EXIT
+    # Wait for port-forwards to establish
+    for port in 1310 1311 1312 1340; do
+        for i in $(seq 1 10); do
+            if nc -z localhost $port 2>/dev/null; then
+                echo "Port-forward to localhost:$port established"
+                break
+            fi
+            [ $i -eq 10 ] && echo "WARNING: Port $port may not be ready"
+            sleep 1
+        done
+    done
     # Run acceptance tests
-    # Note: Unset ANGZARR_PROTO_ROOT so angzarr-client uses pre-generated protos
-    # EXAMPLES_PROTO_ROOT is still needed for examples-proto crate
-    export GATEWAY_URL="http://localhost:8080"
+    export PLAYER_URL="http://localhost:1310"
+    export TABLE_URL="http://localhost:1311"
+    export HAND_URL="http://localhost:1312"
+    export STREAM_URL="http://localhost:1340"
     unset ANGZARR_PROTO_ROOT
-    cargo test --test acceptance --features acceptance-test || exit_code=$?
-    kill $PF_PID 2>/dev/null || true
-    exit ${exit_code:-0}
+    cargo test --test acceptance --features acceptance-test
 
 # Full local setup: build images, create cluster, deploy everything
 # This mirrors what CI does, so local and CI behave identically
@@ -354,3 +386,4 @@ kind-status:
     echo ""
     echo "=== Services ==="
     kubectl get svc -n angzarr-test 2>/dev/null || echo "Namespace not found"
+# Trigger CI

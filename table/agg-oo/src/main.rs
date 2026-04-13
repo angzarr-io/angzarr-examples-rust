@@ -49,7 +49,9 @@ impl TableAggregate {
             return Err(CommandRejectedError::new("table_name is required"));
         }
         if create.small_blind <= 0 {
-            return Err(CommandRejectedError::new("small_blind must be positive"));
+            return Err(CommandRejectedError::invalid_argument(
+                "small_blind must be positive",
+            ));
         }
 
         // Compute: create the event

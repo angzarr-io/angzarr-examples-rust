@@ -132,9 +132,9 @@ impl RegistrationPmHandler {
             .ok_or_else(|| CommandRejectedError::new("Missing player root in trigger"))?;
 
         // Get tournament sequence from destinations (no state rebuilding!)
-        let tournament_next_seq = destinations
-            .sequence_for("tournament")
-            .ok_or_else(|| CommandRejectedError::new("Missing tournament sequence - check output_domains config"))?;
+        let tournament_next_seq = destinations.sequence_for("tournament").ok_or_else(|| {
+            CommandRejectedError::new("Missing tournament sequence - check output_domains config")
+        })?;
 
         // Send EnrollPlayer command to Tournament - let aggregate validate
         let enroll_player = EnrollPlayer {
@@ -190,9 +190,9 @@ impl RegistrationPmHandler {
         })?;
 
         // Get player sequence from destinations (no state rebuilding!)
-        let player_next_seq = destinations
-            .sequence_for("player")
-            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
+        let player_next_seq = destinations.sequence_for("player").ok_or_else(|| {
+            CommandRejectedError::new("Missing player sequence - check output_domains config")
+        })?;
 
         // Emit ConfirmRegistrationFee to Player
         let confirm = ConfirmRegistrationFee {
@@ -249,9 +249,9 @@ impl RegistrationPmHandler {
         })?;
 
         // Get player sequence from destinations (no state rebuilding!)
-        let player_next_seq = destinations
-            .sequence_for("player")
-            .ok_or_else(|| CommandRejectedError::new("Missing player sequence - check output_domains config"))?;
+        let player_next_seq = destinations.sequence_for("player").ok_or_else(|| {
+            CommandRejectedError::new("Missing player sequence - check output_domains config")
+        })?;
 
         // Emit ReleaseRegistrationFee to Player
         let release = ReleaseRegistrationFee {
@@ -290,7 +290,6 @@ impl RegistrationPmHandler {
             facts: vec![],
         })
     }
-
 }
 
 /// Helper to create a CommandBook for PM commands.
@@ -334,7 +333,7 @@ fn make_pm_event_book(event: Any) -> EventBook {
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
-            committed: true, // PM events are immediately committed
+            no_commit: false, // PM events are immediately committed
             cascade_id: None,
             payload: Some(Payload::Event(event)),
         }],

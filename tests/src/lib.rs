@@ -36,13 +36,14 @@ pub fn uuid_for(seed: &str) -> Vec<u8> {
 ///
 /// let table_root = uuid_for("test-table");
 /// let hand_root = generate_hand_root(&table_root, 1);
-/// assert_eq!(hand_root.len(), 32); // SHA-256 output
+/// assert_eq!(hand_root.len(), 16); // UUID v5 output
 /// ```
 pub fn generate_hand_root(table_root: &[u8], hand_number: i64) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(table_root);
-    hasher.update(hand_number.to_be_bytes());
-    hasher.finalize().to_vec()
+    let mut data = table_root.to_vec();
+    data.extend_from_slice(&hand_number.to_be_bytes());
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &data)
+        .as_bytes()
+        .to_vec()
 }
 
 /// Pack a protobuf command message into a prost Any.
@@ -107,7 +108,7 @@ pub fn event_book(root: &[u8], domain: &str, events: &[Any]) -> EventBook {
                 }),
                 payload: Some(event_page::Payload::Event(e.clone())),
                 created_at: None,
-                committed: true,
+                no_commit: false,
                 cascade_id: None,
             })
             .collect(),
@@ -247,11 +248,7 @@ pub fn format_card(card: &Card) -> String {
 
 /// Format multiple cards to a human-readable string.
 pub fn format_cards(cards: &[Card]) -> String {
-    cards
-        .iter()
-        .map(format_card)
-        .collect::<Vec<_>>()
-        .join(" ")
+    cards.iter().map(format_card).collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

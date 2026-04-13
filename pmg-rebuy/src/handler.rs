@@ -149,13 +149,9 @@ impl RebuyPmHandler {
             .ok_or_else(|| CommandRejectedError::new("Missing player root in trigger"))?;
 
         // Get tournament sequence from destinations (no state rebuilding!)
-        let tournament_next_seq = destinations
-            .sequence_for("tournament")
-            .ok_or_else(|| {
-                CommandRejectedError::new(
-                    "Missing tournament sequence - check output_domains config",
-                )
-            })?;
+        let tournament_next_seq = destinations.sequence_for("tournament").ok_or_else(|| {
+            CommandRejectedError::new("Missing tournament sequence - check output_domains config")
+        })?;
 
         // Send ProcessRebuy command to Tournament - let aggregate validate
         let process_rebuy = ProcessRebuy {
@@ -397,7 +393,7 @@ fn make_pm_event_book(event: Any) -> EventBook {
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
-            committed: true,
+            no_commit: false,
             cascade_id: None,
             payload: Some(Payload::Event(event)),
         }],
