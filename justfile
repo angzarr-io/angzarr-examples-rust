@@ -387,3 +387,7 @@ kind-status:
     echo "=== Services ==="
     kubectl get svc -n angzarr-test 2>/dev/null || echo "Namespace not found"
 # Trigger CI
+
+# Auto-format code
+fmt-fix:
+    just _container fmt-fix
