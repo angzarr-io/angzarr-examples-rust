@@ -24,7 +24,7 @@ async fn main() {
         .init();
 
     // docs:start:event_router
-    let router = SagaRouter::new("saga-table-hand", "table", TableHandSagaHandler);
+    let router = SagaRouter::new("saga-table-hand", "table", "hand", TableHandSagaHandler);
     // docs:end:event_router
 
     run_saga_server("saga-table-hand", 50011, router)

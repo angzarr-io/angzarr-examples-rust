@@ -20,7 +20,7 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = SagaRouter::new("saga-hand-player", "hand", HandPlayerSagaHandler);
+    let router = SagaRouter::new("saga-hand-player", "hand", "player", HandPlayerSagaHandler);
 
     run_saga_server("saga-hand-player", 50014, router)
         .await
