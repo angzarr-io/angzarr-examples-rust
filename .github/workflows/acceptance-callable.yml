@@ -80,15 +80,10 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
-      - name: Install buf
-        uses: bufbuild/buf-action@v1
-        with:
-          setup_only: true
-
-      - name: Export protos from Buf registry
+      - name: Export protos from submodule
         run: |
-          buf export buf.build/angzarr/examples -o examples-proto
-          buf export buf.build/angzarr/angzarr -o angzarr-proto
+          cp -r angzarr-project/proto/examples examples-proto
+          cp -r angzarr-project/proto/angzarr angzarr-proto
 
       - name: Parse image inputs
         id: images
