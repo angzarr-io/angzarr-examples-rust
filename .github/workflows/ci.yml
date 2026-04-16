@@ -73,6 +73,12 @@ jobs:
       - name: Format check
         run: just -f justfile.container fmt
 
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants
+
+      - name: Mutation test
+        run: just -f justfile.container mutation-test
+
   build-images:
     name: Build & Push Images
     runs-on: ubuntu-latest
