@@ -7,14 +7,14 @@ use prost_types::Any;
 
 use crate::state::PlayerState;
 
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn register_player_guard(state: &PlayerState) -> CommandResult<()> {
     if state.exists() {
         return Err(CommandRejectedError::new("Player already exists"));
     }
     Ok(())
 }
 
-fn validate(cmd: &RegisterPlayer) -> CommandResult<()> {
+fn register_player_validate(cmd: &RegisterPlayer) -> CommandResult<()> {
     if cmd.display_name.is_empty() {
         return Err(CommandRejectedError::new("display_name is required"));
     }
@@ -24,7 +24,7 @@ fn validate(cmd: &RegisterPlayer) -> CommandResult<()> {
     Ok(())
 }
 
-fn compute(cmd: &RegisterPlayer) -> PlayerRegistered {
+fn register_player_compute(cmd: &RegisterPlayer) -> PlayerRegistered {
     PlayerRegistered {
         display_name: cmd.display_name.clone(),
         email: cmd.email.clone(),
@@ -44,10 +44,10 @@ pub fn handle_register_player(
         .unpack()
         .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
 
-    guard(state)?;
-    validate(&cmd)?;
+    register_player_guard(state)?;
+    register_player_validate(&cmd)?;
 
-    let event = compute(&cmd);
+    let event = register_player_compute(&cmd);
     let event_any = pack_event(&event, "examples.PlayerRegistered");
 
     Ok(new_event_book(command_book, seq, event_any))

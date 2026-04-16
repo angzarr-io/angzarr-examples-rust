@@ -8,6 +8,7 @@ mod registration;
 mod rejected;
 mod release;
 mod reserve;
+mod transfer;
 mod withdraw;
 
 pub use buy_in::{handle_confirm_buy_in, handle_initiate_buy_in, handle_release_buy_in};
@@ -21,4 +22,5 @@ pub use registration::{
 pub use rejected::handle_join_rejected;
 pub use release::handle_release_funds;
 pub use reserve::handle_reserve_funds;
+pub use transfer::handle_transfer_funds;
 pub use withdraw::handle_withdraw_funds;

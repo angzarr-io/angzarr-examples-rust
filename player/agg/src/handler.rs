@@ -36,6 +36,7 @@ impl CommandHandlerDomainHandler for PlayerHandler {
             "WithdrawFunds".into(),
             "ReserveFunds".into(),
             "ReleaseFunds".into(),
+            "TransferFunds".into(),
             // Buy-in orchestration
             "InitiateBuyIn".into(),
             "ConfirmBuyIn".into(),
@@ -68,6 +69,7 @@ impl CommandHandlerDomainHandler for PlayerHandler {
             "WithdrawFunds" => handlers::handle_withdraw_funds,
             "ReserveFunds" => handlers::handle_reserve_funds,
             "ReleaseFunds" => handlers::handle_release_funds,
+            "TransferFunds" => handlers::handle_transfer_funds,
             // Buy-in orchestration
             "InitiateBuyIn" => handlers::handle_initiate_buy_in,
             "ConfirmBuyIn" => handlers::handle_confirm_buy_in,

@@ -7,14 +7,14 @@ use prost_types::Any;
 
 use crate::state::PlayerState;
 
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn withdraw_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
         return Err(CommandRejectedError::new("Player does not exist"));
     }
     Ok(())
 }
 
-fn validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
+fn withdraw_funds_validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
         return Err(CommandRejectedError::invalid_argument(
@@ -27,7 +27,7 @@ fn validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
     Ok(amount)
 }
 
-fn compute(cmd: &WithdrawFunds, state: &PlayerState, amount: i64) -> FundsWithdrawn {
+fn withdraw_funds_compute(cmd: &WithdrawFunds, state: &PlayerState, amount: i64) -> FundsWithdrawn {
     let new_balance = state.bankroll - amount;
     FundsWithdrawn {
         amount: cmd.amount.clone(),
@@ -49,10 +49,10 @@ pub fn handle_withdraw_funds(
         .unpack()
         .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
 
-    guard(state)?;
-    let amount = validate(&cmd, state)?;
+    withdraw_funds_guard(state)?;
+    let amount = withdraw_funds_validate(&cmd, state)?;
 
-    let event = compute(&cmd, state, amount);
+    let event = withdraw_funds_compute(&cmd, state, amount);
     let event_any = pack_event(&event, "examples.FundsWithdrawn");
 
     Ok(new_event_book(command_book, seq, event_any))

@@ -7,14 +7,14 @@ use prost_types::Any;
 
 use crate::state::PlayerState;
 
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn sit_out_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
         return Err(CommandRejectedError::new("Player does not exist"));
     }
     Ok(())
 }
 
-fn validate(cmd: &SitOut, state: &PlayerState) -> CommandResult<()> {
+fn sit_out_validate(cmd: &SitOut, state: &PlayerState) -> CommandResult<()> {
     if cmd.table_root.is_empty() {
         return Err(CommandRejectedError::new("table_root is required"));
     }
@@ -26,7 +26,7 @@ fn validate(cmd: &SitOut, state: &PlayerState) -> CommandResult<()> {
     Ok(())
 }
 
-fn compute(cmd: &SitOut) -> PlayerSittingOut {
+fn sit_out_compute(cmd: &SitOut) -> PlayerSittingOut {
     PlayerSittingOut {
         table_root: cmd.table_root.clone(),
         sat_out_at: Some(angzarr_client::now()),
@@ -43,10 +43,10 @@ pub fn handle_sit_out(
         .unpack()
         .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
 
-    guard(state)?;
-    validate(&cmd, state)?;
+    sit_out_guard(state)?;
+    sit_out_validate(&cmd, state)?;
 
-    let event = compute(&cmd);
+    let event = sit_out_compute(&cmd);
     let event_any = pack_event(&event, "examples.PlayerSittingOut");
 
     Ok(new_event_book(command_book, seq, event_any))

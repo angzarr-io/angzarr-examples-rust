@@ -1,196 +1,151 @@
-//! Projector: Output
+//! Projector: Output (OO Pattern)
 //!
 //! Subscribes to player, table, and hand domain events.
 //! Writes formatted game logs to a file.
+//!
+//! This demonstrates the OO pattern where:
+//! - `#[projector(name)]` decorates the impl block
+//! - `#[projects(EventType)]` marks event handler methods
 
-use angzarr_client::proto::{event_page, page_header, EventBook, EventPage, Projection};
-use angzarr_client::{run_projector_server, ProjectorHandler};
+use angzarr_client::proto::Projection;
+use angzarr_client::{projector, run_projector_server};
 use examples_proto::{
     ActionTaken, BlindPosted, CardsDealt, FundsDeposited, HandComplete, HandStarted, PlayerJoined,
     PlayerRegistered, PotAwarded, TableCreated,
 };
-use prost::Message;
-use std::env;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Mutex;
-use tonic::Status;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-static LOG_FILE: Mutex<Option<File>> = Mutex::new(None);
-
-fn get_log_file() -> std::io::Result<std::fs::File> {
-    let path = env::var("HAND_LOG_FILE").unwrap_or_else(|_| "hand_log.txt".to_string());
-    OpenOptions::new().create(true).append(true).open(path)
+lazy_static::lazy_static! {
+    static ref LOG_FILE: Mutex<std::fs::File> = Mutex::new(
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(std::env::var("HAND_LOG_FILE").unwrap_or_else(|_| "hand_log_oo.txt".into()))
+            .expect("Failed to open log file")
+    );
 }
 
 fn write_log(msg: &str) {
-    if let Ok(mut guard) = LOG_FILE.lock() {
-        if guard.is_none() {
-            *guard = get_log_file().ok();
-        }
-        if let Some(file) = guard.as_mut() {
-            let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f");
-            let _ = writeln!(file, "[{}] {}", timestamp, msg);
-        }
-    }
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f");
+    let mut file = LOG_FILE.lock().unwrap();
+    writeln!(file, "[{}] {}", timestamp, msg).ok();
+    file.flush().ok();
 }
 
-fn get_sequence(page: &EventPage) -> u32 {
-    page.header
-        .as_ref()
-        .and_then(|h| h.sequence_type.as_ref())
-        .map(|st| match st {
-            page_header::SequenceType::Sequence(seq) => *seq,
-            _ => 0,
-        })
-        .unwrap_or(0)
-}
-
-// docs:start:projector_functional
-#[allow(clippy::result_large_err)]
-fn handle_events(events: &EventBook) -> Result<Projection, Status> {
-    let cover = events.cover.as_ref();
-    let domain = cover.map(|c| c.domain.as_str()).unwrap_or("");
-    let root_id = cover
-        .and_then(|c| c.root.as_ref())
-        .map(|u| {
-            if u.value.len() >= 4 {
-                hex::encode(&u.value[..4])
-            } else {
-                hex::encode(&u.value)
-            }
-        })
-        .unwrap_or_default();
-
-    let mut seq = 0u32;
-
-    for page in &events.pages {
-        let event_any = match &page.payload {
-            Some(event_page::Payload::Event(e)) => e,
-            _ => continue,
-        };
-        seq = get_sequence(page);
-
-        let type_url = &event_any.type_url;
-        let type_name = type_url.rsplit('.').next().unwrap_or(type_url);
-
-        let msg = format_event(domain, &root_id, type_name, &event_any.value);
-        write_log(&msg);
-    }
-
-    Ok(Projection {
-        cover: cover.cloned(),
-        projector: "output".to_string(),
-        sequence: seq,
-        projection: None,
-    })
-}
-// docs:end:projector_functional
-
-fn format_event(domain: &str, root_id: &str, type_name: &str, data: &[u8]) -> String {
-    match type_name {
-        "PlayerRegistered" => {
-            if let Ok(e) = PlayerRegistered::decode(data) {
-                return format!(
-                    "PLAYER {} registered: {} ({})",
-                    root_id, e.display_name, e.email
-                );
-            }
-        }
-        "FundsDeposited" => {
-            if let Ok(e) = FundsDeposited::decode(data) {
-                let amount = e.amount.as_ref().map(|a| a.amount).unwrap_or(0);
-                let new_balance = e.new_balance.as_ref().map(|b| b.amount).unwrap_or(0);
-                return format!(
-                    "PLAYER {} deposited {}, balance: {}",
-                    root_id, amount, new_balance
-                );
-            }
-        }
-        "TableCreated" => {
-            if let Ok(e) = TableCreated::decode(data) {
-                return format!(
-                    "TABLE {} created: {} ({:?})",
-                    root_id, e.table_name, e.game_variant
-                );
-            }
-        }
-        "PlayerJoined" => {
-            if let Ok(e) = PlayerJoined::decode(data) {
-                let player_id = truncate_id(&e.player_root);
-                return format!(
-                    "TABLE {} player {} joined with {} chips",
-                    root_id, player_id, e.stack
-                );
-            }
-        }
-        "HandStarted" => {
-            if let Ok(e) = HandStarted::decode(data) {
-                return format!(
-                    "TABLE {} hand #{} started, {} players, dealer at position {}",
-                    root_id,
-                    e.hand_number,
-                    e.active_players.len(),
-                    e.dealer_position
-                );
-            }
-        }
-        "CardsDealt" => {
-            if let Ok(e) = CardsDealt::decode(data) {
-                return format!(
-                    "HAND {} cards dealt to {} players",
-                    root_id,
-                    e.player_cards.len()
-                );
-            }
-        }
-        "BlindPosted" => {
-            if let Ok(e) = BlindPosted::decode(data) {
-                let player_id = truncate_id(&e.player_root);
-                return format!(
-                    "HAND {} player {} posted {} blind: {}",
-                    root_id, player_id, e.blind_type, e.amount
-                );
-            }
-        }
-        "ActionTaken" => {
-            if let Ok(e) = ActionTaken::decode(data) {
-                let player_id = truncate_id(&e.player_root);
-                return format!(
-                    "HAND {} player {}: {:?} {}",
-                    root_id, player_id, e.action, e.amount
-                );
-            }
-        }
-        "PotAwarded" => {
-            if let Ok(e) = PotAwarded::decode(data) {
-                let winners: Vec<String> = e
-                    .winners
-                    .iter()
-                    .map(|w| format!("{} wins {}", truncate_id(&w.player_root), w.amount))
-                    .collect();
-                return format!("HAND {} pot awarded: {}", root_id, winners.join(", "));
-            }
-        }
-        "HandComplete" => {
-            if let Ok(e) = HandComplete::decode(data) {
-                return format!("HAND {} #{} complete", root_id, e.hand_number);
-            }
-        }
-        _ => {}
-    }
-
-    format!("{}.{} [{}]", domain, type_name, root_id)
-}
-
-fn truncate_id(id: &[u8]) -> String {
-    if id.len() >= 4 {
-        hex::encode(&id[..4])
+fn truncate_id(player_root: &[u8]) -> String {
+    if player_root.len() >= 4 {
+        hex::encode(&player_root[..4])
     } else {
-        hex::encode(id)
+        hex::encode(player_root)
     }
 }
+
+// docs:start:projector_oo
+/// Output projector using OO-style decorators with multi-domain support.
+pub struct OutputProjector;
+
+#[projector(name = "output")]
+impl OutputProjector {
+    #[projects(PlayerRegistered)]
+    fn project_player_registered(&self, event: PlayerRegistered) -> Projection {
+        write_log(&format!(
+            "PLAYER registered: {} ({})",
+            event.display_name, event.email
+        ));
+        Projection::default()
+    }
+
+    #[projects(FundsDeposited)]
+    fn project_funds_deposited(&self, event: FundsDeposited) -> Projection {
+        let amount = event.amount.as_ref().map(|m| m.amount).unwrap_or(0);
+        let balance = event.new_balance.as_ref().map(|m| m.amount).unwrap_or(0);
+        write_log(&format!(
+            "PLAYER deposited {}, balance: {}",
+            amount, balance
+        ));
+        Projection::default()
+    }
+
+    #[projects(TableCreated)]
+    fn project_table_created(&self, event: TableCreated) -> Projection {
+        write_log(&format!(
+            "TABLE created: {} (variant {})",
+            event.table_name, event.game_variant
+        ));
+        Projection::default()
+    }
+
+    #[projects(PlayerJoined)]
+    fn project_player_joined(&self, event: PlayerJoined) -> Projection {
+        let player_id = truncate_id(&event.player_root);
+        write_log(&format!(
+            "TABLE player {} joined with {} chips",
+            player_id, event.stack
+        ));
+        Projection::default()
+    }
+
+    #[projects(HandStarted)]
+    fn project_hand_started(&self, event: HandStarted) -> Projection {
+        write_log(&format!(
+            "TABLE hand #{} started, {} players, dealer at position {}",
+            event.hand_number,
+            event.active_players.len(),
+            event.dealer_position
+        ));
+        Projection::default()
+    }
+
+    #[projects(CardsDealt)]
+    fn project_cards_dealt(&self, event: CardsDealt) -> Projection {
+        write_log(&format!(
+            "HAND cards dealt to {} players",
+            event.player_cards.len()
+        ));
+        Projection::default()
+    }
+
+    #[projects(BlindPosted)]
+    fn project_blind_posted(&self, event: BlindPosted) -> Projection {
+        let player_id = truncate_id(&event.player_root);
+        write_log(&format!(
+            "HAND player {} posted {:?} blind: {}",
+            player_id, event.blind_type, event.amount
+        ));
+        Projection::default()
+    }
+
+    #[projects(ActionTaken)]
+    fn project_action_taken(&self, event: ActionTaken) -> Projection {
+        let player_id = truncate_id(&event.player_root);
+        write_log(&format!(
+            "HAND player {}: {:?} {}",
+            player_id, event.action, event.amount
+        ));
+        Projection::default()
+    }
+
+    #[projects(PotAwarded)]
+    fn project_pot_awarded(&self, event: PotAwarded) -> Projection {
+        let winners: Vec<String> = event
+            .winners
+            .iter()
+            .map(|w| format!("{} wins {}", truncate_id(&w.player_root), w.amount))
+            .collect();
+        write_log(&format!("HAND pot awarded: {}", winners.join(", ")));
+        Projection::default()
+    }
+
+    #[projects(HandComplete)]
+    fn project_hand_complete(&self, event: HandComplete) -> Projection {
+        write_log(&format!("HAND #{} complete", event.hand_number));
+        Projection::default()
+    }
+}
+// docs:end:projector_oo
 
 #[tokio::main]
 async fn main() {
@@ -199,13 +154,12 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    // Clear log file at startup
-    let path = env::var("HAND_LOG_FILE").unwrap_or_else(|_| "hand_log.txt".to_string());
-    let _ = std::fs::remove_file(&path);
+    println!("Starting Output projector (OO pattern)");
 
-    let handler = ProjectorHandler::new("output").with_handle(handle_events);
+    let projector = OutputProjector;
+    let handler = projector.into_handler();
 
-    run_projector_server("output", 50090, handler)
+    run_projector_server("output", 50391, handler)
         .await
         .expect("Server failed");
 }

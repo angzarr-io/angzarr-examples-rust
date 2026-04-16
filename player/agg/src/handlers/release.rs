@@ -7,14 +7,14 @@ use prost_types::Any;
 
 use crate::state::PlayerState;
 
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn release_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
         return Err(CommandRejectedError::new("Player does not exist"));
     }
     Ok(())
 }
 
-fn validate(cmd: &ReleaseFunds, state: &PlayerState) -> CommandResult<i64> {
+fn release_funds_validate(cmd: &ReleaseFunds, state: &PlayerState) -> CommandResult<i64> {
     if cmd.table_root.is_empty() {
         return Err(CommandRejectedError::new("table_root is required"));
     }
@@ -28,7 +28,7 @@ fn validate(cmd: &ReleaseFunds, state: &PlayerState) -> CommandResult<i64> {
     }
 }
 
-fn compute(cmd: &ReleaseFunds, state: &PlayerState, reserved: i64) -> FundsReleased {
+fn release_funds_compute(cmd: &ReleaseFunds, state: &PlayerState, reserved: i64) -> FundsReleased {
     let new_reserved = state.reserved_funds - reserved;
     let new_available = state.bankroll - new_reserved;
 
@@ -60,10 +60,10 @@ pub fn handle_release_funds(
         .unpack()
         .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
 
-    guard(state)?;
-    let reserved = validate(&cmd, state)?;
+    release_funds_guard(state)?;
+    let reserved = release_funds_validate(&cmd, state)?;
 
-    let event = compute(&cmd, state, reserved);
+    let event = release_funds_compute(&cmd, state, reserved);
     let event_any = pack_event(&event, "examples.FundsReleased");
 
     Ok(new_event_book(command_book, seq, event_any))
