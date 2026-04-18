@@ -1,16 +1,8 @@
-//! Saga: Table -> Player
-//!
-//! Reacts to HandEnded events from Table domain.
-//! Sends ReleaseFunds commands to Player domain.
-//!
-//! This saga is a pure translator - it receives source events and produces
-//! commands without knowing destination state. The framework handles:
-//! - Sequence assignment (via angzarr_deferred)
-//! - Idempotency checking
-//! - Delivery retry on sequence conflicts
+//! Saga: Table -> Player gRPC server.
 
-use angzarr_client::{run_saga_server, SagaRouter};
-use saga_table_player::TablePlayerSagaHandler;
+use angzarr_client::router::{Built, Router};
+use angzarr_client::run_saga_server;
+use saga_table_player::TablePlayerSaga;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -20,9 +12,16 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = SagaRouter::new("saga-table-player", "table", "player", TablePlayerSagaHandler);
+    let router = Router::new("saga-table-player")
+        .with_handler(|| TablePlayerSaga)
+        .build()
+        .expect("failed to build saga router");
 
-    run_saga_server("saga-table-player", 50013, router)
+    let Built::Saga(sr) = router else {
+        panic!("expected Saga variant");
+    };
+
+    run_saga_server("saga-table-player", 50013, sr)
         .await
         .expect("Server failed");
 }

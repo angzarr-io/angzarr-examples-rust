@@ -3,6 +3,10 @@ name = "hand-flow-oo"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "hand_flow_oo"
+path = "src/lib.rs"
+
 [[bin]]
 name = "hand-flow-oo"
 path = "src/main.rs"

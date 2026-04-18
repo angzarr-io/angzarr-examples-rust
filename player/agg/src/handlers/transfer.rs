@@ -1,9 +1,8 @@
 //! TransferFunds command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{Currency, FundsTransferred, TransferFunds};
-use prost_types::Any;
 
 use crate::state::PlayerState;
 
@@ -45,22 +44,20 @@ fn transfer_funds_compute(
 }
 
 pub fn handle_transfer_funds(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: TransferFunds,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: TransferFunds = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     transfer_funds_guard(state)?;
     let amount = transfer_funds_validate(&cmd)?;
 
     let event = transfer_funds_compute(&cmd, state, amount);
     let event_any = pack_event(&event, "examples.FundsTransferred");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
@@ -115,5 +112,81 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().reason.contains("non-zero"));
+    }
+
+    use crate::state::apply_registered;
+    use angzarr_client::proto::event_page::Payload;
+    use examples_proto::{PlayerRegistered, PlayerType};
+    use prost::Message;
+
+    fn registered() -> PlayerState {
+        let mut s = PlayerState::default();
+        apply_registered(
+            &mut s,
+            PlayerRegistered {
+                display_name: "A".into(),
+                email: "a@x".into(),
+                player_type: PlayerType::Human as i32,
+                ai_model_id: String::new(),
+                registered_at: None,
+            },
+        );
+        s.bankroll = 500;
+        s
+    }
+
+    #[test]
+    fn handle_transfer_funds_success_emits_event() {
+        let state = registered();
+        let cmd = TransferFunds {
+            from_player_root: vec![9],
+            amount: Some(Currency {
+                amount: 100,
+                currency_code: "CHIPS".into(),
+            }),
+            hand_root: vec![1],
+            reason: "pot".into(),
+        };
+        let book = handle_transfer_funds(cmd, &state, 1).expect("ok");
+        assert_eq!(book.pages.len(), 1);
+        let any = match book.pages[0].payload.as_ref() {
+            Some(Payload::Event(a)) => a,
+            _ => panic!(),
+        };
+        assert!(any.type_url.ends_with("examples.FundsTransferred"));
+        let decoded = FundsTransferred::decode(any.value.as_slice()).unwrap();
+        assert_eq!(decoded.new_balance.unwrap().amount, 600);
+    }
+
+    #[test]
+    fn handle_transfer_funds_rejects_when_no_player() {
+        let state = PlayerState::default();
+        let cmd = TransferFunds {
+            from_player_root: vec![9],
+            amount: Some(Currency {
+                amount: 100,
+                currency_code: "CHIPS".into(),
+            }),
+            hand_root: vec![],
+            reason: String::new(),
+        };
+        let err = handle_transfer_funds(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("does not exist"));
+    }
+
+    #[test]
+    fn handle_transfer_funds_rejects_zero_amount_at_entry() {
+        let state = registered();
+        let cmd = TransferFunds {
+            from_player_root: vec![9],
+            amount: Some(Currency {
+                amount: 0,
+                currency_code: "CHIPS".into(),
+            }),
+            hand_root: vec![],
+            reason: String::new(),
+        };
+        let err = handle_transfer_funds(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("non-zero"));
     }
 }

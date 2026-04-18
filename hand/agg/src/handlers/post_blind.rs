@@ -1,9 +1,8 @@
 //! PostBlind command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{BlindPosted, PostBlind};
-use prost_types::Any;
 
 use crate::state::{HandState, PlayerHandState};
 
@@ -47,20 +46,100 @@ fn compute(cmd: &PostBlind, state: &HandState, player: &PlayerHandState) -> Blin
 }
 
 pub fn handle_post_blind(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: PostBlind,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: PostBlind = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     let player = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player);
     let event_any = pack_event(&event, "examples.BlindPosted");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{apply_cards_dealt, new_hand_state};
+    use angzarr_client::proto::event_page::Payload;
+    use examples_proto::{CardsDealt, GameVariant, PlayerInHand};
+    use prost::Message;
+
+    fn dealt_state() -> HandState {
+        let mut state = new_hand_state();
+        apply_cards_dealt(
+            &mut state,
+            CardsDealt {
+                table_root: vec![0xab],
+                hand_number: 1,
+                game_variant: GameVariant::TexasHoldem as i32,
+                player_cards: vec![],
+                dealer_position: 0,
+                players: vec![
+                    PlayerInHand {
+                        player_root: vec![1],
+                        position: 0,
+                        stack: 500,
+                    },
+                    PlayerInHand {
+                        player_root: vec![2],
+                        position: 1,
+                        stack: 500,
+                    },
+                ],
+                dealt_at: None,
+                remaining_deck: vec![],
+            },
+        );
+        state
+    }
+
+    #[test]
+    fn handle_post_blind_success_emits_blind_posted() {
+        let state = dealt_state();
+        let cmd = PostBlind {
+            player_root: vec![1],
+            blind_type: "small".into(),
+            amount: 5,
+        };
+        let book = handle_post_blind(cmd, &state, 1).expect("ok");
+        let any = match book.pages[0].payload.as_ref() {
+            Some(Payload::Event(a)) => a,
+            _ => panic!(),
+        };
+        assert!(any.type_url.ends_with("examples.BlindPosted"));
+        let decoded = BlindPosted::decode(any.value.as_slice()).unwrap();
+        assert_eq!(decoded.amount, 5);
+        assert_eq!(decoded.player_stack, 495);
+        assert_eq!(decoded.pot_total, 5);
+    }
+
+    #[test]
+    fn handle_post_blind_rejects_when_hand_does_not_exist() {
+        let state = new_hand_state();
+        let cmd = PostBlind {
+            player_root: vec![1],
+            blind_type: "small".into(),
+            amount: 5,
+        };
+        let err = handle_post_blind(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("does not exist"));
+    }
+
+    #[test]
+    fn handle_post_blind_rejects_unknown_player() {
+        let state = dealt_state();
+        let cmd = PostBlind {
+            player_root: vec![0xff],
+            blind_type: "small".into(),
+            amount: 5,
+        };
+        let err = handle_post_blind(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("Player not in hand"));
+    }
 }

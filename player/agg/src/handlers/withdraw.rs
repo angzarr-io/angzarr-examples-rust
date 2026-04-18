@@ -1,9 +1,8 @@
 //! WithdrawFunds command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{Currency, FundsWithdrawn, WithdrawFunds};
-use prost_types::Any;
 
 use crate::state::PlayerState;
 
@@ -40,20 +39,105 @@ fn withdraw_funds_compute(cmd: &WithdrawFunds, state: &PlayerState, amount: i64)
 }
 
 pub fn handle_withdraw_funds(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: WithdrawFunds,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: WithdrawFunds = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     withdraw_funds_guard(state)?;
     let amount = withdraw_funds_validate(&cmd, state)?;
 
     let event = withdraw_funds_compute(&cmd, state, amount);
     let event_any = pack_event(&event, "examples.FundsWithdrawn");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{apply_deposited, apply_registered};
+    use angzarr_client::proto::event_page::Payload;
+    use examples_proto::{FundsDeposited, PlayerRegistered, PlayerType};
+    use prost::Message;
+
+    fn currency(amount: i64) -> Currency {
+        Currency {
+            amount,
+            currency_code: "CHIPS".into(),
+        }
+    }
+
+    fn funded_state(bankroll: i64) -> PlayerState {
+        let mut state = PlayerState::default();
+        apply_registered(
+            &mut state,
+            PlayerRegistered {
+                display_name: "Alice".into(),
+                email: "alice@example.com".into(),
+                player_type: PlayerType::Human as i32,
+                ai_model_id: String::new(),
+                registered_at: None,
+            },
+        );
+        apply_deposited(
+            &mut state,
+            FundsDeposited {
+                amount: Some(currency(bankroll)),
+                new_balance: Some(currency(bankroll)),
+                deposited_at: None,
+            },
+        );
+        state
+    }
+
+    #[test]
+    fn handle_withdraw_funds_success_decreases_balance_in_event() {
+        let state = funded_state(500);
+        let cmd = WithdrawFunds {
+            amount: Some(currency(200)),
+        };
+        let book = handle_withdraw_funds(cmd, &state, 2).expect("ok");
+        assert_eq!(book.pages.len(), 1);
+        let any = match book.pages[0].payload.as_ref() {
+            Some(Payload::Event(any)) => any,
+            _ => panic!("expected event"),
+        };
+        assert!(any.type_url.ends_with("examples.FundsWithdrawn"));
+        let decoded = FundsWithdrawn::decode(any.value.as_slice()).expect("decode");
+        assert_eq!(decoded.amount.unwrap().amount, 200);
+        assert_eq!(decoded.new_balance.unwrap().amount, 300);
+    }
+
+    #[test]
+    fn handle_withdraw_funds_rejects_when_no_player() {
+        let state = PlayerState::default();
+        let cmd = WithdrawFunds {
+            amount: Some(currency(50)),
+        };
+        let err = handle_withdraw_funds(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("does not exist"));
+    }
+
+    #[test]
+    fn handle_withdraw_funds_rejects_non_positive_amount() {
+        let state = funded_state(500);
+        let cmd = WithdrawFunds {
+            amount: Some(currency(-10)),
+        };
+        let err = handle_withdraw_funds(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("positive"));
+    }
+
+    #[test]
+    fn handle_withdraw_funds_rejects_insufficient_available_balance() {
+        let state = funded_state(100);
+        let cmd = WithdrawFunds {
+            amount: Some(currency(500)),
+        };
+        let err = handle_withdraw_funds(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("insufficient"));
+    }
 }

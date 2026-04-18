@@ -3,10 +3,9 @@
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
-use prost_types::Any;
 
 use crate::game_rules::get_rules;
 use crate::state::HandState;
@@ -71,22 +70,20 @@ fn compute(cmd: &DealCards) -> CardsDealt {
 }
 
 pub fn handle_deal_cards(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: DealCards,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: DealCards = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
     let event_any = pack_event(&event, "examples.CardsDealt");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 /// Create a standard 52-card deck.
@@ -126,4 +123,112 @@ fn shuffle_deck(deck: &mut [Card], seed: &[u8]) {
     let seed_int = u64::from_be_bytes(hash[..8].try_into().unwrap());
     let mut rng = StdRng::seed_from_u64(seed_int);
     deck.shuffle(&mut rng);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{apply_cards_dealt, new_hand_state};
+    use angzarr_client::proto::event_page::Payload;
+    use examples_proto::PlayerInHand;
+    use prost::Message;
+
+    #[test]
+    fn handle_deal_cards_success_emits_cards_dealt_with_hole_cards() {
+        let state = new_hand_state();
+        let cmd = DealCards {
+            table_root: vec![0xab, 0xcd],
+            hand_number: 1,
+            game_variant: GameVariant::TexasHoldem as i32,
+            players: vec![
+                PlayerInHand {
+                    player_root: vec![1],
+                    position: 0,
+                    stack: 500,
+                },
+                PlayerInHand {
+                    player_root: vec![2],
+                    position: 1,
+                    stack: 500,
+                },
+            ],
+            dealer_position: 0,
+            small_blind: 5,
+            big_blind: 10,
+            deck_seed: vec![0u8; 32],
+        };
+        let book = handle_deal_cards(cmd, &state, 1).expect("ok");
+        let any = match book.pages[0].payload.as_ref() {
+            Some(Payload::Event(a)) => a,
+            _ => panic!(),
+        };
+        assert!(any.type_url.ends_with("examples.CardsDealt"));
+        let decoded = CardsDealt::decode(any.value.as_slice()).unwrap();
+        assert_eq!(decoded.player_cards.len(), 2);
+        assert_eq!(decoded.player_cards[0].cards.len(), 2); // Texas Hold'em = 2 hole cards
+        assert_eq!(decoded.remaining_deck.len(), 52 - 4);
+    }
+
+    #[test]
+    fn handle_deal_cards_rejects_when_already_dealt() {
+        let mut state = new_hand_state();
+        // Apply a CardsDealt to make the hand exist
+        apply_cards_dealt(
+            &mut state,
+            CardsDealt {
+                table_root: vec![0xab],
+                hand_number: 1,
+                game_variant: GameVariant::TexasHoldem as i32,
+                player_cards: vec![],
+                dealer_position: 0,
+                players: vec![],
+                dealt_at: None,
+                remaining_deck: vec![],
+            },
+        );
+        let cmd = DealCards {
+            table_root: vec![0xab],
+            hand_number: 2,
+            game_variant: GameVariant::TexasHoldem as i32,
+            players: vec![
+                PlayerInHand {
+                    player_root: vec![1],
+                    position: 0,
+                    stack: 500,
+                },
+                PlayerInHand {
+                    player_root: vec![2],
+                    position: 1,
+                    stack: 500,
+                },
+            ],
+            dealer_position: 0,
+            small_blind: 5,
+            big_blind: 10,
+            deck_seed: vec![0u8; 32],
+        };
+        let err = handle_deal_cards(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("already dealt"));
+    }
+
+    #[test]
+    fn handle_deal_cards_rejects_less_than_two_players() {
+        let state = new_hand_state();
+        let cmd = DealCards {
+            table_root: vec![0xab],
+            hand_number: 1,
+            game_variant: GameVariant::TexasHoldem as i32,
+            players: vec![PlayerInHand {
+                player_root: vec![1],
+                position: 0,
+                stack: 500,
+            }],
+            dealer_position: 0,
+            small_blind: 5,
+            big_blind: 10,
+            deck_seed: vec![0u8; 32],
+        };
+        let err = handle_deal_cards(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("at least 2"));
+    }
 }

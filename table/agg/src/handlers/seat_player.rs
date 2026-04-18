@@ -1,9 +1,8 @@
 //! SeatPlayer command handler for PM-orchestrated buy-in flow.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{PlayerSeated, SeatPlayer, SeatingRejected};
-use prost_types::Any;
 
 use crate::state::TableState;
 
@@ -48,15 +47,10 @@ fn validate(cmd: &SeatPlayer, state: &TableState) -> Result<i32, String> {
 }
 
 pub fn handle_seat_player(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: SeatPlayer,
     state: &TableState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: SeatPlayer = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
 
     // Unlike JoinTable, SeatPlayer produces success or rejection event (not error)
@@ -70,7 +64,10 @@ pub fn handle_seat_player(
                 seated_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.PlayerSeated");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
         Err(reason) => {
             let event = SeatingRejected {
@@ -81,7 +78,160 @@ pub fn handle_seat_player(
                 rejected_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.SeatingRejected");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{apply_player_seated, apply_table_created};
+    use angzarr_client::proto::event_page::Payload;
+    use examples_proto::{GameVariant, TableCreated};
+    use prost::Message;
+
+    fn created_state() -> TableState {
+        let mut s = TableState::default();
+        apply_table_created(
+            &mut s,
+            TableCreated {
+                table_name: "T".into(),
+                game_variant: GameVariant::TexasHoldem as i32,
+                small_blind: 5,
+                big_blind: 10,
+                min_buy_in: 100,
+                max_buy_in: 1000,
+                max_players: 3,
+                action_timeout_seconds: 30,
+                created_at: None,
+            },
+        );
+        s
+    }
+
+    fn first_event(book: &EventBook) -> &prost_types::Any {
+        match book.pages[0].payload.as_ref() {
+            Some(Payload::Event(a)) => a,
+            _ => panic!("no event payload"),
+        }
+    }
+
+    #[test]
+    fn handle_seat_player_success_emits_player_seated() {
+        let state = created_state();
+        let cmd = SeatPlayer {
+            player_root: vec![1, 2, 3],
+            reservation_id: vec![0xaa],
+            seat: 1,
+            amount: 500,
+        };
+        let book = handle_seat_player(cmd, &state, 5).expect("ok");
+        let any = first_event(&book);
+        assert!(any.type_url.ends_with("examples.PlayerSeated"));
+        let decoded = PlayerSeated::decode(any.value.as_slice()).unwrap();
+        assert_eq!(decoded.seat_position, 1);
+        assert_eq!(decoded.stack, 500);
+    }
+
+    #[test]
+    fn handle_seat_player_rejects_when_no_table_with_command_error() {
+        let state = TableState::default();
+        let cmd = SeatPlayer {
+            player_root: vec![1],
+            reservation_id: vec![0xaa],
+            seat: 0,
+            amount: 500,
+        };
+        let err = handle_seat_player(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("does not exist"));
+    }
+
+    #[test]
+    fn handle_seat_player_emits_seating_rejected_on_empty_player_root() {
+        let state = created_state();
+        let cmd = SeatPlayer {
+            player_root: vec![],
+            reservation_id: vec![0xaa],
+            seat: 0,
+            amount: 500,
+        };
+        let book = handle_seat_player(cmd, &state, 1).expect("ok");
+        let any = first_event(&book);
+        assert!(any.type_url.ends_with("examples.SeatingRejected"));
+        let decoded = SeatingRejected::decode(any.value.as_slice()).unwrap();
+        assert!(decoded.reason.contains("player_root"));
+    }
+
+    #[test]
+    fn handle_seat_player_emits_seating_rejected_when_already_seated() {
+        let mut state = created_state();
+        apply_player_seated(
+            &mut state,
+            PlayerSeated {
+                player_root: vec![7],
+                reservation_id: vec![],
+                seat_position: 1,
+                stack: 500,
+                seated_at: None,
+            },
+        );
+        let cmd = SeatPlayer {
+            player_root: vec![7],
+            reservation_id: vec![0xaa],
+            seat: 2,
+            amount: 500,
+        };
+        let book = handle_seat_player(cmd, &state, 1).expect("ok");
+        let any = first_event(&book);
+        assert!(any.type_url.ends_with("examples.SeatingRejected"));
+        let decoded = SeatingRejected::decode(any.value.as_slice()).unwrap();
+        assert!(decoded.reason.contains("already seated"));
+    }
+
+    #[test]
+    fn handle_seat_player_emits_seating_rejected_on_invalid_seat() {
+        let state = created_state();
+        let cmd = SeatPlayer {
+            player_root: vec![1],
+            reservation_id: vec![0xaa],
+            seat: -5,
+            amount: 500,
+        };
+        let book = handle_seat_player(cmd, &state, 1).expect("ok");
+        let any = first_event(&book);
+        let decoded = SeatingRejected::decode(any.value.as_slice()).unwrap();
+        assert!(decoded.reason.contains("Invalid seat"));
+    }
+
+    #[test]
+    fn handle_seat_player_emits_seating_rejected_when_no_available_seats() {
+        let mut state = created_state();
+        // Fill all 3 seats
+        for (i, r) in (0..3).zip([vec![1u8], vec![2], vec![3]]) {
+            apply_player_seated(
+                &mut state,
+                PlayerSeated {
+                    player_root: r,
+                    reservation_id: vec![],
+                    seat_position: i,
+                    stack: 500,
+                    seated_at: None,
+                },
+            );
+        }
+        let cmd = SeatPlayer {
+            player_root: vec![9],
+            reservation_id: vec![0xaa],
+            seat: -1,
+            amount: 500,
+        };
+        let book = handle_seat_player(cmd, &state, 1).expect("ok");
+        let any = first_event(&book);
+        let decoded = SeatingRejected::decode(any.value.as_slice()).unwrap();
+        assert!(decoded.reason.contains("Table is full"));
     }
 }

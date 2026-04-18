@@ -1,15 +1,10 @@
-//! RegistrationOrchestrator Process Manager - coordinates tournament registration flows.
-//!
-//! This PM handles the synchronous cascade flow for tournament registration:
-//! 1. Player emits RegistrationRequested
-//! 2. PM checks Tournament state (registration open, capacity)
-//! 3. PM emits EnrollPlayer command to Tournament
-//! 4. Tournament emits TournamentPlayerEnrolled or TournamentEnrollmentRejected
-//! 5. PM emits ConfirmRegistrationFee or ReleaseRegistrationFee to Player
+//! Registration Process Manager — coordinates tournament registration flows.
 
-use angzarr_client::{run_process_manager_server, ProcessManagerRouter};
-use pmg_registration::{RegistrationPmHandler, RegistrationState};
+use angzarr_client::router::{Built, Router};
+use angzarr_client::run_process_manager_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use pmg_registration::RegistrationPm;
 
 #[tokio::main]
 async fn main() {
@@ -18,13 +13,16 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = ProcessManagerRouter::new("pmg-registration", "pmg-registration", |_| {
-        RegistrationState::default()
-    })
-    .domain("player", RegistrationPmHandler)
-    .domain("tournament", RegistrationPmHandler);
+    let router = Router::new("pmg-registration")
+        .with_handler(|| RegistrationPm)
+        .build()
+        .expect("failed to build pm router");
 
-    run_process_manager_server("pmg-registration", 50393, router)
+    let Built::ProcessManager(pr) = router else {
+        panic!("expected ProcessManager variant");
+    };
+
+    run_process_manager_server("pmg-registration", 50393, pr)
         .await
         .expect("Process manager failed");
 }

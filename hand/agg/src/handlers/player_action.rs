@@ -1,9 +1,8 @@
 //! PlayerAction command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{ActionTaken, ActionType, PlayerAction};
-use prost_types::Any;
 
 use crate::state::{HandState, PlayerHandState};
 
@@ -147,20 +146,100 @@ fn compute(
 }
 
 pub fn handle_player_action(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: PlayerAction,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: PlayerAction = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     let (player, validated) = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player, &validated);
     let event_any = pack_event(&event, "examples.ActionTaken");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{apply_cards_dealt, new_hand_state};
+    use angzarr_client::proto::event_page::Payload;
+    use examples_proto::{CardsDealt, GameVariant, PlayerInHand};
+    use prost::Message;
+
+    fn betting_state() -> HandState {
+        let mut state = new_hand_state();
+        apply_cards_dealt(
+            &mut state,
+            CardsDealt {
+                table_root: vec![0xab],
+                hand_number: 1,
+                game_variant: GameVariant::TexasHoldem as i32,
+                player_cards: vec![],
+                dealer_position: 0,
+                players: vec![
+                    PlayerInHand {
+                        player_root: vec![1],
+                        position: 0,
+                        stack: 500,
+                    },
+                    PlayerInHand {
+                        player_root: vec![2],
+                        position: 1,
+                        stack: 500,
+                    },
+                ],
+                dealt_at: None,
+                remaining_deck: vec![],
+            },
+        );
+        state
+    }
+
+    #[test]
+    fn handle_player_action_fold_success() {
+        let state = betting_state();
+        let cmd = PlayerAction {
+            player_root: vec![1],
+            action: ActionType::Fold as i32,
+            amount: 0,
+        };
+        let book = handle_player_action(cmd, &state, 1).expect("ok");
+        let any = match book.pages[0].payload.as_ref() {
+            Some(Payload::Event(a)) => a,
+            _ => panic!(),
+        };
+        assert!(any.type_url.ends_with("examples.ActionTaken"));
+        let decoded = ActionTaken::decode(any.value.as_slice()).unwrap();
+        assert_eq!(decoded.action, ActionType::Fold as i32);
+        assert_eq!(decoded.player_stack, 500);
+    }
+
+    #[test]
+    fn handle_player_action_rejects_check_when_bet_pending() {
+        let mut state = betting_state();
+        state.current_bet = 10;
+        let cmd = PlayerAction {
+            player_root: vec![1],
+            action: ActionType::Check as i32,
+            amount: 0,
+        };
+        let err = handle_player_action(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("check"));
+    }
+
+    #[test]
+    fn handle_player_action_rejects_when_hand_does_not_exist() {
+        let state = new_hand_state();
+        let cmd = PlayerAction {
+            player_root: vec![1],
+            action: ActionType::Fold as i32,
+            amount: 0,
+        };
+        let err = handle_player_action(cmd, &state, 1).unwrap_err();
+        assert!(err.reason.contains("does not exist"));
+    }
 }

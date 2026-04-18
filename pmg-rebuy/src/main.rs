@@ -1,16 +1,10 @@
-//! RebuyOrchestrator Process Manager - coordinates rebuy flows.
-//!
-//! This PM handles the synchronous cascade flow for tournament rebuys:
-//! 1. Player emits RebuyRequested
-//! 2. PM checks Tournament state (rebuy window, eligibility) + Table state (seat)
-//! 3. PM emits ProcessRebuy command to Tournament
-//! 4. Tournament emits RebuyProcessed or RebuyDenied
-//! 5. If approved, PM emits AddRebuyChips to Table
-//! 6. PM emits ConfirmRebuyFee or ReleaseRebuyFee to Player
+//! Rebuy Process Manager — coordinates rebuy flows across Player ↔ Tournament ↔ Table.
 
-use angzarr_client::{run_process_manager_server, ProcessManagerRouter};
-use pmg_rebuy::{RebuyPmHandler, RebuyState};
+use angzarr_client::router::{Built, Router};
+use angzarr_client::run_process_manager_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use pmg_rebuy::RebuyPm;
 
 #[tokio::main]
 async fn main() {
@@ -19,12 +13,16 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = ProcessManagerRouter::new("pmg-rebuy", "pmg-rebuy", |_| RebuyState::default())
-        .domain("player", RebuyPmHandler)
-        .domain("tournament", RebuyPmHandler)
-        .domain("table", RebuyPmHandler);
+    let router = Router::new("pmg-rebuy")
+        .with_handler(|| RebuyPm)
+        .build()
+        .expect("failed to build pm router");
 
-    run_process_manager_server("pmg-rebuy", 50394, router)
+    let Built::ProcessManager(pr) = router else {
+        panic!("expected ProcessManager variant");
+    };
+
+    run_process_manager_server("pmg-rebuy", 50394, pr)
         .await
         .expect("Process manager failed");
 }

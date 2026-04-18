@@ -1,14 +1,10 @@
-//! BuyInOrchestrator Process Manager - coordinates buy-in flows across Player ↔ Table.
-//!
-//! Following "facts over state rebuilding" philosophy:
-//! 1. Player emits BuyInRequested
-//! 2. PM emits SeatPlayer command to Table (no state validation - let aggregate decide)
-//! 3. Table emits PlayerSeated or SeatingRejected
-//! 4. PM emits ConfirmBuyIn or ReleaseBuyIn to Player
+//! BuyIn Process Manager — coordinates buy-in flows across Player ↔ Table.
 
-use angzarr_client::{run_process_manager_server, ProcessManagerRouter};
-use pmg_buy_in::{BuyInPmHandler, BuyInState};
+use angzarr_client::router::{Built, Router};
+use angzarr_client::run_process_manager_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use pmg_buy_in::BuyInPm;
 
 #[tokio::main]
 async fn main() {
@@ -17,11 +13,16 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = ProcessManagerRouter::new("pmg-buy-in", "pmg-buy-in", |_| BuyInState::default())
-        .domain("player", BuyInPmHandler)
-        .domain("table", BuyInPmHandler);
+    let router = Router::new("pmg-buy-in")
+        .with_handler(|| BuyInPm)
+        .build()
+        .expect("failed to build pm router");
 
-    run_process_manager_server("pmg-buy-in", 50392, router)
+    let Built::ProcessManager(pr) = router else {
+        panic!("expected ProcessManager variant");
+    };
+
+    run_process_manager_server("pmg-buy-in", 50392, pr)
         .await
         .expect("Process manager failed");
 }
