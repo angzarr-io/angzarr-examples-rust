@@ -1,10 +1,10 @@
-//! Projector: Output gRPC server.
+//! Pretty Output Projector gRPC server.
 
 use angzarr_client::router::{Built, Router};
 use angzarr_client::{run_projector_server, ProjectorHandler};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use prj_output::OutputProjector;
+use prj_pretty_output::PrettyOutputProjector;
 
 #[tokio::main]
 async fn main() {
@@ -13,10 +13,15 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    println!("Starting Output projector");
+    println!("Starting Pretty Output projector");
 
-    let router = Router::new("prj-output")
-        .with_handler(|| OutputProjector)
+    // The projector captures a SQLite connection + stdout sink at
+    // construction; we build a single instance and hand it to the runtime
+    // via a factory that returns a *fresh* instance per dispatch. The
+    // runtime documents that projector factories run at most twice per
+    // dispatch, so this is fine even though `from_env()` opens the DB.
+    let router = Router::new("prj-pretty-output")
+        .with_handler(PrettyOutputProjector::from_env)
         .build()
         .expect("failed to build projector router");
 
@@ -24,7 +29,7 @@ async fn main() {
         panic!("expected Projector variant");
     };
 
-    run_projector_server("output", 50391, ProjectorHandler::new(pr))
+    run_projector_server("pretty-output", 50391, ProjectorHandler::new(pr))
         .await
         .expect("Server failed");
 }
