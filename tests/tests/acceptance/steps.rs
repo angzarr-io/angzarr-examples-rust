@@ -304,9 +304,25 @@ fn parse_cascade_error_mode(mode: &str) -> i32 {
 #[given(regex = r"^the poker system is running in standalone mode$")]
 fn given_system_running(_world: &mut AcceptanceWorld) {}
 
+#[given(regex = r"^the poker cluster is reachable via gRPC$")]
+fn given_cluster_reachable(_world: &mut AcceptanceWorld) {
+    // GrpcClient::new() established channels at world construction; if we
+    // got here the cluster is reachable. Real reachability is exercised by
+    // the first command in the scenario.
+}
+
 // ============================================================================
 // Given steps — Players
 // ============================================================================
+
+#[given(regex = r#"^a registered player "([^"]+)" with bankroll (\d+)$"#)]
+fn given_one_registered_player(world: &mut AcceptanceWorld, name: String, bankroll: i64) {
+    let email = format!("{}@example.com", name.to_lowercase());
+    register_player(world, &name, &email);
+    if bankroll > 0 {
+        deposit_funds(world, &name, bankroll);
+    }
+}
 
 #[given(regex = r"^registered players with bankroll:$")]
 fn given_registered_players_with_bankroll(world: &mut AcceptanceWorld, step: &cucumber::gherkin::Step) {
@@ -1203,11 +1219,23 @@ fn then_within_seconds_table(
             .iter()
             .all(|ty| events.iter().any(|p| event_type_matches(p, ty)))
     });
-    assert!(
-        ok,
-        "timeout after {seconds}s waiting for events {expected:?}; got {} event(s)",
-        buffer.lock().unwrap().len()
-    );
+    if !ok {
+        let evts = buffer.lock().unwrap();
+        let urls: Vec<String> = evts
+            .iter()
+            .filter_map(|p| match &p.payload {
+                Some(angzarr_client::proto::event_page::Payload::Event(any)) => {
+                    Some(any.type_url.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        panic!(
+            "timeout after {seconds}s waiting for events {expected:?}; got {} event(s) with type_urls: {:?}",
+            evts.len(),
+            urls
+        );
+    }
 }
 
 #[then(regex = r#"^within (\d+) seconds player "([^"]+)" bankroll projection shows (\d+)$"#)]

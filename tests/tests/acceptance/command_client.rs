@@ -439,7 +439,6 @@ pub mod grpc {
     };
     use std::env;
     use std::sync::Arc;
-    use tokio::sync::Mutex as AsyncMutex;
     use tokio_stream::StreamExt;
     use tonic::transport::Channel;
 
@@ -457,7 +456,10 @@ pub mod grpc {
     }
 
     pub struct GrpcClient {
-        rt: tokio::runtime::Runtime,
+        // Dedicated OS thread owns the runtime; block_on works from there
+        // regardless of whether the caller is inside another tokio runtime
+        // (cucumber's #[tokio::main]).
+        runner: std::sync::mpsc::Sender<Job>,
         player: CommandHandlerCoordinatorServiceClient<Channel>,
         table: CommandHandlerCoordinatorServiceClient<Channel>,
         hand: CommandHandlerCoordinatorServiceClient<Channel>,
@@ -465,24 +467,60 @@ pub mod grpc {
         query_table: EventQueryServiceClient<Channel>,
         query_hand: EventQueryServiceClient<Channel>,
         stream_channel: Channel,
-        correlation_id: AsyncMutex<String>,
+        correlation_id: std::sync::Mutex<String>,
         received: EventBuffer,
-        stream_task: AsyncMutex<Option<tokio::task::JoinHandle<()>>>,
+        stream_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     }
+
+    type Job = Box<dyn FnOnce(tokio::runtime::Handle) + Send>;
 
     impl GrpcClient {
         pub fn new() -> Result<Self, SendError> {
-            let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| SendError(format!("runtime: {e}")))?;
-            let (pc, tc, hc, sc) = rt.block_on(async {
-                let p = connect_channel(&player_url()).await?;
-                let t = connect_channel(&table_url()).await?;
-                let h = connect_channel(&hand_url()).await?;
-                let s = connect_channel(&stream_url()).await?;
-                Ok::<_, SendError>((p, t, h, s))
-            })?;
+            // Spawn an OS thread that owns a multi-thread runtime and pulls
+            // jobs off the channel.
+            let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
+            let (handle_tx, handle_rx) = std::sync::mpsc::channel::<tokio::runtime::Handle>();
+            std::thread::Builder::new()
+                .name("grpc-runtime".into())
+                .spawn(move || {
+                    let rt = match tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .worker_threads(2)
+                        .build()
+                    {
+                        Ok(rt) => rt,
+                        Err(_) => return,
+                    };
+                    let _ = handle_tx.send(rt.handle().clone());
+                    while let Ok(job) = job_rx.recv() {
+                        job(rt.handle().clone());
+                    }
+                })
+                .map_err(|e| SendError(format!("runtime thread: {e}")))?;
+
+            let handle = handle_rx
+                .recv()
+                .map_err(|e| SendError(format!("runtime handle: {e}")))?;
+
+            // Connect channels on the runtime thread, block this thread on
+            // the result via oneshot.
+            let (tx, rx) = std::sync::mpsc::channel();
+            let _ = job_tx.send(Box::new(move |h| {
+                let res = h.block_on(async {
+                    let p = connect_channel(&player_url()).await?;
+                    let t = connect_channel(&table_url()).await?;
+                    let hc = connect_channel(&hand_url()).await?;
+                    let s = connect_channel(&stream_url()).await?;
+                    Ok::<_, SendError>((p, t, hc, s))
+                });
+                let _ = tx.send(res);
+            }));
+            let (pc, tc, hc, sc) = rx
+                .recv()
+                .map_err(|e| SendError(format!("connect recv: {e}")))??;
+
             Ok(Self {
-                rt,
+                runner: job_tx,
                 player: CommandHandlerCoordinatorServiceClient::new(pc.clone()),
                 table: CommandHandlerCoordinatorServiceClient::new(tc.clone()),
                 hand: CommandHandlerCoordinatorServiceClient::new(hc.clone()),
@@ -490,15 +528,31 @@ pub mod grpc {
                 query_table: EventQueryServiceClient::new(tc),
                 query_hand: EventQueryServiceClient::new(hc),
                 stream_channel: sc,
-                correlation_id: AsyncMutex::new(String::new()),
+                correlation_id: std::sync::Mutex::new(String::new()),
                 received: Arc::new(Mutex::new(Vec::new())),
-                stream_task: AsyncMutex::new(None),
+                stream_task: std::sync::Mutex::new(None),
             })
         }
 
+        // Run an async closure on the dedicated runtime, blocking the caller
+        // until it completes. Safe to call from inside another tokio runtime
+        // because the block_on happens on a separate OS thread.
+        fn run_blocking<F, Fut, T>(&self, f: F) -> T
+        where
+            F: FnOnce(tokio::runtime::Handle) -> Fut + Send + 'static,
+            Fut: std::future::Future<Output = T> + Send,
+            T: Send + 'static,
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let _ = self.runner.send(Box::new(move |h| {
+                let result = h.clone().block_on(f(h));
+                let _ = tx.send(result);
+            }));
+            rx.recv().expect("grpc runtime thread died")
+        }
+
         fn current_correlation(&self) -> String {
-            self.rt
-                .block_on(async { self.correlation_id.lock().await.clone() })
+            self.correlation_id.lock().unwrap().clone()
         }
 
         fn query_client(
@@ -528,8 +582,7 @@ pub mod grpc {
                 selection: None,
             };
             let book = match self
-                .rt
-                .block_on(async move { client.get_event_book(query).await })
+                .run_blocking(move |_| async move { client.get_event_book(query).await })
             {
                 Ok(resp) => resp.into_inner(),
                 Err(_) => return Vec::new(),
@@ -589,8 +642,7 @@ pub mod grpc {
                 other => return Err(SendError(format!("unknown domain: {other}"))),
             };
             let resp = self
-                .rt
-                .block_on(async move { client.handle_command(request).await })
+                .run_blocking(move |_| async move { client.handle_command(request).await })
                 .map_err(|s| SendError(format!("{s}")))?;
             let book = resp
                 .into_inner()
@@ -628,16 +680,16 @@ pub mod grpc {
         fn set_correlation(&self, correlation_id: &str) {
             self.received.lock().unwrap().clear();
             let cid = correlation_id.to_string();
+            *self.correlation_id.lock().unwrap() = cid.clone();
+            // Cancel any prior subscription.
+            if let Some(h) = self.stream_task.lock().unwrap().take() {
+                h.abort();
+            }
             let channel = self.stream_channel.clone();
             let received = Arc::clone(&self.received);
-            // Cancel any prior subscription.
-            self.rt.block_on(async {
-                let mut guard = self.stream_task.lock().await;
-                if let Some(h) = guard.take() {
-                    h.abort();
-                }
-                *self.correlation_id.lock().await = cid.clone();
-                let handle = tokio::spawn(async move {
+            // Spawn the stream-drain task on the dedicated runtime.
+            let handle = self.run_blocking(move |h| async move {
+                h.spawn(async move {
                     let mut client = EventStreamServiceClient::new(channel);
                     let filter = EventStreamFilter {
                         correlation_id: cid,
@@ -658,18 +710,15 @@ pub mod grpc {
                             Err(_) => break,
                         }
                     }
-                });
-                *guard = Some(handle);
+                })
             });
+            *self.stream_task.lock().unwrap() = Some(handle);
         }
 
         fn close(&mut self) {
-            self.rt.block_on(async {
-                let mut guard = self.stream_task.lock().await;
-                if let Some(h) = guard.take() {
-                    h.abort();
-                }
-            });
+            if let Some(h) = self.stream_task.lock().unwrap().take() {
+                h.abort();
+            }
         }
     }
 }
