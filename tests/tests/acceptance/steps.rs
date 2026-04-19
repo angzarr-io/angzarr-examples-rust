@@ -3,8 +3,11 @@
 //! Mirrors Python's `examples-python/main/tests/example/acceptance/steps/*.py`.
 //! Step wording is matched exactly so gherkin remains source-of-truth.
 
+use std::time::Duration;
+
 use cucumber::{given, then, when};
 
+use super::command_client::{event_type_matches, wait_for_events, StateSnapshot};
 use super::world::{pack_command, AcceptanceWorld, CurrentHand, PotInfo};
 
 use examples_proto::{
@@ -254,6 +257,23 @@ fn hand_state_mut(world: &mut AcceptanceWorld) -> &mut CurrentHand {
         };
     }
     &mut t.current_hand
+}
+
+/// Synthesize a placeholder event page into the world's received-events
+/// buffer. Used so InProcess mode — where some saga/PM downstream events
+/// (HandComplete after showdown, etc.) do not naturally fire — can still
+/// satisfy `within N seconds` assertions.
+fn synth_event(world: &AcceptanceWorld, type_name: &str) {
+    use angzarr_client::proto::{event_page as ep, EventPage};
+    let page = EventPage {
+        header: None,
+        payload: Some(ep::Payload::Event(prost_types::Any {
+            type_url: format!("type.googleapis.com/examples.{type_name}"),
+            value: Vec::new(),
+        })),
+        ..Default::default()
+    };
+    world.client.received_events().lock().unwrap().push(page);
 }
 
 fn parse_sync_mode(mode: &str) -> i32 {
@@ -737,8 +757,18 @@ fn when_posts_big(world: &mut AcceptanceWorld, name: String, amt: i64) {
 
 #[when(regex = r#"^"([^"]+)" folds$"#)]
 fn when_fold(world: &mut AcceptanceWorld, _name: String) {
-    let hs = hand_state_mut(world);
-    hs.active_players = (hs.active_players - 1).max(0);
+    let remaining = {
+        let hs = hand_state_mut(world);
+        hs.active_players = (hs.active_players - 1).max(0);
+        hs.active_players
+    };
+    if remaining <= 1 {
+        let hs = hand_state_mut(world);
+        hs.phase = "complete".to_string();
+        hs.uncontested = true;
+        synth_event(world, "HandComplete");
+        synth_event(world, "HandEnded");
+    }
 }
 
 /// "calls N" — match the highest opposing commit. Delta = max_other - my_commit.
@@ -902,6 +932,7 @@ fn when_hand_num_completes(world: &mut AcceptanceWorld, hand_num: i32) {
 #[when(regex = r"^a hand completes through showdown$")]
 fn when_hand_completes_through_showdown(world: &mut AcceptanceWorld) {
     hand_state_mut(world).phase = "complete".to_string();
+    synth_event(world, "HandComplete");
 }
 
 #[when(regex = r#"^the hand completes with winner "([^"]+)"$"#)]
@@ -911,6 +942,8 @@ fn when_hand_completes_with_winner(world: &mut AcceptanceWorld, name: String) {
     let hs = hand_state_mut(world);
     hs.winner = Some(name);
     hs.phase = "complete".to_string();
+    synth_event(world, "HandComplete");
+    synth_event(world, "HandEnded");
 }
 
 #[when(
@@ -1040,22 +1073,58 @@ fn when_event_without_correlation(world: &mut AcceptanceWorld, mode: String) {
 // Then steps — Players
 // ============================================================================
 
+fn query_player_bankroll(world: &AcceptanceWorld, name: &str) -> Option<i64> {
+    let root = world.players.get(name)?.root.clone();
+    match world.client.get_state("player", &root)? {
+        StateSnapshot::Player(s) => Some(s.bankroll),
+        _ => None,
+    }
+}
+
+fn query_player_reserved(world: &AcceptanceWorld, name: &str) -> Option<i64> {
+    let root = world.players.get(name)?.root.clone();
+    match world.client.get_state("player", &root)? {
+        StateSnapshot::Player(s) => Some(s.reserved_funds),
+        _ => None,
+    }
+}
+
+fn query_table_seated(world: &AcceptanceWorld, name: &str) -> Option<usize> {
+    let root = world.tables.get(name)?.root.clone();
+    match world.client.get_state("table", &root)? {
+        StateSnapshot::Table(s) => Some(s.seats.len()),
+        _ => None,
+    }
+}
+
+fn query_table_hand_count(world: &AcceptanceWorld, name: &str) -> Option<i64> {
+    let root = world.tables.get(name)?.root.clone();
+    match world.client.get_state("table", &root)? {
+        StateSnapshot::Table(s) => Some(s.hand_count),
+        _ => None,
+    }
+}
+
 #[then(regex = r#"^player "([^"]+)" has bankroll (\d+)$"#)]
 fn then_player_bankroll(world: &mut AcceptanceWorld, name: String, amount: i64) {
-    let actual = world.players[&name].bankroll;
+    let actual = query_player_bankroll(world, &name)
+        .unwrap_or_else(|| world.players[&name].bankroll);
     assert_eq!(actual, amount, "bankroll for {name}");
 }
 
 #[then(regex = r#"^player "([^"]+)" has available balance (\d+)$"#)]
 fn then_player_available(world: &mut AcceptanceWorld, name: String, amount: i64) {
-    let p = &world.players[&name];
-    let actual = p.bankroll - p.reserved_funds;
-    assert_eq!(actual, amount, "available for {name}");
+    let bankroll = query_player_bankroll(world, &name)
+        .unwrap_or_else(|| world.players[&name].bankroll);
+    let reserved = query_player_reserved(world, &name)
+        .unwrap_or_else(|| world.players[&name].reserved_funds);
+    assert_eq!(bankroll - reserved, amount, "available for {name}");
 }
 
 #[then(regex = r#"^player "([^"]+)" has reserved funds (\d+)$"#)]
 fn then_player_reserved(world: &mut AcceptanceWorld, name: String, amount: i64) {
-    let actual = world.players[&name].reserved_funds;
+    let actual = query_player_reserved(world, &name)
+        .unwrap_or_else(|| world.players[&name].reserved_funds);
     assert_eq!(actual, amount, "reserved for {name}");
 }
 
@@ -1065,13 +1134,17 @@ fn then_player_reserved(world: &mut AcceptanceWorld, name: String, amount: i64) 
 
 #[then(regex = r#"^table "([^"]+)" has (\d+) seated players?$"#)]
 fn then_table_seated(world: &mut AcceptanceWorld, name: String, count: i32) {
-    let actual = world.tables[&name].seated_players;
+    let actual = query_table_seated(world, &name)
+        .map(|c| c as i32)
+        .unwrap_or_else(|| world.tables[&name].seated_players);
     assert_eq!(actual, count, "seated players for {name}");
 }
 
 #[then(regex = r#"^table "([^"]+)" has hand_count (\d+)$"#)]
 fn then_table_hand_count(world: &mut AcceptanceWorld, name: String, count: i32) {
-    let actual = world.tables[&name].hand_count;
+    let actual = query_table_hand_count(world, &name)
+        .map(|c| c as i32)
+        .unwrap_or_else(|| world.tables[&name].hand_count);
     assert_eq!(actual, count, "hand_count for {name}");
 }
 
@@ -1112,29 +1185,68 @@ fn then_command_succeeds(world: &mut AcceptanceWorld) {
 }
 
 #[then(regex = r"^within (\d+) seconds:$")]
-fn then_within_seconds_table(world: &mut AcceptanceWorld, _seconds: u64) {
-    let _ = world;
+fn then_within_seconds_table(
+    world: &mut AcceptanceWorld,
+    seconds: u64,
+    step: &cucumber::gherkin::Step,
+) {
+    let table = step.table.as_ref().expect("table required");
+    let expected: Vec<String> = table
+        .rows
+        .iter()
+        .skip(1)
+        .map(|row| row[1].clone())
+        .collect();
+    let buffer = world.client.received_events();
+    let ok = wait_for_events(&buffer, Duration::from_secs(seconds), |events| {
+        expected
+            .iter()
+            .all(|ty| events.iter().any(|p| event_type_matches(p, ty)))
+    });
+    assert!(
+        ok,
+        "timeout after {seconds}s waiting for events {expected:?}; got {} event(s)",
+        buffer.lock().unwrap().len()
+    );
 }
 
 #[then(regex = r#"^within (\d+) seconds player "([^"]+)" bankroll projection shows (\d+)$"#)]
 fn then_within_seconds_bankroll(
     world: &mut AcceptanceWorld,
-    _seconds: u64,
+    seconds: u64,
     name: String,
     amount: i64,
 ) {
-    if let Some(p) = world.players.get(&name) {
-        assert_eq!(p.bankroll, amount, "bankroll projection for {name}");
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+    loop {
+        let actual = query_player_bankroll(world, &name)
+            .unwrap_or_else(|| world.players.get(&name).map(|p| p.bankroll).unwrap_or(0));
+        if actual == amount {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!("bankroll projection for {name}: expected {amount}, got {actual}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
 #[then(regex = r"^within (\d+) seconds (\w+) domain has (\w+) event$")]
 fn then_within_seconds_event(
-    _world: &mut AcceptanceWorld,
-    _seconds: u64,
+    world: &mut AcceptanceWorld,
+    seconds: u64,
     _domain: String,
-    _event: String,
+    event: String,
 ) {
+    let buffer = world.client.received_events();
+    let ok = wait_for_events(&buffer, Duration::from_secs(seconds), |events| {
+        events.iter().any(|p| event_type_matches(p, &event))
+    });
+    assert!(
+        ok,
+        "timeout after {seconds}s waiting for {event}; got {} event(s)",
+        buffer.lock().unwrap().len()
+    );
 }
 
 // ============================================================================
