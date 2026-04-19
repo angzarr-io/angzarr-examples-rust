@@ -73,9 +73,13 @@ harness = false
 [[test]]
 name = "tournament"
 harness = false
-# Acceptance BDD test target: runs poker_game.feature and sync_modes.feature.
-# Default mode uses InProcessClient (no env vars, no features required).
-# The `acceptance-test` feature enables the GrpcClient path for CI.
+# Unit-tier BDD target: runs features/example/unit/poker_game.feature and
+# sync_modes.feature against InProcessClient. No env vars, no features.
+[[test]]
+name = "poker_game_unit"
+harness = false
+# Cluster acceptance BDD target: runs features/example/acceptance/*.feature
+# against a deployed cluster via gRPC. Requires --features acceptance-test.
 [[test]]
 name = "acceptance"
 harness = false
