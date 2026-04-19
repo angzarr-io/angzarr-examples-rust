@@ -6,17 +6,21 @@ imagePullSecrets:
   - name: ghcr-pull-secret
 
 # Init containers use host/port for health checks (nc -z)
-# Service names match Helm release names (deploy-infra uses angzarr-db/angzarr-mq)
+# CI infra is installed via the `angzarr-db-postgres-simple` and
+# `angzarr-mq-rabbitmq-simple` charts, whose services are plain
+# `postgres`/`rabbitmq`. The production path (cloudnative-pg + rabbitmq
+# operator) uses `angzarr-db`/`angzarr-mq` and overrides these in its own
+# values file.
 storage:
   postgres:
-    uri: "postgres://angzarr:angzarr@angzarr-db:5432/angzarr"
-    host: "angzarr-db"
+    uri: "postgres://angzarr:angzarr@postgres:5432/angzarr"
+    host: "postgres"
     port: 5432
 
 messaging:
   amqp:
-    url: "amqp://angzarr:angzarr@angzarr-mq:5672/%2F"
-    host: "angzarr-mq"
+    url: "amqp://angzarr:angzarr@rabbitmq:5672/%2F"
+    host: "rabbitmq"
     port: 5672
 
 # Use IfNotPresent since images are pre-loaded into Kind
