@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 
 use agg_table::handlers::{
-    handle_create_table, handle_end_hand, handle_join_table, handle_leave_table, handle_start_hand,
+    handle_add_rebuy_chips, handle_create_table, handle_end_hand, handle_join_table,
+    handle_leave_table, handle_seat_player, handle_start_hand,
 };
 use agg_table::state::{
     apply_chips_added, apply_hand_ended, apply_hand_started, apply_player_joined,
@@ -14,12 +15,20 @@ use angzarr_client::proto::{event_page, EventBook};
 use angzarr_client::{try_unpack, CommandRejectedError};
 use cucumber::{given, then, when, World};
 use examples_proto::{
-    ChipsAdded, CreateTable, EndHand, GameVariant, HandEnded, HandStarted, JoinTable, LeaveTable,
-    PlayerJoined, PlayerLeft, PlayerSatIn, PlayerSatOut, PlayerSeated, PotResult, RebuyChipsAdded,
-    SeatingRejected, StartHand, TableCreated,
+    AddRebuyChips, ChipsAdded, CreateTable, EndHand, GameVariant, HandEnded, HandStarted,
+    JoinTable, LeaveTable, PlayerJoined, PlayerLeft, PlayerSatIn, PlayerSatOut, PlayerSeated,
+    PotResult, RebuyChipsAdded, SeatPlayer, SeatingRejected, StartHand, TableCreated,
 };
 use poker_tests::{generate_hand_root, uuid_for};
 use prost_types::Any;
+
+fn uuid_or_empty(s: &str) -> Vec<u8> {
+    if s.is_empty() {
+        Vec::new()
+    } else {
+        uuid_for(s)
+    }
+}
 
 /// Test world for table aggregate.
 #[derive(Debug, Default, World)]
@@ -42,7 +51,7 @@ impl TableWorld {
     }
 
     fn player_root(&self, player_id: &str) -> Vec<u8> {
-        uuid_for(player_id)
+        uuid_or_empty(player_id)
     }
 
     fn next_seq(&self) -> u32 {
@@ -218,7 +227,7 @@ fn given_hand_ended(world: &mut TableWorld, hand_number: i64) {
 #[when(regex = r"I handle a CreateTable command with name (.+) and variant (.+):")]
 fn when_create_table(world: &mut TableWorld, step: &cucumber::gherkin::Step) {
     let (name, variant) = {
-        let captures = regex::Regex::new(r#"name "([^"]+)" and variant "([^"]+)""#)
+        let captures = regex::Regex::new(r#"name "([^"]*)" and variant "([^"]*)""#)
             .unwrap()
             .captures(&step.value)
             .unwrap();
@@ -518,7 +527,244 @@ fn then_state_hand_count(world: &mut TableWorld, expected: i64) {
     assert_eq!(state.hand_count, expected);
 }
 
+// =============================================================================
+// New Given steps
+// =============================================================================
+
+#[given(expr = "a PlayerSatOut event for player {string}")]
+fn given_player_sat_out(world: &mut TableWorld, player_id: String) {
+    let event = PlayerSatOut {
+        player_root: world.player_root(&player_id),
+        sat_out_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+}
+
+#[given(expr = "a PlayerSatIn event for player {string}")]
+fn given_player_sat_in(world: &mut TableWorld, player_id: String) {
+    let event = PlayerSatIn {
+        player_root: world.player_root(&player_id),
+        sat_in_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+}
+
+#[given(expr = "a ChipsAdded event for player {string} with new_stack {int}")]
+fn given_chips_added(world: &mut TableWorld, player_id: String, new_stack: i64) {
+    let state = world.rebuild_state();
+    let player_root = world.player_root(&player_id);
+    let prev_stack = state
+        .find_seat_by_player(&player_root)
+        .map(|s| s.stack)
+        .unwrap_or(0);
+    let event = ChipsAdded {
+        player_root,
+        amount: new_stack - prev_stack,
+        new_stack,
+        added_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+}
+
+// =============================================================================
+// New When steps
+// =============================================================================
+
+#[when(expr = "I handle a SeatPlayer command for player {string} reservation {string} seat {int} amount {int}")]
+fn when_seat_player(
+    world: &mut TableWorld,
+    player_id: String,
+    reservation: String,
+    seat: i32,
+    amount: i64,
+) {
+    let cmd = SeatPlayer {
+        player_root: world.player_root(&player_id),
+        reservation_id: uuid_or_empty(&reservation),
+        seat,
+        amount,
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_seat_player(cmd, &state, world.next_seq()));
+}
+
+#[when(expr = "I handle an AddRebuyChips command for player {string} reservation {string} seat {int} amount {int}")]
+fn when_add_rebuy_chips(
+    world: &mut TableWorld,
+    player_id: String,
+    reservation: String,
+    seat: i32,
+    amount: i64,
+) {
+    let cmd = AddRebuyChips {
+        player_root: world.player_root(&player_id),
+        reservation_id: uuid_or_empty(&reservation),
+        seat,
+        amount,
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_add_rebuy_chips(cmd, &state, world.next_seq()));
+}
+
+#[when("I handle an EndHand command with mismatched hand_root")]
+fn when_end_hand_mismatched(world: &mut TableWorld) {
+    let cmd = EndHand {
+        hand_root: uuid_for("nonexistent-hand"),
+        results: vec![],
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_end_hand(cmd, &state, world.next_seq()));
+}
+
+#[when(expr = "I start a hand and end it with winner {string} winning {int}")]
+fn when_start_then_end_hand(world: &mut TableWorld, winner: String, amount: i64) {
+    // StartHand
+    let state = world.rebuild_state();
+    let book = handle_start_hand(StartHand {}, &state, world.next_seq()).expect("start hand");
+    let mut hand_root: Vec<u8> = Vec::new();
+    if let Some(page) = book.pages.first() {
+        if let Some(event_page::Payload::Event(e)) = &page.payload {
+            if let Some(hs) = try_unpack::<HandStarted>(e) {
+                world.hand_number = hs.hand_number;
+                hand_root = hs.hand_root.clone();
+            }
+            world.events.push(e.clone());
+        }
+    }
+    // EndHand using hand_root from HandStarted (handler-derived, not re-derived)
+    let cmd = EndHand {
+        hand_root,
+        results: vec![PotResult {
+            winner_root: world.player_root(&winner),
+            amount,
+            pot_type: "main".to_string(),
+            winning_hand: None,
+        }],
+    };
+    let state = world.rebuild_state();
+    let result = handle_end_hand(cmd, &state, world.next_seq());
+    if let Ok(book) = &result {
+        for page in &book.pages {
+            if let Some(event_page::Payload::Event(e)) = &page.payload {
+                world.events.push(e.clone());
+            }
+        }
+    }
+    world.result = Some(result);
+}
+
+// =============================================================================
+// New Then steps
+// =============================================================================
+
+#[then(expr = "the table state has {int} active_players")]
+fn then_active_player_count(world: &mut TableWorld, expected: usize) {
+    let state = world.rebuild_state();
+    assert_eq!(state.active_player_count(), expected);
+}
+
+#[then(expr = "the table state has table_id {string}")]
+fn then_state_table_id(world: &mut TableWorld, expected: String) {
+    let state = world.rebuild_state();
+    assert_eq!(state.table_id, expected);
+}
+
+#[then("the table state is full")]
+fn then_state_is_full(world: &mut TableWorld) {
+    let state = world.rebuild_state();
+    assert_eq!(
+        state.player_count() as i32,
+        state.max_players,
+        "Expected table to be full ({} of {})",
+        state.player_count(),
+        state.max_players
+    );
+}
+
+#[then(expr = "the table state seat {int} has stack {int}")]
+fn then_seat_stack(world: &mut TableWorld, seat: i32, expected: i64) {
+    let state = world.rebuild_state();
+    let seat_state = state.seats.get(&seat).expect("Seat not found");
+    assert_eq!(seat_state.stack, expected);
+}
+
+#[then(expr = "the table state has current_hand_root empty")]
+fn then_current_hand_root_empty(world: &mut TableWorld) {
+    let state = world.rebuild_state();
+    assert!(
+        state.current_hand_root.is_empty(),
+        "Expected current_hand_root empty"
+    );
+}
+
+#[then("the small_blind_position equals the dealer_position")]
+fn then_sb_equals_dealer(world: &mut TableWorld) {
+    let event = world.result_event().expect("No event");
+    let hs = try_unpack::<HandStarted>(&event).expect("HandStarted expected");
+    assert_eq!(
+        hs.small_blind_position, hs.dealer_position,
+        "SB should equal dealer in heads-up"
+    );
+}
+
+#[then("the small_blind_position differs from the dealer_position")]
+fn then_sb_differs_dealer(world: &mut TableWorld) {
+    let event = world.result_event().expect("No event");
+    let hs = try_unpack::<HandStarted>(&event).expect("HandStarted expected");
+    assert_ne!(
+        hs.small_blind_position, hs.dealer_position,
+        "SB should differ from dealer with 3+ players"
+    );
+}
+
+#[then(expr = "the seating event has seat_position {int}")]
+fn then_seating_event_seat_position(world: &mut TableWorld, expected: i32) {
+    let event = world.result_event().expect("No event");
+    let ps = try_unpack::<PlayerSeated>(&event).expect("PlayerSeated expected");
+    assert_eq!(ps.seat_position, expected);
+}
+
+#[then(expr = "the seating event has stack {int}")]
+fn then_seating_event_stack(world: &mut TableWorld, expected: i64) {
+    let event = world.result_event().expect("No event");
+    let ps = try_unpack::<PlayerSeated>(&event).expect("PlayerSeated expected");
+    assert_eq!(ps.stack, expected);
+}
+
+#[then(expr = "the seating rejection reason contains {string}")]
+fn then_seating_rejection_reason(world: &mut TableWorld, expected: String) {
+    let event = world.result_event().expect("No event");
+    let sr = try_unpack::<SeatingRejected>(&event).expect("SeatingRejected expected");
+    assert!(
+        sr.reason.to_lowercase().contains(&expected.to_lowercase()),
+        "Expected SeatingRejected reason to contain '{}' but got '{}'",
+        expected,
+        sr.reason
+    );
+}
+
+#[then(expr = "the rebuy event has amount {int}")]
+fn then_rebuy_amount(world: &mut TableWorld, expected: i64) {
+    let event = world.result_event().expect("No event");
+    let rca = try_unpack::<RebuyChipsAdded>(&event).expect("RebuyChipsAdded expected");
+    assert_eq!(rca.amount, expected);
+}
+
+#[then(expr = "the rebuy event has new_stack {int}")]
+fn then_rebuy_new_stack(world: &mut TableWorld, expected: i64) {
+    let event = world.result_event().expect("No event");
+    let rca = try_unpack::<RebuyChipsAdded>(&event).expect("RebuyChipsAdded expected");
+    assert_eq!(rca.new_stack, expected);
+}
+
+#[then(expr = "the rebuy event has seat {int}")]
+fn then_rebuy_seat(world: &mut TableWorld, expected: i32) {
+    let event = world.result_event().expect("No event");
+    let rca = try_unpack::<RebuyChipsAdded>(&event).expect("RebuyChipsAdded expected");
+    assert_eq!(rca.seat, expected);
+}
+
 #[tokio::main]
 async fn main() {
-    TableWorld::run("features/unit/table.feature").await;
+    TableWorld::run("features/example/unit/table.feature").await;
 }

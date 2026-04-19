@@ -603,7 +603,8 @@ mod handler_tests {
     #[test]
     fn on_reveal_cards_delegates_to_handler() {
         let agg = HandAggregate;
-        let state = dealt_state();
+        let mut state = dealt_state();
+        state.status = "showdown".to_string();
         let book = agg
             .on_reveal_cards(
                 RevealCards {

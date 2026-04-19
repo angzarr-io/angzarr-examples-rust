@@ -624,7 +624,7 @@ async fn main() {
                 .summarized()
                 .assert_normalized(),
         )
-        .filter_run("features/unit/orchestration.feature", |_feat, _rule, scenario| {
+        .filter_run("features/example/unit/orchestration.feature", |_feat, _rule, scenario| {
             !SKIPPED_SCENARIOS.contains(&scenario.name.as_str())
         })
         .await;

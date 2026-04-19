@@ -47,6 +47,8 @@ pub struct HandState {
     pub dealer_position: i32,
     pub small_blind_position: i32,
     pub big_blind_position: i32,
+    pub small_blind: i64,
+    pub big_blind: i64,
 
     pub status: String,
 }
@@ -93,9 +95,9 @@ pub fn new_hand_state() -> HandState {
 // --- Event appliers ---
 
 pub fn apply_cards_dealt(state: &mut HandState, event: CardsDealt) {
-    state.hand_id = format!("{}_{}", hex::encode(&state.table_root), event.hand_number);
     state.table_root = event.table_root;
     state.hand_number = event.hand_number;
+    state.hand_id = format!("{}_{}", hex::encode(&state.table_root), state.hand_number);
     state.game_variant = GameVariant::try_from(event.game_variant).unwrap_or_default();
     state.dealer_position = event.dealer_position;
     state.remaining_deck = event.remaining_deck;
@@ -138,6 +140,11 @@ pub fn apply_blind_posted(state: &mut HandState, event: BlindPosted) {
     }
     if event.amount > state.min_raise {
         state.min_raise = event.amount;
+    }
+    match event.blind_type.as_str() {
+        "small" => state.small_blind = event.amount,
+        "big" => state.big_blind = event.amount,
+        _ => {}
     }
 }
 
@@ -241,38 +248,3 @@ pub fn apply_hand_complete(state: &mut HandState, event: HandComplete) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_community_cards_dealt_applies_correctly() {
-        let event = CommunityCardsDealt {
-            cards: vec![
-                Card { suit: 0, rank: 10 },
-                Card { suit: 1, rank: 11 },
-                Card { suit: 2, rank: 12 },
-            ],
-            phase: BettingPhase::Flop as i32,
-            all_community_cards: vec![
-                Card { suit: 0, rank: 10 },
-                Card { suit: 1, rank: 11 },
-                Card { suit: 2, rank: 12 },
-            ],
-            dealt_at: None,
-        };
-
-        let mut state = new_hand_state();
-        apply_community_cards_dealt(&mut state, event);
-
-        assert_eq!(state.community_cards.len(), 3);
-        assert_eq!(state.current_phase, BettingPhase::Flop);
-    }
-
-    #[test]
-    fn new_hand_state_has_one_main_pot() {
-        let state = new_hand_state();
-        assert_eq!(state.pots.len(), 1);
-        assert_eq!(state.pots[0].pot_type, "main");
-    }
-}

@@ -25,6 +25,14 @@ use examples_proto::{
 use poker_tests::{parse_cards, uuid_for};
 use prost_types::Any;
 
+fn uuid_or_empty(s: &str) -> Vec<u8> {
+    if s.is_empty() {
+        Vec::new()
+    } else {
+        uuid_for(s)
+    }
+}
+
 /// Test world for hand aggregate.
 #[derive(Debug, Default, World)]
 pub struct HandWorld {
@@ -40,6 +48,10 @@ pub struct HandWorld {
     deck_remaining: i32,
     hand_number: i64,
 
+    // Determinism test state
+    deal_a: Option<EventBook>,
+    deal_b: Option<EventBook>,
+
     // Showdown state
     player_rankings: HashMap<String, HandRankType>,
     winner: String,
@@ -53,7 +65,7 @@ impl HandWorld {
     }
 
     fn player_root(&self, player_id: &str) -> Vec<u8> {
-        uuid_for(player_id)
+        uuid_or_empty(player_id)
     }
 
     fn next_seq(&self) -> u32 {
@@ -300,9 +312,15 @@ fn given_blinds_posted_with_bet(world: &mut HandWorld, pot: i64, current_bet: i6
 
 #[given(expr = "a BlindPosted event for player {string} amount {int}")]
 fn given_blind_posted(world: &mut HandWorld, player_id: String, amount: i64) {
+    let prior_blinds = world
+        .events
+        .iter()
+        .filter(|e| try_unpack::<BlindPosted>(e).is_some())
+        .count();
+    let blind_type = if prior_blinds == 0 { "small" } else { "big" };
     let event = BlindPosted {
         player_root: world.player_root(&player_id),
-        blind_type: "small".to_string(),
+        blind_type: blind_type.to_string(),
         amount,
         player_stack: 500 - amount,
         pot_total: world.pot_total + amount,
@@ -317,16 +335,7 @@ fn given_betting_round_preflop(world: &mut HandWorld) {
     let event = BettingRoundComplete {
         completed_phase: BettingPhase::Preflop as i32,
         pot_total: world.pot_total,
-        stacks: world
-            .players
-            .iter()
-            .map(|p| PlayerStackSnapshot {
-                player_root: p.player_root.clone(),
-                stack: p.stack,
-                is_all_in: false,
-                has_folded: false,
-            })
-            .collect(),
+        stacks: vec![],
         completed_at: None,
     };
     world.events.push(pack_event_any(&event));
@@ -804,17 +813,23 @@ fn when_rebuild_state(_world: &mut HandWorld) {
 #[when("hands are evaluated")]
 fn when_hands_evaluated(world: &mut HandWorld) {
     let rules = game_rules::get_rules(GameVariant::TexasHoldem);
-    let mut best_score = i32::MIN;
+    let mut best_key: Option<(i32, Vec<i32>)> = None;
     let mut best_player = String::new();
 
-    for (player_id, hole_cards) in &world.showdown_hole_cards {
+    // Sort by player_id for deterministic tie-handling (HashMap iteration order
+    // is unstable; without this a true tie would pick a random winner).
+    let mut entries: Vec<_> = world.showdown_hole_cards.iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+
+    for (player_id, hole_cards) in entries {
         let rank = rules.evaluate_hand(hole_cards, &world.showdown_community_cards);
         world
             .player_rankings
             .insert(player_id.clone(), rank.rank_type);
 
-        if rank.score > best_score {
-            best_score = rank.score;
+        let key = (rank.score, rank.kickers.iter().map(|k| *k as i32).collect());
+        if best_key.as_ref().map_or(true, |b| key > *b) {
+            best_key = Some(key);
             best_player = player_id.clone();
         }
     }
@@ -1150,6 +1165,8 @@ fn then_state_phase(world: &mut HandWorld, expected: String) {
         "FLOP" => BettingPhase::Flop,
         "TURN" => BettingPhase::Turn,
         "RIVER" => BettingPhase::River,
+        "DRAW" => BettingPhase::Draw,
+        "SHOWDOWN" => BettingPhase::Showdown,
         _ => BettingPhase::Preflop,
     };
     assert_eq!(state.current_phase, expected_phase);
@@ -1224,7 +1241,339 @@ fn then_revealed_ranking(world: &mut HandWorld, expected: String) {
     );
 }
 
+// =============================================================================
+// Additional Given steps
+// =============================================================================
+
+#[given(
+    expr = "a CardsDealt event with table_root {string} and hand_number {int}"
+)]
+fn given_cards_dealt_raw(world: &mut HandWorld, table_root_hex: String, hand_number: i64) {
+    let table_root = hex::decode(&table_root_hex).expect("valid hex");
+    let event = CardsDealt {
+        table_root,
+        hand_number,
+        game_variant: GameVariant::TexasHoldem as i32,
+        player_cards: vec![],
+        dealer_position: 0,
+        players: vec![],
+        dealt_at: None,
+        remaining_deck: vec![],
+    };
+    world.events.push(pack_event_any(&event));
+    world.hand_number = hand_number;
+}
+
+#[given(
+    expr = "short-stacked blinds posted with small {int} big {int} and stack {int}"
+)]
+fn given_short_stacked_blinds(world: &mut HandWorld, small: i64, big: i64, stack: i64) {
+    let sb = BlindPosted {
+        player_root: world.player_root("player-1"),
+        blind_type: "small".to_string(),
+        amount: small,
+        player_stack: stack - small,
+        pot_total: small,
+        posted_at: None,
+    };
+    world.events.push(pack_event_any(&sb));
+
+    let bb = BlindPosted {
+        player_root: world.player_root("player-2"),
+        blind_type: "big".to_string(),
+        amount: big,
+        player_stack: stack - big,
+        pot_total: small + big,
+        posted_at: None,
+    };
+    world.events.push(pack_event_any(&bb));
+
+    world.pot_total = small + big;
+    world.current_bet = big;
+    world.min_raise = big;
+}
+
+#[given("a BettingRoundComplete event for draw")]
+fn given_betting_round_draw(world: &mut HandWorld) {
+    let event = BettingRoundComplete {
+        completed_phase: BettingPhase::Draw as i32,
+        pot_total: world.pot_total,
+        stacks: vec![],
+        completed_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+    world.current_bet = 0;
+}
+
+#[given(regex = r"a BettingRoundComplete event with stack snapshots:")]
+fn given_betting_round_with_snapshots(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
+    let table = step.table.as_ref().expect("Expected data table");
+    let stacks: Vec<PlayerStackSnapshot> = table
+        .rows
+        .iter()
+        .skip(1)
+        .map(|row| PlayerStackSnapshot {
+            player_root: world.player_root(row[0].as_str()),
+            stack: row[1].parse().unwrap(),
+            is_all_in: row[2].parse().unwrap_or(false),
+            has_folded: row[3].parse().unwrap_or(false),
+        })
+        .collect();
+
+    let event = BettingRoundComplete {
+        completed_phase: BettingPhase::Preflop as i32,
+        pot_total: world.pot_total,
+        stacks,
+        completed_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+    world.current_bet = 0;
+}
+
+#[given("a HandComplete event for the hand")]
+fn given_hand_complete(world: &mut HandWorld) {
+    let event = HandComplete {
+        table_root: world.table_root(),
+        hand_number: world.hand_number,
+        winners: vec![],
+        final_stacks: vec![],
+        completed_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+}
+
+#[given(expr = "a PotAwarded event awarding player {string} amount {int}")]
+fn given_pot_awarded(world: &mut HandWorld, player_id: String, amount: i64) {
+    let event = PotAwarded {
+        winners: vec![examples_proto::PotWinner {
+            player_root: world.player_root(&player_id),
+            amount,
+            pot_type: "main".to_string(),
+            winning_hand: None,
+        }],
+        awarded_at: None,
+    };
+    world.events.push(pack_event_any(&event));
+}
+
+// =============================================================================
+// Additional When steps
+// =============================================================================
+
+#[when(expr = "I deal the same TEXAS_HOLDEM hand twice with seed {string}")]
+fn when_deal_twice(world: &mut HandWorld, seed: String) {
+    let players = vec![
+        PlayerInHand {
+            player_root: world.player_root("player-1"),
+            position: 0,
+            stack: 500,
+        },
+        PlayerInHand {
+            player_root: world.player_root("player-2"),
+            position: 1,
+            stack: 500,
+        },
+    ];
+    let cmd = DealCards {
+        table_root: world.table_root(),
+        hand_number: 1,
+        game_variant: GameVariant::TexasHoldem as i32,
+        players: players.clone(),
+        dealer_position: 0,
+        small_blind: 5,
+        big_blind: 10,
+        deck_seed: seed.as_bytes().to_vec(),
+    };
+
+    let state = new_hand_state();
+    let a = handle_deal_cards(cmd.clone(), &state, 0).expect("first deal");
+    let b = handle_deal_cards(cmd, &state, 0).expect("second deal");
+    world.deal_a = Some(a);
+    world.deal_b = Some(b);
+}
+
+#[when(regex = r"I handle a DealCards command for (\w+) with no players")]
+fn when_deal_cards_no_players(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
+    let re = regex::Regex::new(r"for (\w+) with no players").unwrap();
+    let caps = re.captures(&step.value).unwrap();
+    let variant_str = caps.get(1).unwrap().as_str();
+
+    let game_variant = match variant_str {
+        "TEXAS_HOLDEM" => GameVariant::TexasHoldem,
+        "OMAHA" => GameVariant::Omaha,
+        "FIVE_CARD_DRAW" => GameVariant::FiveCardDraw,
+        _ => GameVariant::TexasHoldem,
+    };
+
+    let cmd = DealCards {
+        table_root: world.table_root(),
+        hand_number: 1,
+        game_variant: game_variant as i32,
+        players: vec![],
+        dealer_position: 0,
+        small_blind: 5,
+        big_blind: 10,
+        deck_seed: vec![],
+    };
+
+    let state = world.rebuild_state();
+    world.result = Some(handle_deal_cards(cmd, &state, world.next_seq()));
+}
+
+#[when("I handle an AwardPot command with no awards")]
+fn when_award_pot_empty(world: &mut HandWorld) {
+    let cmd = AwardPot { awards: vec![] };
+    let state = world.rebuild_state();
+    world.result = Some(handle_award_pot(cmd, &state, world.next_seq()));
+}
+
+#[when(expr = "I handle a PlayerAction command for player {string} with unknown action type")]
+fn when_player_action_unknown(world: &mut HandWorld, player_id: String) {
+    let cmd = PlayerAction {
+        player_root: world.player_root(&player_id),
+        action: 0, // ActionUnspecified
+        amount: 0,
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_player_action(cmd, &state, world.next_seq()));
+}
+
+#[when(expr = "I handle a PlayerAction command with no player_root action {word}")]
+fn when_player_action_no_root(world: &mut HandWorld, action_str: String) {
+    let action = match action_str.as_str() {
+        "FOLD" => ActionType::Fold,
+        "CHECK" => ActionType::Check,
+        "CALL" => ActionType::Call,
+        "BET" => ActionType::Bet,
+        "RAISE" => ActionType::Raise,
+        "ALL_IN" => ActionType::AllIn,
+        _ => ActionType::Check,
+    };
+    let cmd = PlayerAction {
+        player_root: vec![],
+        action: action as i32,
+        amount: 0,
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_player_action(cmd, &state, world.next_seq()));
+}
+
+#[when(expr = "I handle a PostBlind command with no player_root type {string} amount {int}")]
+fn when_post_blind_no_root(world: &mut HandWorld, blind_type: String, amount: i64) {
+    let cmd = PostBlind {
+        player_root: vec![],
+        blind_type,
+        amount,
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_post_blind(cmd, &state, world.next_seq()));
+}
+
+#[when(expr = "I handle a RevealCards command with no player_root and muck {word}")]
+fn when_reveal_cards_no_root(world: &mut HandWorld, muck: String) {
+    let cmd = RevealCards {
+        player_root: vec![],
+        muck: muck == "true",
+    };
+    let state = world.rebuild_state();
+    world.result = Some(handle_reveal_cards(cmd, &state, world.next_seq()));
+}
+
+// =============================================================================
+// Additional Then steps
+// =============================================================================
+
+#[then("both deals produce identical hole cards")]
+fn then_deals_identical(world: &mut HandWorld) {
+    let a = world.deal_a.as_ref().expect("deal_a");
+    let b = world.deal_b.as_ref().expect("deal_b");
+
+    let ea = match &a.pages[0].payload {
+        Some(event_page::Payload::Event(e)) => e,
+        _ => panic!("no event a"),
+    };
+    let eb = match &b.pages[0].payload {
+        Some(event_page::Payload::Event(e)) => e,
+        _ => panic!("no event b"),
+    };
+
+    let da = try_unpack::<CardsDealt>(ea).expect("decode a");
+    let db = try_unpack::<CardsDealt>(eb).expect("decode b");
+
+    assert_eq!(da.player_cards.len(), db.player_cards.len());
+    for (pa, pb) in da.player_cards.iter().zip(db.player_cards.iter()) {
+        assert_eq!(pa.cards, pb.cards, "hole cards differ between deals");
+    }
+}
+
+#[then(expr = "the hand event book has {int} pages")]
+fn then_event_book_pages(world: &mut HandWorld, expected: usize) {
+    assert_eq!(world.events.len(), expected);
+}
+
+#[then(expr = "the hand state current_bet is {int}")]
+fn then_state_current_bet(world: &mut HandWorld, expected: i64) {
+    let state = world.rebuild_state();
+    assert_eq!(state.current_bet, expected);
+}
+
+#[then(expr = "each player has bet_this_round {int}")]
+fn then_each_player_bet_this_round(world: &mut HandWorld, expected: i64) {
+    let state = world.rebuild_state();
+    for player in state.players.values() {
+        assert_eq!(player.bet_this_round, expected);
+    }
+}
+
+#[then(expr = "the hand state small_blind is {int}")]
+fn then_state_small_blind(world: &mut HandWorld, expected: i64) {
+    let state = world.rebuild_state();
+    assert_eq!(state.small_blind, expected);
+}
+
+#[then(expr = "the hand state big_blind is {int}")]
+fn then_state_big_blind(world: &mut HandWorld, expected: i64) {
+    let state = world.rebuild_state();
+    assert_eq!(state.big_blind, expected);
+}
+
+#[then(expr = "the hand state min_raise is {int}")]
+fn then_state_min_raise(world: &mut HandWorld, expected: i64) {
+    let state = world.rebuild_state();
+    assert_eq!(state.min_raise, expected);
+}
+
+#[then(expr = "the hand state has {int} active players")]
+fn then_state_active_players(world: &mut HandWorld, expected: usize) {
+    let state = world.rebuild_state();
+    assert_eq!(state.active_player_count(), expected);
+}
+
+#[then(expr = "the hand state has hand_id {string}")]
+fn then_state_hand_id(world: &mut HandWorld, expected: String) {
+    let state = world.rebuild_state();
+    assert_eq!(state.hand_id, expected);
+}
+
+#[then(expr = "player {string} has stack {int}")]
+fn then_player_stack_equals(world: &mut HandWorld, player_id: String, expected: i64) {
+    let state = world.rebuild_state();
+    let player = state
+        .get_player(&world.player_root(&player_id))
+        .expect("Player not found");
+    assert_eq!(player.stack, expected);
+}
+
+#[then(expr = "player {string} is all-in")]
+fn then_player_is_all_in(world: &mut HandWorld, player_id: String) {
+    let state = world.rebuild_state();
+    let player = state
+        .get_player(&world.player_root(&player_id))
+        .expect("Player not found");
+    assert!(player.is_all_in);
+}
+
 #[tokio::main]
 async fn main() {
-    HandWorld::run("features/unit/hand.feature").await;
+    HandWorld::run("features/example/unit/hand.feature").await;
 }

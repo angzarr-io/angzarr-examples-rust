@@ -545,6 +545,6 @@ async fn main() {
                 .summarized()
                 .assert_normalized(),
         )
-        .run("features/unit/projector.feature")
+        .run("features/example/unit/projector.feature")
         .await;
 }

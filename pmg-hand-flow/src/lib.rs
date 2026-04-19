@@ -150,7 +150,7 @@ impl HandFlowPm {
 
     /// Hand completed → instruct the table to end the hand.
     #[handles(HandComplete)]
-    fn on_hand_complete(
+    pub fn on_hand_complete(
         &self,
         event: HandComplete,
         state: &HandFlowState,
@@ -258,7 +258,7 @@ fn single_event_book(event: Any) -> EventBook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use examples_proto::{PotWinner, SeatSnapshot};
+    use examples_proto::SeatSnapshot;
 
     fn sample_hand_started() -> HandStarted {
         HandStarted {
@@ -291,38 +291,11 @@ mod tests {
         }
     }
 
-    fn first_command_any(book: &CommandBook) -> Any {
-        match book.pages[0].payload.as_ref().unwrap() {
-            CommandPayload::Command(any) => any.clone(),
-            _ => panic!("expected command payload"),
-        }
-    }
-
     fn first_event_any(book: &EventBook) -> Any {
         match book.pages[0].payload.as_ref().unwrap() {
             EventPayload::Event(any) => any.clone(),
             _ => panic!("expected event payload"),
         }
-    }
-
-    #[test]
-    fn hand_started_emits_deal_cards_to_hand_domain() {
-        let pm = HandFlowPm;
-        let event = sample_hand_started();
-        let resp = pm.on_hand_started(event.clone(), &HandFlowState::default()).unwrap();
-
-        assert_eq!(resp.commands.len(), 1);
-        let cmd = &resp.commands[0];
-        assert_eq!(cmd.cover.as_ref().unwrap().domain, "hand");
-        assert_eq!(cmd.cover.as_ref().unwrap().root.as_ref().unwrap().value, event.hand_root);
-
-        let any = first_command_any(cmd);
-        assert!(any.type_url.ends_with("examples.DealCards"));
-        let deal = DealCards::decode(any.value.as_slice()).unwrap();
-        assert_eq!(deal.hand_number, 1);
-        assert_eq!(deal.players.len(), 3);
-        assert_eq!(deal.small_blind, 5);
-        assert_eq!(deal.big_blind, 10);
     }
 
     #[test]
@@ -338,114 +311,4 @@ mod tests {
         assert_eq!(decoded.hand_number, 1);
     }
 
-    #[test]
-    fn apply_hand_started_populates_state_and_sets_dealing_phase() {
-        let mut state = HandFlowState::default();
-        HandFlowPm::apply_hand_started(&mut state, sample_hand_started());
-
-        assert_eq!(state.phase, HandPhase::Dealing);
-        assert_eq!(state.hand_number, 1);
-        assert_eq!(state.small_blind_position, 1);
-        assert_eq!(state.active_players.len(), 3);
-        assert_eq!(state.player_at_position(1), Some(&[2u8; 16][..]));
-    }
-
-    #[test]
-    fn cards_dealt_posts_small_blind_for_player_at_small_blind_position() {
-        let pm = HandFlowPm;
-        let mut state = HandFlowState::default();
-        HandFlowPm::apply_hand_started(&mut state, sample_hand_started());
-
-        let cards_dealt = CardsDealt {
-            table_root: vec![],
-            hand_number: 1,
-            game_variant: GameVariant::TexasHoldem as i32,
-            player_cards: vec![],
-            dealer_position: 0,
-            players: vec![],
-            dealt_at: None,
-            remaining_deck: vec![],
-        };
-        let resp = pm.on_cards_dealt(cards_dealt, &state).unwrap();
-
-        assert_eq!(resp.commands.len(), 1);
-        let cmd = &resp.commands[0];
-        assert_eq!(cmd.cover.as_ref().unwrap().domain, "hand");
-        let any = first_command_any(cmd);
-        assert!(any.type_url.ends_with("examples.PostBlind"));
-        let post = PostBlind::decode(any.value.as_slice()).unwrap();
-        assert_eq!(post.blind_type, "small");
-        assert_eq!(post.amount, 5);
-        assert_eq!(post.player_root, vec![2u8; 16]);
-    }
-
-    #[test]
-    fn apply_cards_dealt_transitions_to_blinds_phase() {
-        let mut state = HandFlowState::default();
-        HandFlowPm::apply_hand_started(&mut state, sample_hand_started());
-        HandFlowPm::apply_cards_dealt(
-            &mut state,
-            CardsDealt {
-                table_root: vec![],
-                hand_number: 1,
-                game_variant: GameVariant::TexasHoldem as i32,
-                player_cards: vec![],
-                dealer_position: 0,
-                players: vec![],
-                dealt_at: None,
-                remaining_deck: vec![],
-            },
-        );
-        assert_eq!(state.phase, HandPhase::Blinds);
-    }
-
-    #[test]
-    fn hand_complete_emits_end_hand_to_table_domain() {
-        let pm = HandFlowPm;
-        let mut state = HandFlowState::default();
-        HandFlowPm::apply_hand_started(&mut state, sample_hand_started());
-
-        let table_root = vec![0xBB; 16];
-        let complete = HandComplete {
-            table_root: table_root.clone(),
-            hand_number: 1,
-            winners: vec![PotWinner {
-                player_root: vec![1; 16],
-                amount: 15,
-                pot_type: "main".into(),
-                winning_hand: None,
-            }],
-            final_stacks: vec![],
-            completed_at: None,
-        };
-        let resp = pm.on_hand_complete(complete, &state).unwrap();
-
-        assert_eq!(resp.commands.len(), 1);
-        let cmd = &resp.commands[0];
-        assert_eq!(cmd.cover.as_ref().unwrap().domain, "table");
-        assert_eq!(cmd.cover.as_ref().unwrap().root.as_ref().unwrap().value, table_root);
-        let any = first_command_any(cmd);
-        assert!(any.type_url.ends_with("examples.EndHand"));
-        let end = EndHand::decode(any.value.as_slice()).unwrap();
-        assert_eq!(end.hand_root, state.hand_root);
-        assert_eq!(end.results.len(), 1);
-        assert_eq!(end.results[0].amount, 15);
-    }
-
-    #[test]
-    fn apply_hand_complete_sets_complete_phase() {
-        let mut state = HandFlowState::default();
-        state.phase = HandPhase::Blinds;
-        HandFlowPm::apply_hand_complete(
-            &mut state,
-            HandComplete {
-                table_root: vec![],
-                hand_number: 1,
-                winners: vec![],
-                final_stacks: vec![],
-                completed_at: None,
-            },
-        );
-        assert_eq!(state.phase, HandPhase::Complete);
-    }
 }

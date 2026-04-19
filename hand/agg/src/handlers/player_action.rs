@@ -15,7 +15,7 @@ struct ValidatedAction {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand does not exist"));
+        return Err(CommandRejectedError::new("Hand not dealt"));
     }
     if state.is_complete() {
         return Err(CommandRejectedError::new("Hand already complete"));
@@ -30,6 +30,10 @@ fn validate<'a>(
     cmd: &PlayerAction,
     state: &'a HandState,
 ) -> CommandResult<(&'a PlayerHandState, ValidatedAction)> {
+    if cmd.player_root.is_empty() {
+        return Err(CommandRejectedError::new("player_root is required"));
+    }
+
     let player = state
         .get_player(&cmd.player_root)
         .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
@@ -53,7 +57,7 @@ fn validate<'a>(
         }
         ActionType::Check => {
             if amount_to_call > 0 {
-                return Err(CommandRejectedError::invalid_argument(
+                return Err(CommandRejectedError::new(
                     "Cannot check, must call or fold",
                 ));
             }
@@ -69,8 +73,8 @@ fn validate<'a>(
         }
         ActionType::Bet => {
             if state.current_bet > 0 {
-                return Err(CommandRejectedError::invalid_argument(
-                    "Cannot bet, use raise",
+                return Err(CommandRejectedError::new(
+                    "Cannot bet, there is already a bet",
                 ));
             }
             if cmd.amount < state.min_raise {
@@ -79,31 +83,38 @@ fn validate<'a>(
                     state.min_raise
                 )));
             }
-            chips_put_in = cmd.amount.min(player.stack);
+            if cmd.amount > player.stack {
+                return Err(CommandRejectedError::new("Bet exceeds stack"));
+            }
+            chips_put_in = cmd.amount;
             event_amount = chips_put_in;
         }
         ActionType::Raise => {
             if state.current_bet <= 0 {
-                return Err(CommandRejectedError::invalid_argument(
-                    "Cannot raise, use bet",
+                return Err(CommandRejectedError::new(
+                    "Cannot raise, there is no bet",
                 ));
+            }
+            if cmd.amount > player.bet_this_round + player.stack {
+                return Err(CommandRejectedError::new("Raise exceeds stack"));
             }
             let raise_amount = cmd.amount - state.current_bet;
             if raise_amount < state.min_raise {
-                return Err(CommandRejectedError::invalid_argument(
-                    "Raise below minimum",
-                ));
+                return Err(CommandRejectedError::invalid_argument(format!(
+                    "Raise must be at least {} over current bet",
+                    state.min_raise
+                )));
             }
             let to_put_in = cmd.amount - player.bet_this_round;
             chips_put_in = to_put_in.min(player.stack);
-            event_amount = cmd.amount;
+            event_amount = chips_put_in;
         }
         ActionType::AllIn => {
             chips_put_in = player.stack;
             event_amount = chips_put_in;
         }
         _ => {
-            return Err(CommandRejectedError::new("Unknown action"));
+            return Err(CommandRejectedError::new("Invalid action type"));
         }
     }
 
@@ -162,84 +173,3 @@ pub fn handle_player_action(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::state::{apply_cards_dealt, new_hand_state};
-    use angzarr_client::proto::event_page::Payload;
-    use examples_proto::{CardsDealt, GameVariant, PlayerInHand};
-    use prost::Message;
-
-    fn betting_state() -> HandState {
-        let mut state = new_hand_state();
-        apply_cards_dealt(
-            &mut state,
-            CardsDealt {
-                table_root: vec![0xab],
-                hand_number: 1,
-                game_variant: GameVariant::TexasHoldem as i32,
-                player_cards: vec![],
-                dealer_position: 0,
-                players: vec![
-                    PlayerInHand {
-                        player_root: vec![1],
-                        position: 0,
-                        stack: 500,
-                    },
-                    PlayerInHand {
-                        player_root: vec![2],
-                        position: 1,
-                        stack: 500,
-                    },
-                ],
-                dealt_at: None,
-                remaining_deck: vec![],
-            },
-        );
-        state
-    }
-
-    #[test]
-    fn handle_player_action_fold_success() {
-        let state = betting_state();
-        let cmd = PlayerAction {
-            player_root: vec![1],
-            action: ActionType::Fold as i32,
-            amount: 0,
-        };
-        let book = handle_player_action(cmd, &state, 1).expect("ok");
-        let any = match book.pages[0].payload.as_ref() {
-            Some(Payload::Event(a)) => a,
-            _ => panic!(),
-        };
-        assert!(any.type_url.ends_with("examples.ActionTaken"));
-        let decoded = ActionTaken::decode(any.value.as_slice()).unwrap();
-        assert_eq!(decoded.action, ActionType::Fold as i32);
-        assert_eq!(decoded.player_stack, 500);
-    }
-
-    #[test]
-    fn handle_player_action_rejects_check_when_bet_pending() {
-        let mut state = betting_state();
-        state.current_bet = 10;
-        let cmd = PlayerAction {
-            player_root: vec![1],
-            action: ActionType::Check as i32,
-            amount: 0,
-        };
-        let err = handle_player_action(cmd, &state, 1).unwrap_err();
-        assert!(err.reason.contains("check"));
-    }
-
-    #[test]
-    fn handle_player_action_rejects_when_hand_does_not_exist() {
-        let state = new_hand_state();
-        let cmd = PlayerAction {
-            player_root: vec![1],
-            action: ActionType::Fold as i32,
-            amount: 0,
-        };
-        let err = handle_player_action(cmd, &state, 1).unwrap_err();
-        assert!(err.reason.contains("does not exist"));
-    }
-}

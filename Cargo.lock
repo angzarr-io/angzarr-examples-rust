@@ -1428,6 +1428,7 @@ dependencies = [
  "futures",
  "hex",
  "pmg-buy-in",
+ "pmg-hand-flow",
  "pmg-rebuy",
  "pmg-registration",
  "prost",
