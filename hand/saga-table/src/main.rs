@@ -1,16 +1,8 @@
-//! Saga: Hand -> Table
-//!
-//! Reacts to HandComplete events from Hand domain.
-//! Sends EndHand commands to Table domain.
-//!
-//! This saga is a pure translator - it receives source events and produces
-//! commands without knowing destination state. The framework handles:
-//! - Sequence assignment (via angzarr_deferred)
-//! - Idempotency checking
-//! - Delivery retry on sequence conflicts
+//! Saga: Hand -> Table gRPC server.
 
-use angzarr_client::{run_saga_server, SagaRouter};
-use saga_hand_table::HandTableSagaHandler;
+use angzarr_client::router::{Built, Router};
+use angzarr_client::run_saga_server;
+use saga_hand_table::HandTableSaga;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -20,9 +12,16 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = SagaRouter::new("saga-hand-table", "hand", HandTableSagaHandler);
+    let router = Router::new("saga-hand-table")
+        .with_handler(|| HandTableSaga)
+        .build()
+        .expect("failed to build saga router");
 
-    run_saga_server("saga-hand-table", 50012, router)
+    let Built::Saga(sr) = router else {
+        panic!("expected Saga variant");
+    };
+
+    run_saga_server("saga-hand-table", 50012, sr)
         .await
         .expect("Server failed");
 }

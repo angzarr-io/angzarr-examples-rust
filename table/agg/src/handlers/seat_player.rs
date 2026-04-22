@@ -1,9 +1,8 @@
 //! SeatPlayer command handler for PM-orchestrated buy-in flow.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{PlayerSeated, SeatPlayer, SeatingRejected};
-use prost_types::Any;
 
 use crate::state::TableState;
 
@@ -48,15 +47,10 @@ fn validate(cmd: &SeatPlayer, state: &TableState) -> Result<i32, String> {
 }
 
 pub fn handle_seat_player(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: SeatPlayer,
     state: &TableState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: SeatPlayer = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
 
     // Unlike JoinTable, SeatPlayer produces success or rejection event (not error)
@@ -70,7 +64,10 @@ pub fn handle_seat_player(
                 seated_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.PlayerSeated");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
         Err(reason) => {
             let event = SeatingRejected {
@@ -81,7 +78,11 @@ pub fn handle_seat_player(
                 rejected_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.SeatingRejected");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
     }
 }
+

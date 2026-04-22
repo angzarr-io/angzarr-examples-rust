@@ -1,12 +1,11 @@
 //! Buy-in orchestration command handlers.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{
     BuyInConfirmed, BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, InitiateBuyIn,
     ReleaseBuyIn,
 };
-use prost_types::Any;
 use uuid::Uuid;
 
 use crate::state::PlayerState;
@@ -40,19 +39,13 @@ fn validate_initiate(cmd: &InitiateBuyIn, state: &PlayerState) -> CommandResult<
 }
 
 pub fn handle_initiate_buy_in(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: InitiateBuyIn,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: InitiateBuyIn = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_initiate(state)?;
     validate_initiate(&cmd, state)?;
 
-    // Generate reservation_id for this buy-in flow
     let reservation_id = Uuid::new_v4().as_bytes().to_vec();
 
     let event = BuyInRequested {
@@ -64,7 +57,10 @@ pub fn handle_initiate_buy_in(
     };
     let event_any = pack_event(&event, "examples.BuyInRequested");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ConfirmBuyIn ---
@@ -93,15 +89,10 @@ fn validate_confirm(cmd: &ConfirmBuyIn, state: &PlayerState) -> CommandResult<()
 }
 
 pub fn handle_confirm_buy_in(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ConfirmBuyIn,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ConfirmBuyIn = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_confirm(state)?;
     validate_confirm(&cmd, state)?;
 
@@ -120,7 +111,10 @@ pub fn handle_confirm_buy_in(
     };
     let event_any = pack_event(&event, "examples.BuyInConfirmed");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ReleaseBuyIn ---
@@ -148,15 +142,10 @@ fn validate_release(cmd: &ReleaseBuyIn, state: &PlayerState) -> CommandResult<()
 }
 
 pub fn handle_release_buy_in(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ReleaseBuyIn,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ReleaseBuyIn = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_release(state)?;
     validate_release(&cmd, state)?;
 
@@ -167,5 +156,9 @@ pub fn handle_release_buy_in(
     };
     let event_any = pack_event(&event, "examples.BuyInReservationReleased");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

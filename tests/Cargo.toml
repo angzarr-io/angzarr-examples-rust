@@ -21,6 +21,7 @@ agg-tournament = { path = "../tournament/agg" }
 pmg-buy-in = { path = "../pmg-buy-in" }
 pmg-registration = { path = "../pmg-registration" }
 pmg-rebuy = { path = "../pmg-rebuy" }
+pmg-hand-flow = { path = "../pmg-hand-flow" }
 saga-table-hand = { path = "../table/saga-hand" }
 saga-hand-table = { path = "../hand/saga-table" }
 saga-table-player = { path = "../table/saga-player" }
@@ -37,34 +38,44 @@ tonic = { workspace = true, optional = true }
 tokio-stream = { version = "0.1", optional = true }
 uuid = { version = "1", features = ["v4", "v5"] }
 
+# Aggregate BDD test targets on Tier 5 Router API.
+# Acceptance target still pending port. Tracked in TASKS.md.
 [[test]]
 name = "player"
 harness = false
-
 [[test]]
 name = "table"
 harness = false
-
 [[test]]
 name = "hand"
 harness = false
-
 [[test]]
 name = "orchestration"
 harness = false
-
 [[test]]
 name = "saga"
 harness = false
-
 [[test]]
 name = "process_manager"
 harness = false
-
 [[test]]
 name = "projector"
 harness = false
-
+[[test]]
+name = "betting_round"
+harness = false
+[[test]]
+name = "game_rules"
+harness = false
+[[test]]
+name = "raise_tracking"
+harness = false
+[[test]]
+name = "tournament"
+harness = false
+# Acceptance BDD test target: runs poker_game.feature and sync_modes.feature.
+# Default mode uses InProcessClient (no env vars, no features required).
+# The `acceptance-test` feature enables the GrpcClient path for CI.
 [[test]]
 name = "acceptance"
-required-features = ["acceptance-test"]
+harness = false

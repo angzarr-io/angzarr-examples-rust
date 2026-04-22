@@ -1,9 +1,8 @@
 //! DealCommunityCards command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{BettingPhase, CommunityCardsDealt, DealCommunityCards};
-use prost_types::Any;
 
 use crate::game_rules;
 use crate::state::HandState;
@@ -16,7 +15,7 @@ struct ValidatedDeal {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand does not exist"));
+        return Err(CommandRejectedError::new("Hand not dealt"));
     }
     if state.is_complete() {
         return Err(CommandRejectedError::new("Hand already complete"));
@@ -24,14 +23,20 @@ fn guard(state: &HandState) -> CommandResult<()> {
 
     let rules = game_rules::get_rules(state.game_variant);
     if !rules.uses_community_cards() {
-        return Err(CommandRejectedError::invalid_argument(
-            "Community cards not used in this variant",
+        return Err(CommandRejectedError::new(
+            "community cards not used in this variant",
         ));
     }
     Ok(())
 }
 
 fn validate(cmd: &DealCommunityCards, state: &HandState) -> CommandResult<ValidatedDeal> {
+    if cmd.count < 1 {
+        return Err(CommandRejectedError::invalid_argument(
+            "count must be at least 1",
+        ));
+    }
+
     let (new_phase, cards_to_deal) = match state.current_phase {
         BettingPhase::Preflop => (BettingPhase::Flop, 3),
         BettingPhase::Flop => (BettingPhase::Turn, 1),
@@ -43,8 +48,11 @@ fn validate(cmd: &DealCommunityCards, state: &HandState) -> CommandResult<Valida
         }
     };
 
-    if cmd.count > 0 && cmd.count as usize != cards_to_deal {
-        return Err(CommandRejectedError::new("Invalid card count for phase"));
+    if cmd.count as usize != cards_to_deal {
+        return Err(CommandRejectedError::new(format!(
+            "Invalid card count for phase: Expected {}, got {}",
+            cards_to_deal, cmd.count
+        )));
     }
 
     if state.remaining_deck.len() < cards_to_deal {
@@ -71,20 +79,19 @@ fn compute(state: &HandState, validated: &ValidatedDeal) -> CommunityCardsDealt 
 }
 
 pub fn handle_deal_community_cards(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: DealCommunityCards,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: DealCommunityCards = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     let validated = validate(&cmd, state)?;
 
     let event = compute(state, &validated);
     let event_any = pack_event(&event, "examples.CommunityCardsDealt");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

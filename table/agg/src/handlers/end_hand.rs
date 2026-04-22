@@ -2,10 +2,9 @@
 
 use std::collections::HashMap;
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{EndHand, HandEnded};
-use prost_types::Any;
 
 use crate::state::TableState;
 
@@ -42,20 +41,19 @@ fn compute(cmd: &EndHand) -> HandEnded {
 }
 
 pub fn handle_end_hand(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: EndHand,
     state: &TableState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: EndHand = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
     validate(&cmd, state)?;
 
     let event = compute(&cmd);
     let event_any = pack_event(&event, "examples.HandEnded");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

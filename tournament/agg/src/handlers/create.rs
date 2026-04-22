@@ -1,9 +1,8 @@
 //! CreateTournament command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{CreateTournament, TournamentCreated};
-use prost_types::Any;
 
 use crate::state::TournamentState;
 
@@ -63,20 +62,19 @@ fn compute(cmd: &CreateTournament) -> TournamentCreated {
 }
 
 pub fn handle_create_tournament(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: CreateTournament,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: CreateTournament = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
     let event_any = pack_event(&event, "examples.TournamentCreated");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

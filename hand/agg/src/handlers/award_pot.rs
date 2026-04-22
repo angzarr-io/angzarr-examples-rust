@@ -1,17 +1,14 @@
 //! AwardPot command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{
-    new_event_book_multi, pack_event, CommandRejectedError, CommandResult, UnpackAny,
-};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{AwardPot, HandComplete, PlayerStackSnapshot, PotAwarded, PotWinner};
-use prost_types::Any;
 
 use crate::state::HandState;
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand does not exist"));
+        return Err(CommandRejectedError::new("Hand not dealt"));
     }
     if state.is_complete() {
         return Err(CommandRejectedError::new("Hand already complete"));
@@ -31,7 +28,7 @@ fn validate(cmd: &AwardPot, state: &HandState) -> CommandResult<()> {
             .ok_or_else(|| CommandRejectedError::new("Award to player not in hand"))?;
 
         if player.has_folded {
-            return Err(CommandRejectedError::new("Cannot award to folded player"));
+            return Err(CommandRejectedError::new("Folded player cannot win"));
         }
         total_awarded += award.amount;
     }
@@ -44,14 +41,26 @@ fn validate(cmd: &AwardPot, state: &HandState) -> CommandResult<()> {
 }
 
 fn compute(cmd: &AwardPot, state: &HandState) -> (PotAwarded, HandComplete) {
+    let pot_total = state.total_pot();
+    let awarded_total: i64 = cmd.awards.iter().map(|a| a.amount).sum();
+    let adjustment = pot_total - awarded_total;
+
     let winners: Vec<PotWinner> = cmd
         .awards
         .iter()
-        .map(|award| PotWinner {
-            player_root: award.player_root.clone(),
-            amount: award.amount,
-            pot_type: award.pot_type.clone(),
-            winning_hand: None,
+        .enumerate()
+        .map(|(i, award)| {
+            let amount = if i == 0 {
+                award.amount + adjustment
+            } else {
+                award.amount
+            };
+            PotWinner {
+                player_root: award.player_root.clone(),
+                amount,
+                pot_type: award.pot_type.clone(),
+                winning_hand: None,
+            }
         })
         .collect();
 
@@ -62,9 +71,9 @@ fn compute(cmd: &AwardPot, state: &HandState) -> (PotAwarded, HandComplete) {
         .values()
         .map(|player| {
             let mut final_stack = player.stack;
-            for award in &cmd.awards {
-                if award.player_root == player.player_root {
-                    final_stack += award.amount;
+            for winner in &winners {
+                if winner.player_root == player.player_root {
+                    final_stack += winner.amount;
                 }
             }
             PlayerStackSnapshot {
@@ -93,26 +102,26 @@ fn compute(cmd: &AwardPot, state: &HandState) -> (PotAwarded, HandComplete) {
 }
 
 pub fn handle_award_pot(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: AwardPot,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: AwardPot = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
     validate(&cmd, state)?;
 
     let (pot_awarded, hand_complete) = compute(&cmd, state);
+    let events = [
+        pack_event(&pot_awarded, "examples.PotAwarded"),
+        pack_event(&hand_complete, "examples.HandComplete"),
+    ];
 
-    Ok(new_event_book_multi(
-        command_book,
-        seq,
-        vec![
-            pack_event(&pot_awarded, "examples.PotAwarded"),
-            pack_event(&hand_complete, "examples.HandComplete"),
-        ],
-    ))
+    Ok(EventBook {
+        pages: events
+            .into_iter()
+            .enumerate()
+            .map(|(i, ev)| event_page(seq + i as u32, ev))
+            .collect(),
+        ..Default::default()
+    })
 }
+

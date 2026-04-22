@@ -1,20 +1,19 @@
 //! RegisterPlayer command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{PlayerRegistered, RegisterPlayer};
-use prost_types::Any;
 
 use crate::state::PlayerState;
 
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn register_player_guard(state: &PlayerState) -> CommandResult<()> {
     if state.exists() {
         return Err(CommandRejectedError::new("Player already exists"));
     }
     Ok(())
 }
 
-fn validate(cmd: &RegisterPlayer) -> CommandResult<()> {
+fn register_player_validate(cmd: &RegisterPlayer) -> CommandResult<()> {
     if cmd.display_name.is_empty() {
         return Err(CommandRejectedError::new("display_name is required"));
     }
@@ -24,7 +23,7 @@ fn validate(cmd: &RegisterPlayer) -> CommandResult<()> {
     Ok(())
 }
 
-fn compute(cmd: &RegisterPlayer) -> PlayerRegistered {
+fn register_player_compute(cmd: &RegisterPlayer) -> PlayerRegistered {
     PlayerRegistered {
         display_name: cmd.display_name.clone(),
         email: cmd.email.clone(),
@@ -35,20 +34,19 @@ fn compute(cmd: &RegisterPlayer) -> PlayerRegistered {
 }
 
 pub fn handle_register_player(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: RegisterPlayer,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: RegisterPlayer = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
+    register_player_guard(state)?;
+    register_player_validate(&cmd)?;
 
-    guard(state)?;
-    validate(&cmd)?;
-
-    let event = compute(&cmd);
+    let event = register_player_compute(&cmd);
     let event_any = pack_event(&event, "examples.PlayerRegistered");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

@@ -24,3 +24,7 @@ Thumbs.db
 
 # Kubernetes
 *.kubeconfig
+
+# cargo-mutants
+mutants.out/
+mutants.out.old/

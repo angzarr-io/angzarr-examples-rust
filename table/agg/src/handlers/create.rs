@@ -1,9 +1,8 @@
 //! CreateTable command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{CreateTable, TableCreated};
-use prost_types::Any;
 
 use crate::state::TableState;
 
@@ -59,20 +58,19 @@ fn compute(cmd: &CreateTable) -> TableCreated {
 }
 
 pub fn handle_create_table(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: CreateTable,
     state: &TableState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: CreateTable = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
     let event_any = pack_event(&event, "examples.TableCreated");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

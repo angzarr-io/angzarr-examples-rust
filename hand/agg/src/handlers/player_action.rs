@@ -1,9 +1,8 @@
 //! PlayerAction command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{ActionTaken, ActionType, PlayerAction};
-use prost_types::Any;
 
 use crate::state::{HandState, PlayerHandState};
 
@@ -16,7 +15,7 @@ struct ValidatedAction {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand does not exist"));
+        return Err(CommandRejectedError::new("Hand not dealt"));
     }
     if state.is_complete() {
         return Err(CommandRejectedError::new("Hand already complete"));
@@ -31,6 +30,10 @@ fn validate<'a>(
     cmd: &PlayerAction,
     state: &'a HandState,
 ) -> CommandResult<(&'a PlayerHandState, ValidatedAction)> {
+    if cmd.player_root.is_empty() {
+        return Err(CommandRejectedError::new("player_root is required"));
+    }
+
     let player = state
         .get_player(&cmd.player_root)
         .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
@@ -54,7 +57,7 @@ fn validate<'a>(
         }
         ActionType::Check => {
             if amount_to_call > 0 {
-                return Err(CommandRejectedError::invalid_argument(
+                return Err(CommandRejectedError::new(
                     "Cannot check, must call or fold",
                 ));
             }
@@ -70,8 +73,8 @@ fn validate<'a>(
         }
         ActionType::Bet => {
             if state.current_bet > 0 {
-                return Err(CommandRejectedError::invalid_argument(
-                    "Cannot bet, use raise",
+                return Err(CommandRejectedError::new(
+                    "Cannot bet, there is already a bet",
                 ));
             }
             if cmd.amount < state.min_raise {
@@ -80,31 +83,38 @@ fn validate<'a>(
                     state.min_raise
                 )));
             }
-            chips_put_in = cmd.amount.min(player.stack);
+            if cmd.amount > player.stack {
+                return Err(CommandRejectedError::new("Bet exceeds stack"));
+            }
+            chips_put_in = cmd.amount;
             event_amount = chips_put_in;
         }
         ActionType::Raise => {
             if state.current_bet <= 0 {
-                return Err(CommandRejectedError::invalid_argument(
-                    "Cannot raise, use bet",
+                return Err(CommandRejectedError::new(
+                    "Cannot raise, there is no bet",
                 ));
+            }
+            if cmd.amount > player.bet_this_round + player.stack {
+                return Err(CommandRejectedError::new("Raise exceeds stack"));
             }
             let raise_amount = cmd.amount - state.current_bet;
             if raise_amount < state.min_raise {
-                return Err(CommandRejectedError::invalid_argument(
-                    "Raise below minimum",
-                ));
+                return Err(CommandRejectedError::invalid_argument(format!(
+                    "Raise must be at least {} over current bet",
+                    state.min_raise
+                )));
             }
             let to_put_in = cmd.amount - player.bet_this_round;
             chips_put_in = to_put_in.min(player.stack);
-            event_amount = cmd.amount;
+            event_amount = chips_put_in;
         }
         ActionType::AllIn => {
             chips_put_in = player.stack;
             event_amount = chips_put_in;
         }
         _ => {
-            return Err(CommandRejectedError::new("Unknown action"));
+            return Err(CommandRejectedError::new("Invalid action type"));
         }
     }
 
@@ -147,20 +157,19 @@ fn compute(
 }
 
 pub fn handle_player_action(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: PlayerAction,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: PlayerAction = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     let (player, validated) = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player, &validated);
     let event_any = pack_event(&event, "examples.ActionTaken");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

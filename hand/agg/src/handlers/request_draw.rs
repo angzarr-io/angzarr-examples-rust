@@ -1,9 +1,8 @@
 //! RequestDraw command handler (Five Card Draw specific).
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
-use prost_types::Any;
 
 use crate::state::{HandState, PlayerHandState};
 
@@ -87,20 +86,19 @@ fn compute(
 }
 
 pub fn handle_request_draw(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: RequestDraw,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: RequestDraw = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     let (player, validated) = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player, &validated);
     let event_any = pack_event(&event, "examples.DrawCompleted");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

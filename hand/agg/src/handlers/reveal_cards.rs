@@ -1,24 +1,30 @@
 //! RevealCards command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{CardsMucked, CardsRevealed, HandRanking, RevealCards};
-use prost_types::Any;
 
 use crate::game_rules::get_rules;
 use crate::state::{HandState, PlayerHandState};
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand does not exist"));
+        return Err(CommandRejectedError::new("Hand not dealt"));
     }
     if state.is_complete() {
         return Err(CommandRejectedError::new("Hand already complete"));
+    }
+    if state.status != "showdown" {
+        return Err(CommandRejectedError::new("Not in showdown phase"));
     }
     Ok(())
 }
 
 fn validate<'a>(cmd: &RevealCards, state: &'a HandState) -> CommandResult<&'a PlayerHandState> {
+    if cmd.player_root.is_empty() {
+        return Err(CommandRejectedError::new("player_root is required"));
+    }
+
     let player = state
         .get_player(&cmd.player_root)
         .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
@@ -56,16 +62,11 @@ fn compute_reveal(cmd: &RevealCards, state: &HandState, player: &PlayerHandState
 }
 
 pub fn handle_reveal_cards(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: RevealCards,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: RevealCards = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     let player = validate(&cmd, state)?;
 
     let event_any = if cmd.muck {
@@ -76,5 +77,9 @@ pub fn handle_reveal_cards(
         pack_event(&event, "examples.CardsRevealed")
     };
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

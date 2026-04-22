@@ -1,59 +1,18 @@
 //! Saga: Hand -> Table (library).
-//!
-//! Exports the saga handler for testing.
 
-use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, EventBook, Uuid};
-use angzarr_client::{
-    CommandRejectedError, CommandResult, Destinations, SagaDomainHandler, SagaHandlerResponse,
-    UnpackAny,
-};
+use angzarr_client::proto::{command_page, CommandBook, CommandPage, Cover, SagaResponse, Uuid};
+use angzarr_client::{saga, CommandResult};
 use examples_proto::{EndHand, HandComplete, PotResult};
 use prost::Message;
 use prost_types::Any;
 
-/// Saga handler for Hand -> Table domain translation.
-#[derive(Clone)]
-pub struct HandTableSagaHandler;
+/// Translate `hand.HandComplete` into an `EndHand` command for `table`.
+pub struct HandTableSaga;
 
-impl SagaDomainHandler for HandTableSagaHandler {
-    fn event_types(&self) -> Vec<String> {
-        vec!["HandComplete".into()]
-    }
-
-    fn handle(
-        &self,
-        source: &EventBook,
-        event: &Any,
-        _destinations: &Destinations,
-    ) -> CommandResult<SagaHandlerResponse> {
-        if event.type_url.ends_with("HandComplete") {
-            return Self::handle_hand_complete(source, event);
-        }
-        Ok(SagaHandlerResponse::default())
-    }
-}
-
-impl HandTableSagaHandler {
-    /// Translate HandComplete -> EndHand.
-    ///
-    /// Commands use deferred sequences - framework assigns on delivery.
-    pub fn handle_hand_complete(
-        source: &EventBook,
-        event_any: &Any,
-    ) -> CommandResult<SagaHandlerResponse> {
-        let event: HandComplete = event_any.unpack().map_err(|e| {
-            CommandRejectedError::new(format!("Failed to decode HandComplete: {}", e))
-        })?;
-
-        // Get hand_root from source cover
-        let hand_root = source
-            .cover
-            .as_ref()
-            .and_then(|c| c.root.as_ref())
-            .map(|u| u.value.clone())
-            .unwrap_or_default();
-
-        // Convert PotWinner to PotResult
+#[saga(name = "saga-hand-table", source = "hand", target = "table")]
+impl HandTableSaga {
+    #[handles(HandComplete)]
+    pub fn on_hand_complete(&self, event: HandComplete) -> CommandResult<SagaResponse> {
         let results: Vec<PotResult> = event
             .winners
             .iter()
@@ -65,15 +24,20 @@ impl HandTableSagaHandler {
             })
             .collect();
 
-        // Build EndHand command
+        // NOTE: Tier 5 saga dispatch does not surface the source cover; the
+        // `hand_root` here must come from `event` metadata. When the proto
+        // carries only `table_root` + `hand_number`, downstream validation
+        // that checks `hand_root` expects the same handle the Hand aggregate
+        // carries in its cover. See pmg-hand-flow for the flow that plumbs
+        // this through.
+        let hand_root = Vec::new();
         let end_hand = EndHand { hand_root, results };
-
         let command_any = Any {
             type_url: "type.googleapis.com/examples.EndHand".to_string(),
             value: end_hand.encode_to_vec(),
         };
 
-        Ok(SagaHandlerResponse {
+        Ok(SagaResponse {
             commands: vec![CommandBook {
                 cover: Some(Cover {
                     domain: "table".to_string(),
@@ -91,3 +55,4 @@ impl HandTableSagaHandler {
         })
     }
 }
+

@@ -1,9 +1,8 @@
 //! EnrollPlayer command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{EnrollPlayer, TournamentEnrollmentRejected, TournamentPlayerEnrolled};
-use prost_types::Any;
 
 use crate::state::TournamentState;
 
@@ -36,16 +35,11 @@ fn validate(cmd: &EnrollPlayer, state: &TournamentState) -> Result<(), String> {
 }
 
 pub fn handle_enroll_player(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: EnrollPlayer,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: EnrollPlayer = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
 
     // Validate and produce appropriate event
     match validate(&cmd, state) {
@@ -59,7 +53,10 @@ pub fn handle_enroll_player(
                 enrolled_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.TournamentPlayerEnrolled");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
         Err(reason) => {
             let event = TournamentEnrollmentRejected {
@@ -69,7 +66,11 @@ pub fn handle_enroll_player(
                 rejected_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.TournamentEnrollmentRejected");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
     }
 }
+

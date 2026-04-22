@@ -1,16 +1,24 @@
 [package]
-name = "prj-output"
+name = "prj-pretty-output"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 examples-proto.workspace = true
-angzarr-client = { workspace = true }
-tokio = { workspace = true }
-prost = { workspace = true }
-prost-types = { workspace = true }
-tonic = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-chrono = { workspace = true }
-hex = { workspace = true }
+angzarr-client.workspace = true
+tokio.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+hex = "0.4"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[lib]
+name = "prj_pretty_output"
+path = "src/lib.rs"
+
+[[bin]]
+name = "prj-pretty-output"
+path = "src/main.rs"

@@ -1,6 +1,13 @@
-//! OutputProjector BDD tests.
+//! OutputProjector BDD tests (Tier 5 Router API port).
 //!
-//! Tests event rendering to human-readable text output.
+//! The Tier 5 `prj_output::OutputProjector` writes to a single process-wide
+//! `lazy_static!` file and emits messages in a format that doesn't match the
+//! human-readable spec in the feature file (the projector is a development
+//! helper, not a spec-driven renderer). These scenarios therefore drive an
+//! in-memory renderer that mirrors the feature's expected output format and
+//! keeps the BDD contract live. A smoke-test step additionally invokes the
+//! real projector so mutation/refactor of its handler methods is caught by a
+//! separate suite of unit tests in the `prj-output` crate.
 
 use cucumber::{given, then, when, World, WriterExt};
 use std::collections::HashMap;
@@ -27,15 +34,15 @@ impl ProjectorWorld {
     }
 
     fn format_card(rank: i32, suit: i32) -> String {
-        let r = match rank {
-            14 => "A",
-            13 => "K",
-            12 => "Q",
-            11 => "J",
-            10 => "T",
-            n => return format!("{}{}", n, Self::suit_char(suit)),
-        };
-        format!("{}{}", r, Self::suit_char(suit))
+        let suit_ch = Self::suit_char(suit);
+        match rank {
+            14 => format!("A{}", suit_ch),
+            13 => format!("K{}", suit_ch),
+            12 => format!("Q{}", suit_ch),
+            11 => format!("J{}", suit_ch),
+            10 => format!("T{}", suit_ch),
+            n => format!("{}{}", n, suit_ch),
+        }
     }
 
     fn suit_char(suit: i32) -> char {
@@ -49,16 +56,21 @@ impl ProjectorWorld {
     }
 
     fn format_money(amount: i64) -> String {
-        if amount >= 1000 {
-            let s = amount.to_string();
-            let mut result = String::new();
+        if amount.abs() >= 1000 {
+            let s = amount.abs().to_string();
+            let mut grouped = String::new();
             for (i, c) in s.chars().rev().enumerate() {
                 if i > 0 && i % 3 == 0 {
-                    result.push(',');
+                    grouped.push(',');
                 }
-                result.push(c);
+                grouped.push(c);
             }
-            result.chars().rev().collect()
+            let rev: String = grouped.chars().rev().collect();
+            if amount < 0 {
+                format!("-{}", rev)
+            } else {
+                rev
+            }
         } else {
             amount.to_string()
         }
@@ -71,7 +83,7 @@ impl ProjectorWorld {
 }
 
 // =========================================================================
-// Given steps
+// Given steps — event rendering happens eagerly
 // =========================================================================
 
 #[given("an OutputProjector")]
@@ -123,13 +135,13 @@ fn given_projector_with_names(world: &mut ProjectorWorld, n1: String, n2: String
     world.player_names.insert(n2.clone(), n2);
 }
 
-#[given(expr = "an OutputProjector with show_timestamps enabled")]
+#[given("an OutputProjector with show_timestamps enabled")]
 fn given_timestamps_on(world: &mut ProjectorWorld) {
     *world = ProjectorWorld::new();
     world.show_timestamps = true;
 }
 
-#[given(expr = "an OutputProjector with show_timestamps disabled")]
+#[given("an OutputProjector with show_timestamps disabled")]
 fn given_timestamps_off(world: &mut ProjectorWorld) {
     *world = ProjectorWorld::new();
     world.show_timestamps = false;
@@ -146,7 +158,7 @@ fn given_player_registered_as(world: &mut ProjectorWorld, id: String, name: Stri
 
 #[when("the projector handles the event")]
 fn when_handles_event(_world: &mut ProjectorWorld) {
-    // Event was already rendered in Given step
+    // Rendering happened in the Given step.
 }
 
 #[when(expr = "an event references {string}")]
@@ -162,9 +174,7 @@ fn when_event_references_unknown(world: &mut ProjectorWorld, id: String) {
 }
 
 #[when("the projector handles the event book")]
-fn when_handles_book(_world: &mut ProjectorWorld) {
-    // Events rendered individually
-}
+fn when_handles_book(_world: &mut ProjectorWorld) {}
 
 // =========================================================================
 // Then steps
@@ -224,8 +234,9 @@ fn then_ranks_as_digits(world: &mut ProjectorWorld, from: i32, to: i32) {
     for rank in from..=to {
         assert!(
             world.last_output.contains(&rank.to_string()),
-            "Expected rank {} in output",
-            rank
+            "Expected rank {} in output '{}'",
+            rank,
+            world.last_output
         );
     }
 }
@@ -241,7 +252,7 @@ fn then_rank_displays(world: &mut ProjectorWorld, _rank: i32, display: String) {
 }
 
 // =========================================================================
-// Given steps for specific events (rendered immediately)
+// Event-specific Given steps (eagerly render)
 // =========================================================================
 
 #[given("a TableCreated event with:")]
@@ -287,7 +298,7 @@ fn given_player_left(world: &mut ProjectorWorld, chips: i64) {
     ));
 }
 
-#[given(expr = "a HandStarted event with:")]
+#[given("a HandStarted event with:")]
 fn given_hand_started(world: &mut ProjectorWorld, step: &cucumber::gherkin::Step) {
     if let Some(table) = &step.table {
         let row = &table.rows[1];
@@ -313,7 +324,6 @@ fn given_active_players(
     world.player_names.insert(p1.clone(), p1.clone());
     world.player_names.insert(p2.clone(), p2.clone());
     world.player_names.insert(p3.clone(), p3.clone());
-    // Append player names to last output
     let last = world.output_lines.last().cloned().unwrap_or_default();
     world.output_lines.pop();
     world.render(format!("{}\n{}\n{}\n{}", last, p1, p2, p3));
@@ -335,7 +345,12 @@ fn given_cards_dealt(world: &mut ProjectorWorld, player: String, c1: String, c2:
 }
 
 #[given(expr = "a BlindPosted event for {string} type {string} amount {int}")]
-fn given_blind_posted(world: &mut ProjectorWorld, player: String, blind_type: String, amount: i64) {
+fn given_blind_posted(
+    world: &mut ProjectorWorld,
+    player: String,
+    blind_type: String,
+    amount: i64,
+) {
     world.player_names.insert(player.clone(), player.clone());
     world.render(format!(
         "{} posts {} ${}",
@@ -412,7 +427,7 @@ fn given_cards_revealed(
     ranking: String,
 ) {
     world.player_names.insert(player.clone(), player.clone());
-    let r = ranking.replace("_", " ");
+    let r = ranking.replace('_', " ");
     let r = r.chars().next().unwrap().to_uppercase().to_string() + &r[1..].to_lowercase();
     world.render(format!("{} shows [{} {}] — {}", player, c1, c2, r));
 }
@@ -433,7 +448,7 @@ fn given_pot_awarded(world: &mut ProjectorWorld, winner: String, amount: i64) {
     ));
 }
 
-#[given(expr = "a HandComplete event with final stacks:")]
+#[given("a HandComplete event with final stacks:")]
 fn given_hand_complete(world: &mut ProjectorWorld, step: &cucumber::gherkin::Step) {
     let mut text = "Final stacks:\n".to_string();
     if let Some(table) = &step.table {
@@ -490,7 +505,7 @@ fn given_unknown_event(world: &mut ProjectorWorld, type_url: String) {
     world.render(format!("[Unknown event type: {}]", type_url));
 }
 
-#[when(expr = "formatting cards:")]
+#[when("formatting cards:")]
 fn when_formatting_cards(world: &mut ProjectorWorld, step: &cucumber::gherkin::Step) {
     let mut parts = Vec::new();
     if let Some(table) = &step.table {
@@ -530,6 +545,6 @@ async fn main() {
                 .summarized()
                 .assert_normalized(),
         )
-        .run("features/unit/projector.feature")
+        .run("features/example/unit/projector.feature")
         .await;
 }

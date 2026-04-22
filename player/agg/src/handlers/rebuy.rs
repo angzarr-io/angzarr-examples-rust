@@ -1,12 +1,11 @@
 //! Rebuy orchestration command handlers.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{
     ConfirmRebuyFee, InitiateRebuy, RebuyFeeConfirmed, RebuyFeeReleased, RebuyRequested,
     ReleaseRebuyFee,
 };
-use prost_types::Any;
 use uuid::Uuid;
 
 use crate::state::PlayerState;
@@ -31,33 +30,29 @@ fn validate_initiate(cmd: &InitiateRebuy) -> CommandResult<()> {
 }
 
 pub fn handle_initiate_rebuy(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: InitiateRebuy,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: InitiateRebuy = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_initiate(state)?;
     validate_initiate(&cmd)?;
 
-    // Generate reservation_id for this rebuy flow
     let reservation_id = Uuid::new_v4().as_bytes().to_vec();
 
-    // Note: The fee will be looked up from Tournament state by the PM
     let event = RebuyRequested {
         reservation_id,
         tournament_root: cmd.tournament_root,
         table_root: cmd.table_root,
         seat: cmd.seat,
-        fee: None, // PM will fill this in from Tournament rebuy config
+        fee: None,
         requested_at: Some(angzarr_client::now()),
     };
     let event_any = pack_event(&event, "examples.RebuyRequested");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ConfirmRebuyFee ---
@@ -85,15 +80,10 @@ fn validate_confirm(cmd: &ConfirmRebuyFee, state: &PlayerState) -> CommandResult
 }
 
 pub fn handle_confirm_rebuy_fee(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ConfirmRebuyFee,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ConfirmRebuyFee = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_confirm(state)?;
     validate_confirm(&cmd, state)?;
 
@@ -112,7 +102,10 @@ pub fn handle_confirm_rebuy_fee(
     };
     let event_any = pack_event(&event, "examples.RebuyFeeConfirmed");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ReleaseRebuyFee ---
@@ -140,15 +133,10 @@ fn validate_release(cmd: &ReleaseRebuyFee, state: &PlayerState) -> CommandResult
 }
 
 pub fn handle_release_rebuy_fee(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ReleaseRebuyFee,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ReleaseRebuyFee = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_release(state)?;
     validate_release(&cmd, state)?;
 
@@ -159,5 +147,9 @@ pub fn handle_release_rebuy_fee(
     };
     let event_any = pack_event(&event, "examples.RebuyFeeReleased");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

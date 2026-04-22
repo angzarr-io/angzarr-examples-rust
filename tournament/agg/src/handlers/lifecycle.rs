@@ -1,12 +1,12 @@
 //! Tournament lifecycle command handlers.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{
     AdvanceBlindLevel, BlindLevelAdvanced, EliminatePlayer, PauseTournament, PlayerEliminated,
-    ResumeTournament, TournamentPaused, TournamentResumed, TournamentStatus,
+    ResumeTournament, StartTournament, TournamentPaused, TournamentResumed, TournamentStarted,
+    TournamentStatus,
 };
-use prost_types::Any;
 
 use crate::state::TournamentState;
 
@@ -23,25 +23,18 @@ fn guard_advance(state: &TournamentState) -> CommandResult<()> {
 }
 
 pub fn handle_advance_blind_level(
-    command_book: &CommandBook,
-    command_any: &Any,
+    _cmd: AdvanceBlindLevel,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let _cmd: AdvanceBlindLevel = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_advance(state)?;
 
     let next_level = state.current_level + 1;
 
-    // Get blind values from structure, or use last level if we've exceeded structure
     let (small_blind, big_blind, ante) = if (next_level as usize) <= state.blind_structure.len() {
         let level = &state.blind_structure[(next_level - 1) as usize];
         (level.small_blind, level.big_blind, level.ante)
     } else if let Some(last_level) = state.blind_structure.last() {
-        // Stay at last level
         (
             last_level.small_blind,
             last_level.big_blind,
@@ -60,7 +53,10 @@ pub fn handle_advance_blind_level(
     };
     let event_any = pack_event(&event, "examples.BlindLevelAdvanced");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- EliminatePlayer ---
@@ -76,15 +72,10 @@ fn guard_eliminate(state: &TournamentState) -> CommandResult<()> {
 }
 
 pub fn handle_eliminate_player(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: EliminatePlayer,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: EliminatePlayer = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_eliminate(state)?;
 
     let player_root_hex = hex::encode(&cmd.player_root);
@@ -94,10 +85,7 @@ pub fn handle_eliminate_player(
         ));
     }
 
-    // Calculate finish position (players remaining after elimination)
     let finish_position = state.players_remaining;
-
-    // TODO: Calculate payout based on prize structure
     let payout = 0i64;
 
     let event = PlayerEliminated {
@@ -109,7 +97,10 @@ pub fn handle_eliminate_player(
     };
     let event_any = pack_event(&event, "examples.PlayerEliminated");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- PauseTournament ---
@@ -128,15 +119,10 @@ fn guard_pause(state: &TournamentState) -> CommandResult<()> {
 }
 
 pub fn handle_pause_tournament(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: PauseTournament,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: PauseTournament = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_pause(state)?;
 
     let event = TournamentPaused {
@@ -145,7 +131,10 @@ pub fn handle_pause_tournament(
     };
     let event_any = pack_event(&event, "examples.TournamentPaused");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ResumeTournament ---
@@ -161,15 +150,10 @@ fn guard_resume(state: &TournamentState) -> CommandResult<()> {
 }
 
 pub fn handle_resume_tournament(
-    command_book: &CommandBook,
-    command_any: &Any,
+    _cmd: ResumeTournament,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let _cmd: ResumeTournament = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_resume(state)?;
 
     let event = TournamentResumed {
@@ -177,5 +161,45 @@ pub fn handle_resume_tournament(
     };
     let event_any = pack_event(&event, "examples.TournamentResumed");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+
+// --- StartTournament ---
+
+fn guard_start(state: &TournamentState) -> CommandResult<()> {
+    if !state.exists() {
+        return Err(CommandRejectedError::new("Tournament does not exist"));
+    }
+    if !state.is_registration_open() {
+        return Err(CommandRejectedError::new("Registration is not open"));
+    }
+    if (state.registered_players.len() as i32) < state.min_players {
+        return Err(CommandRejectedError::new("Not enough players to start"));
+    }
+    Ok(())
+}
+
+pub fn handle_start_tournament(
+    _cmd: StartTournament,
+    state: &TournamentState,
+    seq: u32,
+) -> CommandResult<EventBook> {
+    guard_start(state)?;
+
+    let event = TournamentStarted {
+        total_players: state.registered_players.len() as i32,
+        tables_created: 0,
+        total_prize_pool: state.total_prize_pool,
+        started_at: Some(angzarr_client::now()),
+    };
+    let event_any = pack_event(&event, "examples.TournamentStarted");
+
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
+}
+

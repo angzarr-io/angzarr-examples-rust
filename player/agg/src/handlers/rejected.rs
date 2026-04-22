@@ -1,8 +1,9 @@
 //! Rejection handlers for saga/PM compensation.
 
-use angzarr_client::proto::{EventBook, Notification, RejectionNotification};
-use angzarr_client::router::RejectionHandlerResponse;
-use angzarr_client::{event_page, now, pack_event, CommandResult, UnpackAny};
+use angzarr_client::proto::{BusinessResponse, EventBook, Notification, RejectionNotification};
+use angzarr_client::{
+    emit_compensation_events, event_page, now, pack_event, unpack, CommandResult,
+};
 use examples_proto::{Currency, FundsReleased};
 use tracing::warn;
 
@@ -17,12 +18,11 @@ use crate::state::PlayerState;
 pub fn handle_join_rejected(
     notification: &Notification,
     state: &PlayerState,
-) -> CommandResult<RejectionHandlerResponse> {
-    // Extract rejection details from the notification payload
+) -> CommandResult<BusinessResponse> {
     let rejection = notification
         .payload
         .as_ref()
-        .and_then(|any| any.unpack::<RejectionNotification>().ok())
+        .and_then(|any| unpack::<RejectionNotification>(any).ok())
         .unwrap_or_default();
 
     warn!(
@@ -30,7 +30,6 @@ pub fn handle_join_rejected(
         "Player compensation for JoinTable rejection"
     );
 
-    // Extract table_root from the rejected command
     let table_root = rejection
         .rejected_command
         .as_ref()
@@ -44,7 +43,6 @@ pub fn handle_join_rejected(
         })
         .unwrap_or_default();
 
-    // Release the funds that were reserved for this table
     let table_key = hex::encode(&table_root);
     let reserved_amount = state
         .table_reservations
@@ -73,8 +71,6 @@ pub fn handle_join_rejected(
 
     let event_any = pack_event(&event, "examples.FundsReleased");
 
-    // Build the EventBook using the notification's cover for routing.
-    // Sequence 0 is a placeholder - framework assigns actual sequence during persist.
     let event_book = EventBook {
         cover: notification.cover.clone(),
         pages: vec![event_page(0, event_any)],
@@ -82,10 +78,7 @@ pub fn handle_join_rejected(
         next_sequence: 0,
     };
 
-    Ok(RejectionHandlerResponse {
-        events: Some(event_book),
-        notification: None,
-    })
+    Ok(emit_compensation_events(event_book))
 }
 
 // docs:end:rejected_handler

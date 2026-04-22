@@ -1,20 +1,19 @@
 //! WithdrawFunds command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{Currency, FundsWithdrawn, WithdrawFunds};
-use prost_types::Any;
 
 use crate::state::PlayerState;
 
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn withdraw_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
         return Err(CommandRejectedError::new("Player does not exist"));
     }
     Ok(())
 }
 
-fn validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
+fn withdraw_funds_validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
         return Err(CommandRejectedError::invalid_argument(
@@ -27,7 +26,7 @@ fn validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
     Ok(amount)
 }
 
-fn compute(cmd: &WithdrawFunds, state: &PlayerState, amount: i64) -> FundsWithdrawn {
+fn withdraw_funds_compute(cmd: &WithdrawFunds, state: &PlayerState, amount: i64) -> FundsWithdrawn {
     let new_balance = state.bankroll - amount;
     FundsWithdrawn {
         amount: cmd.amount.clone(),
@@ -40,20 +39,19 @@ fn compute(cmd: &WithdrawFunds, state: &PlayerState, amount: i64) -> FundsWithdr
 }
 
 pub fn handle_withdraw_funds(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: WithdrawFunds,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: WithdrawFunds = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
+    withdraw_funds_guard(state)?;
+    let amount = withdraw_funds_validate(&cmd, state)?;
 
-    guard(state)?;
-    let amount = validate(&cmd, state)?;
-
-    let event = compute(&cmd, state, amount);
+    let event = withdraw_funds_compute(&cmd, state, amount);
     let event_any = pack_event(&event, "examples.FundsWithdrawn");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

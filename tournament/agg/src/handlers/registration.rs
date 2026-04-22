@@ -1,9 +1,8 @@
 //! Registration command handlers.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{CloseRegistration, OpenRegistration, RegistrationClosed, RegistrationOpened};
-use prost_types::Any;
 
 use crate::state::TournamentState;
 
@@ -25,23 +24,21 @@ fn guard_open(state: &TournamentState) -> CommandResult<()> {
 }
 
 pub fn handle_open_registration(
-    command_book: &CommandBook,
-    command_any: &Any,
+    _cmd: OpenRegistration,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let _cmd: OpenRegistration = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard_open(state)?;
+        guard_open(state)?;
 
     let event = RegistrationOpened {
         opened_at: Some(angzarr_client::now()),
     };
     let event_any = pack_event(&event, "examples.RegistrationOpened");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- CloseRegistration ---
@@ -57,16 +54,11 @@ fn guard_close(state: &TournamentState) -> CommandResult<()> {
 }
 
 pub fn handle_close_registration(
-    command_book: &CommandBook,
-    command_any: &Any,
+    _cmd: CloseRegistration,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let _cmd: CloseRegistration = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard_close(state)?;
+        guard_close(state)?;
 
     let event = RegistrationClosed {
         total_registrations: state.registered_players.len() as i32,
@@ -74,5 +66,9 @@ pub fn handle_close_registration(
     };
     let event_any = pack_event(&event, "examples.RegistrationClosed");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

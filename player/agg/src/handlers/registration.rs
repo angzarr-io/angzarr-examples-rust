@@ -1,12 +1,11 @@
 //! Tournament registration orchestration command handlers.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{
     ConfirmRegistrationFee, InitiateTournamentRegistration, RegistrationFeeConfirmed,
     RegistrationFeeReleased, RegistrationRequested, ReleaseRegistrationFee,
 };
-use prost_types::Any;
 use uuid::Uuid;
 
 use crate::state::PlayerState;
@@ -28,32 +27,27 @@ fn validate_initiate(cmd: &InitiateTournamentRegistration) -> CommandResult<()> 
 }
 
 pub fn handle_initiate_tournament_registration(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: InitiateTournamentRegistration,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: InitiateTournamentRegistration = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_initiate(state)?;
     validate_initiate(&cmd)?;
 
-    // Generate reservation_id for this registration flow
     let reservation_id = Uuid::new_v4().as_bytes().to_vec();
 
-    // Note: The fee will be looked up from Tournament state by the PM
-    // For now, we emit the event and the PM will validate/set the fee
     let event = RegistrationRequested {
         reservation_id,
         tournament_root: cmd.tournament_root,
-        fee: None, // PM will fill this in from Tournament state
+        fee: None, // PM fills this in from Tournament state
         requested_at: Some(angzarr_client::now()),
     };
     let event_any = pack_event(&event, "examples.RegistrationRequested");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ConfirmRegistrationFee ---
@@ -81,15 +75,10 @@ fn validate_confirm(cmd: &ConfirmRegistrationFee, state: &PlayerState) -> Comman
 }
 
 pub fn handle_confirm_registration_fee(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ConfirmRegistrationFee,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ConfirmRegistrationFee = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_confirm(state)?;
     validate_confirm(&cmd, state)?;
 
@@ -107,7 +96,10 @@ pub fn handle_confirm_registration_fee(
     };
     let event_any = pack_event(&event, "examples.RegistrationFeeConfirmed");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 // --- ReleaseRegistrationFee ---
@@ -135,15 +127,10 @@ fn validate_release(cmd: &ReleaseRegistrationFee, state: &PlayerState) -> Comman
 }
 
 pub fn handle_release_registration_fee(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ReleaseRegistrationFee,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ReleaseRegistrationFee = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard_release(state)?;
     validate_release(&cmd, state)?;
 
@@ -154,5 +141,9 @@ pub fn handle_release_registration_fee(
     };
     let event_any = pack_event(&event, "examples.RegistrationFeeReleased");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

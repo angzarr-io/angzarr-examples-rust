@@ -1,15 +1,17 @@
 //! ProcessRebuy command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{ProcessRebuy, RebuyDenied, RebuyProcessed};
-use prost_types::Any;
 
 use crate::state::TournamentState;
 
 fn guard(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
         return Err(CommandRejectedError::new("Tournament does not exist"));
+    }
+    if !state.is_running() {
+        return Err(CommandRejectedError::new("Tournament is not running"));
     }
     Ok(())
 }
@@ -26,11 +28,6 @@ fn validate(cmd: &ProcessRebuy, state: &TournamentState) -> Result<(), String> {
     }
 
     if !state.can_rebuy(&player_root_hex) {
-        // Determine the specific reason
-        if !state.is_running() {
-            return Err("Tournament is not running".to_string());
-        }
-
         let rebuy_config = state.rebuy_config.as_ref();
         if rebuy_config.is_none() || !rebuy_config.unwrap().enabled {
             return Err("Rebuys are not enabled for this tournament".to_string());
@@ -54,16 +51,11 @@ fn validate(cmd: &ProcessRebuy, state: &TournamentState) -> Result<(), String> {
 }
 
 pub fn handle_process_rebuy(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ProcessRebuy,
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ProcessRebuy = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
 
     let player_root_hex = hex::encode(&cmd.player_root);
 
@@ -85,7 +77,10 @@ pub fn handle_process_rebuy(
                 processed_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.RebuyProcessed");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
         Err(reason) => {
             let event = RebuyDenied {
@@ -95,7 +90,11 @@ pub fn handle_process_rebuy(
                 denied_at: Some(angzarr_client::now()),
             };
             let event_any = pack_event(&event, "examples.RebuyDenied");
-            Ok(new_event_book(command_book, seq, event_any))
+            Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
         }
     }
 }
+

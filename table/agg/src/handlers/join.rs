@@ -1,9 +1,8 @@
 //! JoinTable command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{JoinTable, PlayerJoined};
-use prost_types::Any;
 
 use crate::state::TableState;
 
@@ -30,9 +29,10 @@ fn validate(cmd: &JoinTable, state: &TableState) -> CommandResult<i32> {
         )));
     }
     if cmd.buy_in_amount > state.max_buy_in {
-        return Err(CommandRejectedError::invalid_argument(
-            "Buy-in above maximum",
-        ));
+        return Err(CommandRejectedError::invalid_argument(format!(
+            "Buy-in cannot exceed maximum {}",
+            state.max_buy_in
+        )));
     }
 
     let seat_position = if cmd.preferred_seat >= 0 && cmd.preferred_seat < state.max_players {
@@ -60,20 +60,19 @@ fn compute(cmd: &JoinTable, seat_position: i32) -> PlayerJoined {
 }
 
 pub fn handle_join_table(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: JoinTable,
     state: &TableState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: JoinTable = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
     let seat_position = validate(&cmd, state)?;
 
     let event = compute(&cmd, seat_position);
     let event_any = pack_event(&event, "examples.PlayerJoined");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
+

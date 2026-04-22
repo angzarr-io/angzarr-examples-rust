@@ -1,0 +1,43 @@
+//! Integration tests for the player domain upcaster router.
+
+use angzarr_client::proto::{event_page, page_header, EventPage, PageHeader};
+use prost_types::Any;
+use upc_player::{build_router, handle_upcast};
+
+#[test]
+fn build_router_sets_player_domain() {
+    let router = build_router();
+    assert_eq!(router.domain(), "player");
+}
+
+#[test]
+fn handle_upcast_preserves_unregistered_event_payloads() {
+    let event = Any {
+        type_url: "type.googleapis.com/examples.FundsDeposited".into(),
+        value: vec![10, 20, 30],
+    };
+    let page = EventPage {
+        payload: Some(event_page::Payload::Event(event.clone())),
+        header: Some(PageHeader {
+            sequence_type: Some(page_header::SequenceType::Sequence(42)),
+        }),
+        created_at: None,
+        no_commit: false,
+        cascade_id: None,
+    };
+    let result = handle_upcast(&[page]);
+    assert_eq!(result.len(), 1);
+    match &result[0].payload {
+        Some(event_page::Payload::Event(e)) => {
+            assert_eq!(e.type_url, event.type_url);
+            assert_eq!(e.value, event.value);
+        }
+        other => panic!("expected Event payload, got {:?}", other),
+    }
+}
+
+#[test]
+fn handle_upcast_empty_input_returns_empty() {
+    let result = handle_upcast(&[]);
+    assert!(result.is_empty());
+}

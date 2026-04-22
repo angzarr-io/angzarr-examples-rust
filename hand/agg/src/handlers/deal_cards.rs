@@ -3,10 +3,9 @@
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
-use prost_types::Any;
 
 use crate::game_rules::get_rules;
 use crate::state::HandState;
@@ -19,6 +18,9 @@ fn guard(state: &HandState) -> CommandResult<()> {
 }
 
 fn validate(cmd: &DealCards) -> CommandResult<()> {
+    if cmd.players.is_empty() {
+        return Err(CommandRejectedError::new("No players provided"));
+    }
     if cmd.players.len() < 2 {
         return Err(CommandRejectedError::invalid_argument(
             "Need at least 2 players",
@@ -71,22 +73,20 @@ fn compute(cmd: &DealCards) -> CardsDealt {
 }
 
 pub fn handle_deal_cards(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: DealCards,
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: DealCards = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
-    guard(state)?;
+        guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
     let event_any = pack_event(&event, "examples.CardsDealt");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
 /// Create a standard 52-card deck.
@@ -127,3 +127,4 @@ fn shuffle_deck(deck: &mut [Card], seed: &[u8]) {
     let mut rng = StdRng::seed_from_u64(seed_int);
     deck.shuffle(&mut rng);
 }
+

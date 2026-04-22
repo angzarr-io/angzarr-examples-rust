@@ -1,9 +1,8 @@
 //! StartHand command handler.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{HandStarted, SeatSnapshot, StartHand};
-use prost_types::Any;
 
 use crate::state::TableState;
 
@@ -22,13 +21,24 @@ fn guard(state: &TableState) -> CommandResult<()> {
     Ok(())
 }
 
-fn compute(state: &TableState, table_root: &[u8]) -> HandStarted {
+fn compute(state: &TableState) -> HandStarted {
     let hand_number = state.hand_count + 1;
-    let hand_root = generate_hand_root(table_root, hand_number);
+    let hand_root = generate_hand_root(&state.table_id, hand_number);
 
     let dealer_position = advance_to_next_active(state.dealer_position, state);
-    let small_blind_position = advance_to_next_active(dealer_position, state);
-    let big_blind_position = advance_to_next_active(small_blind_position, state);
+    // Heads-up rule: with exactly two active players the dealer posts the
+    // small blind (and the other player posts the big blind). With 3+ players
+    // the SB sits to the left of the dealer.
+    let (small_blind_position, big_blind_position) = if state.active_player_count() == 2 {
+        (
+            dealer_position,
+            advance_to_next_active(dealer_position, state),
+        )
+    } else {
+        let sb = advance_to_next_active(dealer_position, state);
+        let bb = advance_to_next_active(sb, state);
+        (sb, bb)
+    };
 
     let active_players: Vec<SeatSnapshot> = state
         .seats
@@ -56,37 +66,29 @@ fn compute(state: &TableState, table_root: &[u8]) -> HandStarted {
 }
 
 pub fn handle_start_hand(
-    command_book: &CommandBook,
-    command_any: &Any,
+    _cmd: StartHand,
     state: &TableState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let _cmd: StartHand = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
-
     guard(state)?;
 
-    let table_root = command_book
-        .cover
-        .as_ref()
-        .and_then(|c| c.root.as_ref())
-        .map(|u| u.value.as_slice())
-        .unwrap_or(&[]);
-
-    let event = compute(state, table_root);
+    let event = compute(state);
     let event_any = pack_event(&event, "examples.HandStarted");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 
-/// Generate deterministic hand root from table root and hand number.
-fn generate_hand_root(table_root: &[u8], hand_number: i64) -> Vec<u8> {
-    // Generate a deterministic UUID v5 (SHA-1 based, RFC 4122) from table root + hand number
-    let mut data = table_root.to_vec();
-    data.extend_from_slice(&hand_number.to_be_bytes());
-    let id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &data);
-    id.as_bytes().to_vec()
+/// Generate deterministic 16-byte hand root from the table id + hand number.
+///
+/// Mirrors the Python reference: `sha256("angzarr.poker.hand.{table_id}.{n}")[:16]`.
+fn generate_hand_root(table_id: &str, hand_number: i64) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let input = format!("angzarr.poker.hand.{}.{}", table_id, hand_number);
+    let hash = Sha256::digest(input.as_bytes());
+    hash[..16].to_vec()
 }
 
 /// Find the next active (non-sitting-out) player position.
@@ -102,3 +104,4 @@ fn advance_to_next_active(current_pos: i32, state: &TableState) -> i32 {
     }
     current_pos // Shouldn't happen if we have active players
 }
+

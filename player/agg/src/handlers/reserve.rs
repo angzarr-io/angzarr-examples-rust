@@ -3,22 +3,21 @@
 //! DOC: This file is referenced in docs/docs/examples/aggregates.mdx
 //!      Update documentation when making changes to handler patterns.
 
-use angzarr_client::proto::{CommandBook, EventBook};
-use angzarr_client::{new_event_book, pack_event, CommandRejectedError, CommandResult, UnpackAny};
+use angzarr_client::proto::EventBook;
+use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
 use examples_proto::{Currency, FundsReserved, ReserveFunds};
-use prost_types::Any;
 
 use crate::state::PlayerState;
 
 // docs:start:reserve_funds_imp
-fn guard(state: &PlayerState) -> CommandResult<()> {
+fn reserve_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
         return Err(CommandRejectedError::new("Player does not exist"));
     }
     Ok(())
 }
 
-fn validate(cmd: &ReserveFunds, state: &PlayerState) -> CommandResult<i64> {
+fn reserve_funds_validate(cmd: &ReserveFunds, state: &PlayerState) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
         return Err(CommandRejectedError::invalid_argument(
@@ -39,7 +38,7 @@ fn validate(cmd: &ReserveFunds, state: &PlayerState) -> CommandResult<i64> {
     Ok(amount)
 }
 
-fn compute(cmd: &ReserveFunds, state: &PlayerState, amount: i64) -> FundsReserved {
+fn reserve_funds_compute(cmd: &ReserveFunds, state: &PlayerState, amount: i64) -> FundsReserved {
     let new_reserved = state.reserved_funds + amount;
     let new_available = state.bankroll - new_reserved;
 
@@ -59,21 +58,20 @@ fn compute(cmd: &ReserveFunds, state: &PlayerState, amount: i64) -> FundsReserve
 }
 
 pub fn handle_reserve_funds(
-    command_book: &CommandBook,
-    command_any: &Any,
+    cmd: ReserveFunds,
     state: &PlayerState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-    let cmd: ReserveFunds = command_any
-        .unpack()
-        .map_err(|e| CommandRejectedError::new(format!("Failed to decode command: {}", e)))?;
+    reserve_funds_guard(state)?;
+    let amount = reserve_funds_validate(&cmd, state)?;
 
-    guard(state)?;
-    let amount = validate(&cmd, state)?;
-
-    let event = compute(&cmd, state, amount);
+    let event = reserve_funds_compute(&cmd, state, amount);
     let event_any = pack_event(&event, "examples.FundsReserved");
 
-    Ok(new_event_book(command_book, seq, event_any))
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
 }
 // docs:end:reserve_funds_imp
+
