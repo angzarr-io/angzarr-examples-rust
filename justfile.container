@@ -80,10 +80,12 @@ run: build-release
 mutation-test:
     #!/usr/bin/env bash
     set -uo pipefail
-    # cargo mutants scratch builds are multi-GB; point TMPDIR at disk (not tmpfs)
-    # so per-mutant workspace copies don't exhaust /tmp.
-    export TMPDIR="${TMPDIR:-$PWD/.mutants-tmp}"
-    mkdir -p "$TMPDIR"
+    # Per-mutant workspace copies are multi-GB and cargo-mutants must copy the
+    # source tree. TMPDIR must be on disk (not tmpfs) AND outside the source
+    # tree (otherwise each copy nests the previous one → ENAMETOOLONG).
+    SCRATCH="${CARGO_MUTANTS_TMPDIR:-${RUNNER_TEMP:-$HOME/.cargo-mutants-scratch}}"
+    mkdir -p "$SCRATCH"
+    export TMPDIR="$SCRATCH"
     # cargo mutants exits 2 when any mutant is missed; don't let that abort the recipe
     cargo mutants \
         --package agg-player \
