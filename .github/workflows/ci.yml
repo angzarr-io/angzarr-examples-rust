@@ -78,7 +78,18 @@ jobs:
       - name: Install cargo-mutants
         run: cargo install cargo-mutants
 
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+                      /usr/share/swift || true
+          df -h
+
       - name: Mutation test
+        env:
+          # Per-mutant scratch copies are ~8GB each; 2 jobs × copy would
+          # exceed the ~14GB runner disk. Keep sequential in CI.
+          CARGO_MUTANTS_JOBS: "1"
         run: just -f justfile.container mutation-test
 
   build-images:
