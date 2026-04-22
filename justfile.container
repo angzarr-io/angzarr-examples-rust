@@ -80,12 +80,17 @@ run: build-release
 mutation-test:
     #!/usr/bin/env bash
     set -uo pipefail
+    # cargo mutants scratch builds are multi-GB; point TMPDIR at disk (not tmpfs)
+    # so per-mutant workspace copies don't exhaust /tmp.
+    export TMPDIR="${TMPDIR:-$PWD/.mutants-tmp}"
+    mkdir -p "$TMPDIR"
     # cargo mutants exits 2 when any mutant is missed; don't let that abort the recipe
     cargo mutants \
         --package agg-player \
         --package agg-table \
         --package agg-hand \
         --package agg-tournament \
+        --test-workspace true \
         --minimum-test-timeout 60 || true
     RESULTS="mutants.out/caught.txt"
     MISSED="mutants.out/missed.txt"
