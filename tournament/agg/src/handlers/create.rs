@@ -18,16 +18,24 @@ fn validate(cmd: &CreateTournament) -> CommandResult<()> {
         return Err(CommandRejectedError::new("name is required"));
     }
     if cmd.buy_in <= 0 {
-        return Err(CommandRejectedError::new("buy_in must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "buy_in must be positive",
+        ));
     }
     if cmd.starting_stack <= 0 {
-        return Err(CommandRejectedError::new("starting_stack must be positive"));
+        return Err(CommandRejectedError::invalid_argument(
+            "starting_stack must be positive",
+        ));
     }
     if cmd.max_players < 2 {
-        return Err(CommandRejectedError::new("max_players must be at least 2"));
+        return Err(CommandRejectedError::invalid_argument(
+            "max_players must be at least 2",
+        ));
     }
     if cmd.min_players < 2 {
-        return Err(CommandRejectedError::new("min_players must be at least 2"));
+        return Err(CommandRejectedError::invalid_argument(
+            "min_players must be at least 2",
+        ));
     }
     if cmd.min_players > cmd.max_players {
         return Err(CommandRejectedError::new(
