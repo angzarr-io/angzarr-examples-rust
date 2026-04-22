@@ -87,12 +87,15 @@ mutation-test:
     mkdir -p "$SCRATCH"
     export TMPDIR="$SCRATCH"
     # cargo mutants exits 2 when any mutant is missed; don't let that abort the recipe
+    # --jobs pins parallelism so CI doesn't default to 1 on 2-core runners.
+    JOBS="${CARGO_MUTANTS_JOBS:-$(nproc 2>/dev/null || echo 2)}"
     cargo mutants \
         --package agg-player \
         --package agg-table \
         --package agg-hand \
         --package agg-tournament \
         --test-workspace true \
+        --jobs "$JOBS" \
         --minimum-test-timeout 60 || true
     RESULTS="mutants.out/caught.txt"
     MISSED="mutants.out/missed.txt"
