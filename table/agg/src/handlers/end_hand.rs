@@ -40,11 +40,7 @@ fn compute(cmd: &EndHand) -> HandEnded {
     }
 }
 
-pub fn handle_end_hand(
-    cmd: EndHand,
-    state: &TableState,
-    seq: u32,
-) -> CommandResult<EventBook> {
+pub fn handle_end_hand(cmd: EndHand, state: &TableState, seq: u32) -> CommandResult<EventBook> {
     guard(state)?;
     validate(&cmd, state)?;
 
@@ -56,4 +52,3 @@ pub fn handle_end_hand(
         ..Default::default()
     })
 }
-

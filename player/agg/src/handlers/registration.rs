@@ -146,4 +146,3 @@ pub fn handle_release_registration_fee(
         ..Default::default()
     })
 }
-

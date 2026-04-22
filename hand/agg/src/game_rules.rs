@@ -446,11 +446,7 @@ fn evaluate_five(cards: &[Card]) -> HandRank {
             .collect();
         let high = *pairs.iter().max().unwrap();
         let low = *pairs.iter().min().unwrap();
-        return HandRank::new(
-            HandRankType::TwoPair,
-            3_000_000 + high * 100 + low,
-            kicker,
-        );
+        return HandRank::new(HandRankType::TwoPair, 3_000_000 + high * 100 + low, kicker);
     }
     if counts == [2, 1, 1, 1] {
         let pair_rank = sorted_by_count
@@ -529,4 +525,3 @@ fn build_unshuffled_deck() -> Vec<Card> {
     }
     deck
 }
-

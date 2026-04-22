@@ -140,10 +140,7 @@ impl TournamentAggregate {
     }
 
     #[applies(TournamentEnrollmentRejected)]
-    fn apply_enrollment_rejected(
-        state: &mut TournamentState,
-        event: TournamentEnrollmentRejected,
-    ) {
+    fn apply_enrollment_rejected(state: &mut TournamentState, event: TournamentEnrollmentRejected) {
         apply_enrollment_rejected(state, event);
     }
 
@@ -298,7 +295,10 @@ mod applier_tests {
         };
         TournamentAggregate::apply_enrollment_rejected(&mut state_a, event.clone());
         apply_enrollment_rejected(&mut state_b, event);
-        assert_eq!(state_a.registered_players.len(), state_b.registered_players.len());
+        assert_eq!(
+            state_a.registered_players.len(),
+            state_b.registered_players.len()
+        );
         assert_eq!(state_a.total_prize_pool, state_b.total_prize_pool);
     }
 
@@ -416,7 +416,9 @@ mod applier_tests {
             },
         );
         assert_eq!(state.players_remaining, 1);
-        assert!(!state.registered_players.contains_key(&hex::encode(&[0xaau8])));
+        assert!(!state
+            .registered_players
+            .contains_key(&hex::encode(&[0xaau8])));
     }
 
     #[test]

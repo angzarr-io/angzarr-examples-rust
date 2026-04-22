@@ -97,7 +97,9 @@ fn router_builds_as_process_manager() {
 #[test]
 fn dispatch_hand_started_returns_default() {
     let router = build();
-    let resp = router.dispatch(pm_request(hand_started_event())).expect("dispatch ok");
+    let resp = router
+        .dispatch(pm_request(hand_started_event()))
+        .expect("dispatch ok");
     assert!(resp.commands.is_empty());
 }
 
@@ -105,7 +107,9 @@ fn dispatch_hand_started_returns_default() {
 // Handlers — one test per `#[handles]` branch.
 // -----------------------------------------------------------------------------
 
-fn run(req: ProcessManagerHandleRequest) -> Result<ProcessManagerHandleResponse, angzarr_client::ClientError> {
+fn run(
+    req: ProcessManagerHandleRequest,
+) -> Result<ProcessManagerHandleResponse, angzarr_client::ClientError> {
     build().dispatch(req)
 }
 

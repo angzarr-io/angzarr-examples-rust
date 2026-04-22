@@ -45,8 +45,7 @@ pub fn handle_registration_requested(
         phase: RegistrationPhase::RegistrationEnrolling as i32,
         initiated_at: Some(angzarr_client::now()),
     };
-    let pm_event_book =
-        make_pm_event_book(pack_event(&pm_event, "examples.RegistrationInitiated"));
+    let pm_event_book = make_pm_event_book(pack_event(&pm_event, "examples.RegistrationInitiated"));
 
     Ok(ProcessManagerHandleResponse {
         commands: vec![command],
@@ -79,8 +78,7 @@ pub fn handle_player_enrolled(
         starting_stack: event.starting_stack,
         completed_at: Some(angzarr_client::now()),
     };
-    let pm_event_book =
-        make_pm_event_book(pack_event(&pm_event, "examples.RegistrationCompleted"));
+    let pm_event_book = make_pm_event_book(pack_event(&pm_event, "examples.RegistrationCompleted"));
 
     Ok(ProcessManagerHandleResponse {
         commands: vec![command],
@@ -167,4 +165,3 @@ fn make_pm_event_book(event: Any) -> EventBook {
         next_sequence: 0,
     }
 }
-

@@ -74,4 +74,3 @@ pub fn handle_reserve_funds(
     })
 }
 // docs:end:reserve_funds_imp
-

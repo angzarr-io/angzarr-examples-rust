@@ -66,12 +66,7 @@ impl TableAggregate {
     }
 
     #[handles(EndHand)]
-    fn on_end_hand(
-        &self,
-        cmd: EndHand,
-        state: &TableState,
-        seq: u32,
-    ) -> CommandResult<EventBook> {
+    fn on_end_hand(&self, cmd: EndHand, state: &TableState, seq: u32) -> CommandResult<EventBook> {
         handlers::handle_end_hand(cmd, state, seq)
     }
 

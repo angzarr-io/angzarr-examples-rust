@@ -29,11 +29,11 @@ use agg_table::state::TableState;
 use examples_proto::{
     ActionTaken, BettingRoundComplete, BlindPosted, BuyInConfirmed, BuyInRequested,
     BuyInReservationReleased, CardsDealt, ChipsAdded, CommunityCardsDealt, DrawCompleted,
-    FundsDeposited, FundsReleased, FundsReserved, FundsTransferred, FundsWithdrawn,
-    HandComplete, HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerRegistered,
-    PlayerSatIn, PlayerSatOut, PlayerSeated, PotAwarded, RebuyChipsAdded, RebuyFeeConfirmed,
-    RebuyFeeReleased, RebuyRequested, RegistrationFeeConfirmed, RegistrationFeeReleased,
-    RegistrationRequested, SeatingRejected, ShowdownStarted, TableCreated,
+    FundsDeposited, FundsReleased, FundsReserved, FundsTransferred, FundsWithdrawn, HandComplete,
+    HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerRegistered, PlayerSatIn, PlayerSatOut,
+    PlayerSeated, PotAwarded, RebuyChipsAdded, RebuyFeeConfirmed, RebuyFeeReleased, RebuyRequested,
+    RegistrationFeeConfirmed, RegistrationFeeReleased, RegistrationRequested, SeatingRejected,
+    ShowdownStarted, TableCreated,
 };
 
 #[derive(Debug, Clone)]
@@ -117,7 +117,12 @@ impl InProcessClient {
 
     fn load_events(&self, domain: &str, root: &[u8]) -> Vec<Any> {
         let key = (domain.to_string(), hex::encode(root));
-        self.store.lock().unwrap().get(&key).cloned().unwrap_or_default()
+        self.store
+            .lock()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn next_seq(&self, domain: &str, root: &[u8]) -> u32 {
@@ -181,11 +186,15 @@ impl InProcessClient {
             return;
         }
         for page in &book.pages {
-            let Some(event_page::Payload::Event(any)) = &page.payload else { continue };
+            let Some(event_page::Payload::Event(any)) = &page.payload else {
+                continue;
+            };
             if !any.type_url.ends_with("HandStarted") {
                 continue;
             }
-            let Some(hs) = try_unpack::<HandStarted>(any) else { continue };
+            let Some(hs) = try_unpack::<HandStarted>(any) else {
+                continue;
+            };
             let hand_root = hs.hand_root.clone();
             let players: Vec<examples_proto::PlayerInHand> = hs
                 .active_players
@@ -575,7 +584,9 @@ pub mod grpc {
             let query = Query {
                 cover: Some(Cover {
                     domain: domain.to_string(),
-                    root: Some(ProtoUuid { value: root.to_vec() }),
+                    root: Some(ProtoUuid {
+                        value: root.to_vec(),
+                    }),
                     correlation_id: String::new(),
                     edition: None,
                 }),
@@ -618,7 +629,9 @@ pub mod grpc {
                 command: Some(CommandBook {
                     cover: Some(Cover {
                         domain: domain.to_string(),
-                        root: Some(ProtoUuid { value: root.to_vec() }),
+                        root: Some(ProtoUuid {
+                            value: root.to_vec(),
+                        }),
                         correlation_id,
                         ..Default::default()
                     }),

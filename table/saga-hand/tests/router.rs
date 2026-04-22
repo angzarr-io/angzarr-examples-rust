@@ -78,7 +78,9 @@ fn router_builds_as_saga() {
 #[test]
 fn dispatch_hand_started_emits_deal_cards_command() {
     let router = build();
-    let resp = router.dispatch(hand_started_request()).expect("dispatch ok");
+    let resp = router
+        .dispatch(hand_started_request())
+        .expect("dispatch ok");
     assert_eq!(resp.commands.len(), 1);
     assert_eq!(resp.commands[0].cover.as_ref().unwrap().domain, "hand");
 }

@@ -202,4 +202,3 @@ pub fn handle_start_tournament(
         ..Default::default()
     })
 }
-

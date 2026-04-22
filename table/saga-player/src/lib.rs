@@ -91,8 +91,7 @@ mod tests {
         );
         let cmd_any = extract_command_any(book);
         assert!(cmd_any.type_url.ends_with("examples.ReleaseFunds"));
-        let release =
-            ReleaseFunds::decode(cmd_any.value.as_slice()).unwrap();
+        let release = ReleaseFunds::decode(cmd_any.value.as_slice()).unwrap();
         assert_eq!(release.table_root, vec![0xAA]);
     }
 }

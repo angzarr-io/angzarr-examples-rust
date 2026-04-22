@@ -65,9 +65,9 @@ pub fn handle_seat_player(
             };
             let event_any = pack_event(&event, "examples.PlayerSeated");
             Ok(EventBook {
-        pages: vec![event_page(seq, event_any)],
-        ..Default::default()
-    })
+                pages: vec![event_page(seq, event_any)],
+                ..Default::default()
+            })
         }
         Err(reason) => {
             let event = SeatingRejected {
@@ -79,10 +79,9 @@ pub fn handle_seat_player(
             };
             let event_any = pack_event(&event, "examples.SeatingRejected");
             Ok(EventBook {
-        pages: vec![event_page(seq, event_any)],
-        ..Default::default()
-    })
+                pages: vec![event_page(seq, event_any)],
+                ..Default::default()
+            })
         }
     }
 }
-

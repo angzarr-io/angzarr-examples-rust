@@ -11,10 +11,9 @@ use agg_tournament::handlers::{
     handle_start_tournament,
 };
 use agg_tournament::state::{
-    apply_blind_advanced, apply_completed, apply_created, apply_enrollment_rejected,
-    apply_paused, apply_player_eliminated, apply_player_enrolled, apply_rebuy_denied,
-    apply_rebuy_processed, apply_registration_closed, apply_registration_opened, apply_resumed,
-    TournamentState,
+    apply_blind_advanced, apply_completed, apply_created, apply_enrollment_rejected, apply_paused,
+    apply_player_eliminated, apply_player_enrolled, apply_rebuy_denied, apply_rebuy_processed,
+    apply_registration_closed, apply_registration_opened, apply_resumed, TournamentState,
 };
 use angzarr_client::proto::{event_page, EventBook};
 use angzarr_client::{try_unpack, CommandRejectedError};
@@ -205,21 +204,13 @@ fn given_tournament_registration_open(world: &mut TournamentWorld) {
 }
 
 #[given(expr = "a tournament with max_players {int} and min_players {int} and registration open")]
-fn given_tournament_max_min_open(
-    world: &mut TournamentWorld,
-    max_players: i32,
-    min_players: i32,
-) {
+fn given_tournament_max_min_open(world: &mut TournamentWorld, max_players: i32, min_players: i32) {
     append_created(world, 100, max_players, min_players);
     append_registration_opened(world);
 }
 
 #[given(expr = "a tournament with min_players {int} and max_players {int} and registration open")]
-fn given_tournament_min_max_open(
-    world: &mut TournamentWorld,
-    min_players: i32,
-    max_players: i32,
-) {
+fn given_tournament_min_max_open(world: &mut TournamentWorld, min_players: i32, max_players: i32) {
     append_created(world, 100, max_players, min_players);
     append_registration_opened(world);
 }
@@ -469,11 +460,7 @@ fn when_advance_blind_level(world: &mut TournamentWorld) {
 }
 
 #[when(expr = "I handle an EliminatePlayer command for player {string} with hand_root {string}")]
-fn when_eliminate_player_with_hand(
-    world: &mut TournamentWorld,
-    label: String,
-    hand_label: String,
-) {
+fn when_eliminate_player_with_hand(world: &mut TournamentWorld, label: String, hand_label: String) {
     let cmd = EliminatePlayer {
         player_root: player_root_bytes(&label),
         hand_root: hand_label.into_bytes(),
@@ -576,9 +563,7 @@ fn then_command_fails_with_status(world: &mut TournamentWorld, status: String) {
 fn then_error_contains(world: &mut TournamentWorld, expected: String) {
     let err = world.last_error.as_ref().expect("No error found");
     assert!(
-        err.reason
-            .to_lowercase()
-            .contains(&expected.to_lowercase()),
+        err.reason.to_lowercase().contains(&expected.to_lowercase()),
         "Expected error to contain '{}' but got '{}'",
         expected,
         err.reason
@@ -757,13 +742,10 @@ fn given_running_with_rebuys_disabled(world: &mut TournamentWorld, n: i32) {
     );
 }
 
-#[given(expr = "a running tournament with rebuy cutoff {int} and {int} enrolled player at level {int}")]
-fn given_running_with_rebuy_cutoff(
-    world: &mut TournamentWorld,
-    cutoff: i32,
-    n: i32,
-    level: i32,
-) {
+#[given(
+    expr = "a running tournament with rebuy cutoff {int} and {int} enrolled player at level {int}"
+)]
+fn given_running_with_rebuy_cutoff(world: &mut TournamentWorld, cutoff: i32, n: i32, level: i32) {
     append_running_with_rebuy_config(
         world,
         RebuyConfig {
@@ -787,7 +769,9 @@ fn given_running_with_rebuy_cutoff(
     }
 }
 
-#[given(expr = "a running tournament with max_rebuys {int} and player {string} who has used {int} rebuys")]
+#[given(
+    expr = "a running tournament with max_rebuys {int} and player {string} who has used {int} rebuys"
+)]
 fn given_running_with_max_rebuys_and_prior_use(
     world: &mut TournamentWorld,
     max_rebuys: i32,
@@ -889,11 +873,7 @@ fn given_player_enrolled_event(world: &mut TournamentWorld, label: String, fee_p
 }
 
 #[given(expr = "a TournamentEnrollmentRejected event for player {string} with reason {string}")]
-fn given_enrollment_rejected_event(
-    world: &mut TournamentWorld,
-    label: String,
-    reason: String,
-) {
+fn given_enrollment_rejected_event(world: &mut TournamentWorld, label: String, reason: String) {
     world.add_event(pack(&TournamentEnrollmentRejected {
         player_root: player_root_bytes(&label),
         reservation_id: Vec::new(),
@@ -902,7 +882,9 @@ fn given_enrollment_rejected_event(
     }));
 }
 
-#[given(expr = "a RebuyProcessed event for player {string} with rebuy_cost {int} rebuy_count {int}")]
+#[given(
+    expr = "a RebuyProcessed event for player {string} with rebuy_cost {int} rebuy_count {int}"
+)]
 fn given_rebuy_processed_event(
     world: &mut TournamentWorld,
     label: String,

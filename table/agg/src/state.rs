@@ -170,4 +170,3 @@ pub fn apply_rebuy_chips_added(state: &mut TableState, event: RebuyChipsAdded) {
         seat.stack = event.new_stack;
     }
 }
-

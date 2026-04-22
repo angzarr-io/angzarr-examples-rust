@@ -153,7 +153,6 @@ fn make_command_book<M: Message>(
     }
 }
 
-
 fn make_pm_event_book(event: Any) -> EventBook {
     use angzarr_client::proto::event_page::Payload;
     use angzarr_client::proto::EventPage;
@@ -173,4 +172,3 @@ fn make_pm_event_book(event: Any) -> EventBook {
         next_sequence: 0,
     }
 }
-

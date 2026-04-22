@@ -54,13 +54,9 @@ mod bootstrap {
         let provider = std::env::var("CLUSTER_PROVIDER").unwrap_or_else(|_| "kind".to_string());
         if provider == "external" {
             let urls = ["PLAYER_URL", "TABLE_URL", "HAND_URL", "STREAM_URL"];
-            let missing: Vec<&&str> =
-                urls.iter().filter(|k| std::env::var(k).is_err()).collect();
+            let missing: Vec<&&str> = urls.iter().filter(|k| std::env::var(k).is_err()).collect();
             if !missing.is_empty() {
-                panic!(
-                    "CLUSTER_PROVIDER=external requires {:?} to be set",
-                    missing
-                );
+                panic!("CLUSTER_PROVIDER=external requires {:?} to be set", missing);
             }
             return None;
         }

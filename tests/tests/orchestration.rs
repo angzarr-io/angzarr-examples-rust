@@ -11,8 +11,8 @@
 //! and will show as "skipped" rather than failed. Happy-path and downstream
 //! confirmation/release scenarios are covered.
 
-use angzarr_client::unpack;
 use angzarr_client::proto::{command_page, event_page};
+use angzarr_client::unpack;
 use cucumber::{given, then, when, World, WriterExt};
 use examples_proto::{
     BuyInRequested, Currency, PlayerSeated, RebuyChipsAdded, RebuyDenied, RebuyProcessed,
@@ -86,16 +86,12 @@ impl OrchestrationWorld {
         Self::default()
     }
 
-    fn record_response(
-        &mut self,
-        response: angzarr_client::proto::ProcessManagerHandleResponse,
-    ) {
+    fn record_response(&mut self, response: angzarr_client::proto::ProcessManagerHandleResponse) {
         for cb in &response.commands {
             for page in &cb.pages {
                 if let Some(command_page::Payload::Command(cmd)) = &page.payload {
-                    self.emitted_commands.push(
-                        angzarr_client::type_name_from_url(&cmd.type_url).to_string(),
-                    );
+                    self.emitted_commands
+                        .push(angzarr_client::type_name_from_url(&cmd.type_url).to_string());
                 }
             }
         }
@@ -145,7 +141,10 @@ fn given_buy_in_requested(world: &mut OrchestrationWorld, seat: i32, amount: i64
         amount: Some(currency(amount)),
         requested_at: Some(angzarr_client::now()),
     };
-    world.trigger_event = Some(angzarr_client::pack_event(&event, "examples.BuyInRequested"));
+    world.trigger_event = Some(angzarr_client::pack_event(
+        &event,
+        "examples.BuyInRequested",
+    ));
 }
 
 #[given("a player and table in a pending buy-in state")]
@@ -216,7 +215,10 @@ fn given_rebuy_requested(world: &mut OrchestrationWorld, amount: i64) {
         fee: Some(currency(amount)),
         requested_at: Some(angzarr_client::now()),
     };
-    world.trigger_event = Some(angzarr_client::pack_event(&event, "examples.RebuyRequested"));
+    world.trigger_event = Some(angzarr_client::pack_event(
+        &event,
+        "examples.RebuyRequested",
+    ));
 }
 
 #[given("a player, tournament, and table in a pending rebuy state")]
@@ -241,10 +243,13 @@ fn given_chips_added(world: &mut OrchestrationWorld) {
 
 #[when("the BuyInOrchestrator handles the BuyInRequested event")]
 fn when_buy_in_pm_handles(world: &mut OrchestrationWorld) {
-    let any = world.trigger_event.as_ref().expect("no trigger event").clone();
+    let any = world
+        .trigger_event
+        .as_ref()
+        .expect("no trigger event")
+        .clone();
     let event: BuyInRequested = unpack(&any).expect("decode BuyInRequested");
-    let response =
-        buy_in_handler::handle_buy_in_requested(event).expect("handler succeeds");
+    let response = buy_in_handler::handle_buy_in_requested(event).expect("handler succeeds");
     world.record_response(response);
 }
 
@@ -270,17 +275,20 @@ fn when_buy_in_pm_handles_rejected(world: &mut OrchestrationWorld) {
         reason: "Seat taken by another player".to_string(),
         rejected_at: Some(angzarr_client::now()),
     };
-    let response =
-        buy_in_handler::handle_seating_rejected(event).expect("handler succeeds");
+    let response = buy_in_handler::handle_seating_rejected(event).expect("handler succeeds");
     world.record_response(response);
 }
 
 #[when("the RegistrationOrchestrator handles the RegistrationRequested event")]
 fn when_registration_pm_handles(world: &mut OrchestrationWorld) {
-    let any = world.trigger_event.as_ref().expect("no trigger event").clone();
+    let any = world
+        .trigger_event
+        .as_ref()
+        .expect("no trigger event")
+        .clone();
     let event: RegistrationRequested = unpack(&any).expect("decode RegistrationRequested");
-    let response = registration_handler::handle_registration_requested(event)
-        .expect("handler succeeds");
+    let response =
+        registration_handler::handle_registration_requested(event).expect("handler succeeds");
     world.record_response(response);
 }
 
@@ -294,8 +302,7 @@ fn when_registration_pm_handles_enrolled(world: &mut OrchestrationWorld) {
         registration_number: 1,
         enrolled_at: Some(angzarr_client::now()),
     };
-    let response =
-        registration_handler::handle_player_enrolled(event).expect("handler succeeds");
+    let response = registration_handler::handle_player_enrolled(event).expect("handler succeeds");
     world.record_response(response);
 }
 
@@ -307,14 +314,18 @@ fn when_registration_pm_handles_rejected(world: &mut OrchestrationWorld) {
         reason: "Tournament full".to_string(),
         rejected_at: Some(angzarr_client::now()),
     };
-    let response = registration_handler::handle_enrollment_rejected(event)
-        .expect("handler succeeds");
+    let response =
+        registration_handler::handle_enrollment_rejected(event).expect("handler succeeds");
     world.record_response(response);
 }
 
 #[when("the RebuyOrchestrator handles the RebuyRequested event")]
 fn when_rebuy_pm_handles(world: &mut OrchestrationWorld) {
-    let any = world.trigger_event.as_ref().expect("no trigger event").clone();
+    let any = world
+        .trigger_event
+        .as_ref()
+        .expect("no trigger event")
+        .clone();
     let event: RebuyRequested = unpack(&any).expect("decode RebuyRequested");
     let response = rebuy_handler::handle_rebuy_requested(event).expect("handler succeeds");
     world.record_response(response);
@@ -340,8 +351,7 @@ fn when_rebuy_pm_handles_processed(world: &mut OrchestrationWorld) {
         seat: 2,
         ..RebuyState::default()
     };
-    let response =
-        rebuy_handler::handle_rebuy_processed(event, &state).expect("handler succeeds");
+    let response = rebuy_handler::handle_rebuy_processed(event, &state).expect("handler succeeds");
     world.record_response(response);
 }
 
@@ -378,7 +388,10 @@ fn when_rebuy_pm_handles_denied(world: &mut OrchestrationWorld) {
 #[then("the PM emits a SeatPlayer command to the table")]
 fn then_emits_seat_player(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("SeatPlayer")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("SeatPlayer")),
         "Expected SeatPlayer, got {:?}",
         world.emitted_commands
     );
@@ -399,7 +412,10 @@ fn then_emits_buy_in_initiated(world: &mut OrchestrationWorld) {
 #[then("the PM emits a ConfirmBuyIn command to the player")]
 fn then_emits_confirm_buy_in(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("ConfirmBuyIn")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("ConfirmBuyIn")),
         "Expected ConfirmBuyIn, got {:?}",
         world.emitted_commands
     );
@@ -420,7 +436,10 @@ fn then_emits_buy_in_completed(world: &mut OrchestrationWorld) {
 #[then("the PM emits a ReleaseBuyIn command to the player")]
 fn then_emits_release_buy_in(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("ReleaseBuyIn")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("ReleaseBuyIn")),
         "Expected ReleaseBuyIn, got {:?}",
         world.emitted_commands
     );
@@ -429,7 +448,10 @@ fn then_emits_release_buy_in(world: &mut OrchestrationWorld) {
 #[then("the PM emits an EnrollPlayer command to the tournament")]
 fn then_emits_enroll_player(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("EnrollPlayer")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("EnrollPlayer")),
         "Expected EnrollPlayer, got {:?}",
         world.emitted_commands
     );
@@ -486,7 +508,10 @@ fn then_emits_release_registration_fee(world: &mut OrchestrationWorld) {
 #[then("the PM emits a ProcessRebuy command to the tournament")]
 fn then_emits_process_rebuy(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("ProcessRebuy")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("ProcessRebuy")),
         "Expected ProcessRebuy, got {:?}",
         world.emitted_commands
     );
@@ -507,7 +532,10 @@ fn then_emits_rebuy_initiated(world: &mut OrchestrationWorld) {
 #[then("the PM emits an AddRebuyChips command to the table")]
 fn then_emits_add_rebuy_chips(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("AddRebuyChips")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("AddRebuyChips")),
         "Expected AddRebuyChips, got {:?}",
         world.emitted_commands
     );
@@ -516,7 +544,10 @@ fn then_emits_add_rebuy_chips(world: &mut OrchestrationWorld) {
 #[then("the PM emits a ConfirmRebuyFee command to the player")]
 fn then_emits_confirm_rebuy_fee(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("ConfirmRebuyFee")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("ConfirmRebuyFee")),
         "Expected ConfirmRebuyFee, got {:?}",
         world.emitted_commands
     );
@@ -537,7 +568,10 @@ fn then_emits_rebuy_completed(world: &mut OrchestrationWorld) {
 #[then("the PM emits a ReleaseRebuyFee command to the player")]
 fn then_emits_release_rebuy_fee(world: &mut OrchestrationWorld) {
     assert!(
-        world.emitted_commands.iter().any(|c| c.ends_with("ReleaseRebuyFee")),
+        world
+            .emitted_commands
+            .iter()
+            .any(|c| c.ends_with("ReleaseRebuyFee")),
         "Expected ReleaseRebuyFee, got {:?}",
         world.emitted_commands
     );
@@ -578,7 +612,9 @@ fn then_emits_registration_failed(world: &mut OrchestrationWorld, code: String) 
 
 #[then(expr = "the PM emits a RebuyFailed process event with code {string}")]
 fn then_emits_rebuy_failed(world: &mut OrchestrationWorld, code: String) {
-    let any = world.find_event_ending("RebuyFailed").expect("no RebuyFailed event");
+    let any = world
+        .find_event_ending("RebuyFailed")
+        .expect("no RebuyFailed event");
     let event: examples_proto::RebuyFailed = unpack(&any).expect("decode RebuyFailed");
     let failure = event.failure.expect("failure populated");
     assert_eq!(
@@ -624,8 +660,9 @@ async fn main() {
                 .summarized()
                 .assert_normalized(),
         )
-        .filter_run("features/example/unit/orchestration.feature", |_feat, _rule, scenario| {
-            !SKIPPED_SCENARIOS.contains(&scenario.name.as_str())
-        })
+        .filter_run(
+            "features/example/unit/orchestration.feature",
+            |_feat, _rule, scenario| !SKIPPED_SCENARIOS.contains(&scenario.name.as_str()),
+        )
         .await;
 }

@@ -66,7 +66,7 @@ pub fn handle_reveal_cards(
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
     let player = validate(&cmd, state)?;
 
     let event_any = if cmd.muck {
@@ -82,4 +82,3 @@ pub fn handle_reveal_cards(
         ..Default::default()
     })
 }
-

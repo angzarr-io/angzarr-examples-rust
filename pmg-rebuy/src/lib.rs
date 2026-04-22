@@ -242,10 +242,7 @@ mod handler_tests {
             )
             .expect("handler should succeed");
         assert_eq!(response.commands.len(), 1);
-        assert_eq!(
-            response.commands[0].cover.as_ref().unwrap().domain,
-            "table"
-        );
+        assert_eq!(response.commands[0].cover.as_ref().unwrap().domain, "table");
         // handle_rebuy_processed does NOT emit PM events.
         assert!(response.process_events.is_none());
     }

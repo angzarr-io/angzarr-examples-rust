@@ -53,12 +53,8 @@ fn compute(cmd: &PostBlind, state: &HandState, player: &PlayerHandState) -> Blin
     }
 }
 
-pub fn handle_post_blind(
-    cmd: PostBlind,
-    state: &HandState,
-    seq: u32,
-) -> CommandResult<EventBook> {
-        guard(state)?;
+pub fn handle_post_blind(cmd: PostBlind, state: &HandState, seq: u32) -> CommandResult<EventBook> {
+    guard(state)?;
     let player = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player);
@@ -69,4 +65,3 @@ pub fn handle_post_blind(
         ..Default::default()
     })
 }
-

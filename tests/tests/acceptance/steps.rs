@@ -67,13 +67,7 @@ fn deposit_funds(world: &mut AcceptanceWorld, name: &str, amount: i64) {
     }
 }
 
-fn create_table(
-    world: &mut AcceptanceWorld,
-    name: &str,
-    sb: i64,
-    bb: i64,
-    variant: GameVariant,
-) {
+fn create_table(world: &mut AcceptanceWorld, name: &str, sb: i64, bb: i64, variant: GameVariant) {
     let root = world.table_root(name);
     let seq = world.tables[name].sequence;
     let cmd = CreateTable {
@@ -103,7 +97,12 @@ fn create_table(
     world.current_table_name = Some(name.to_string());
 }
 
-fn reserve_funds_for_buyin(world: &mut AcceptanceWorld, name: &str, table_root: &[u8], buy_in: i64) {
+fn reserve_funds_for_buyin(
+    world: &mut AcceptanceWorld,
+    name: &str,
+    table_root: &[u8],
+    buy_in: i64,
+) {
     let root = world.player_root(name);
     let seq = world.players[name].sequence;
     let cmd = ReserveFunds {
@@ -242,11 +241,12 @@ fn get_stack(world: &AcceptanceWorld, player_name: &str) -> i64 {
 }
 
 fn hand_state_mut(world: &mut AcceptanceWorld) -> &mut CurrentHand {
-    let table_name = world
-        .current_table_name
-        .clone()
-        .expect("no current table");
-    let seated = world.tables.get(&table_name).map(|t| t.seated_players).unwrap_or(0);
+    let table_name = world.current_table_name.clone().expect("no current table");
+    let seated = world
+        .tables
+        .get(&table_name)
+        .map(|t| t.seated_players)
+        .unwrap_or(0);
     let t = world.tables.get_mut(&table_name).unwrap();
     if t.current_hand.phase.is_empty() {
         t.current_hand = CurrentHand {
@@ -325,7 +325,10 @@ fn given_one_registered_player(world: &mut AcceptanceWorld, name: String, bankro
 }
 
 #[given(regex = r"^registered players with bankroll:$")]
-fn given_registered_players_with_bankroll(world: &mut AcceptanceWorld, step: &cucumber::gherkin::Step) {
+fn given_registered_players_with_bankroll(
+    world: &mut AcceptanceWorld,
+    step: &cucumber::gherkin::Step,
+) {
     let table = step.table.as_ref().expect("table required");
     for row in table.rows.iter().skip(1) {
         let name = &row[0];
@@ -339,10 +342,7 @@ fn given_registered_players_with_bankroll(world: &mut AcceptanceWorld, step: &cu
 }
 
 #[given(regex = r#"^a table "([^"]+)" with seated players:$"#)]
-fn given_table_with_seated_players(
-    world: &mut AcceptanceWorld,
-    step: &cucumber::gherkin::Step,
-) {
+fn given_table_with_seated_players(world: &mut AcceptanceWorld, step: &cucumber::gherkin::Step) {
     let captures = regex::Regex::new(r#"a table "([^"]+)" with seated players:"#)
         .unwrap()
         .captures(&step.value)
@@ -367,11 +367,7 @@ fn given_table_with_seated_players(
 }
 
 #[given(regex = r#"^a table "([^"]+)" with (\d+) seated players?$"#)]
-fn given_table_with_n_players(
-    world: &mut AcceptanceWorld,
-    table_name: String,
-    count: i32,
-) {
+fn given_table_with_n_players(world: &mut AcceptanceWorld, table_name: String, count: i32) {
     create_table(world, &table_name, 5, 10, GameVariant::TexasHoldem);
     world.current_table_name = Some(table_name.clone());
     for i in 0..count {
@@ -388,9 +384,7 @@ fn given_table_with_active_hand(world: &mut AcceptanceWorld, table_name: String)
     given_table_with_n_players(world, table_name.clone(), 2);
 }
 
-#[given(
-    regex = r#"^player "([^"]+)" has bankroll (\d+) with (\d+) reserved$"#
-)]
+#[given(regex = r#"^player "([^"]+)" has bankroll (\d+) with (\d+) reserved$"#)]
 fn given_player_bankroll_with_reserved(
     world: &mut AcceptanceWorld,
     name: String,
@@ -419,12 +413,7 @@ fn given_n_registered_players(world: &mut AcceptanceWorld, count: i32) {
 // ============================================================================
 
 #[given(regex = r#"^a Five Card Draw table "([^"]+)" with blinds (\d+)/(\d+)$"#)]
-fn given_five_card_draw_table(
-    world: &mut AcceptanceWorld,
-    name: String,
-    sb: i64,
-    bb: i64,
-) {
+fn given_five_card_draw_table(world: &mut AcceptanceWorld, name: String, sb: i64, bb: i64) {
     create_table(world, &name, sb, bb, GameVariant::FiveCardDraw);
 }
 
@@ -569,15 +558,8 @@ fn when_deposit(world: &mut AcceptanceWorld, amount: i64, name: String) {
     deposit_funds(world, &name, amount);
 }
 
-#[when(
-    regex = r#"^I deposit (\d+) chips to player "([^"]+)" with sync_mode (\w+)$"#
-)]
-fn when_deposit_with_sync(
-    world: &mut AcceptanceWorld,
-    amount: i64,
-    name: String,
-    mode: String,
-) {
+#[when(regex = r#"^I deposit (\d+) chips to player "([^"]+)" with sync_mode (\w+)$"#)]
+fn when_deposit_with_sync(world: &mut AcceptanceWorld, amount: i64, name: String, mode: String) {
     let sync = parse_sync_mode(&mode);
     world.last_sync_mode = Some(sync);
     world.command_start = Some(std::time::Instant::now());
@@ -604,21 +586,12 @@ fn when_deposit_all(world: &mut AcceptanceWorld, mode: String) {
 // When steps — Tables
 // ============================================================================
 
-#[when(
-    regex = r#"^I create a Texas Hold'em table "([^"]+)" with blinds (\d+)/(\d+)$"#
-)]
-fn when_create_table(
-    world: &mut AcceptanceWorld,
-    name: String,
-    sb: i64,
-    bb: i64,
-) {
+#[when(regex = r#"^I create a Texas Hold'em table "([^"]+)" with blinds (\d+)/(\d+)$"#)]
+fn when_create_table(world: &mut AcceptanceWorld, name: String, sb: i64, bb: i64) {
     create_table(world, &name, sb, bb, GameVariant::TexasHoldem);
 }
 
-#[when(
-    regex = r#"^player "([^"]+)" joins table "([^"]+)" at seat (\d+) with buy-in (\d+)$"#
-)]
+#[when(regex = r#"^player "([^"]+)" joins table "([^"]+)" at seat (\d+) with buy-in (\d+)$"#)]
 fn when_player_joins(
     world: &mut AcceptanceWorld,
     name: String,
@@ -630,11 +603,7 @@ fn when_player_joins(
 }
 
 #[when(regex = r#"^player "([^"]+)" leaves table "([^"]+)"$"#)]
-fn when_player_leaves(
-    world: &mut AcceptanceWorld,
-    name: String,
-    table_name: String,
-) {
+fn when_player_leaves(world: &mut AcceptanceWorld, name: String, table_name: String) {
     leave_table(world, &name, &table_name);
 }
 
@@ -691,11 +660,7 @@ fn blind_posters(world: &AcceptanceWorld) -> (Option<String>, Option<String>) {
 }
 
 #[when(regex = r#"^a hand starts and blinds are posted \((\d+)/(\d+)\)$"#)]
-fn when_hand_starts_blinds_posted(
-    world: &mut AcceptanceWorld,
-    sb: i64,
-    bb: i64,
-) {
+fn when_hand_starts_blinds_posted(world: &mut AcceptanceWorld, sb: i64, bb: i64) {
     if let Some(tn) = world.current_table_name.clone() {
         start_hand(world, &tn);
     }
@@ -863,13 +828,7 @@ fn when_fold_cascade(world: &mut AcceptanceWorld, name: String) {
 }
 
 #[when(regex = r#"^"([^"]+)" discards (\d+) cards at indices \[([^\]]+)\]$"#)]
-fn when_discards(
-    _world: &mut AcceptanceWorld,
-    _name: String,
-    _count: i32,
-    _indices: String,
-) {
-}
+fn when_discards(_world: &mut AcceptanceWorld, _name: String, _count: i32, _indices: String) {}
 
 #[when(regex = r#"^"([^"]+)" stands pat$"#)]
 fn when_stands_pat(_world: &mut AcceptanceWorld, _name: String) {}
@@ -930,7 +889,11 @@ fn when_hand_num_completes_with_winner(
         .cloned()
         .collect();
     let losers: Vec<String> = stacks_keys.into_iter().filter(|p| *p != name).collect();
-    let per_loser = if losers.is_empty() { 0 } else { amount / losers.len() as i64 };
+    let per_loser = if losers.is_empty() {
+        0
+    } else {
+        amount / losers.len() as i64
+    };
     for l in losers {
         update_stack(world, &l, -per_loser);
     }
@@ -962,9 +925,7 @@ fn when_hand_completes_with_winner(world: &mut AcceptanceWorld, name: String) {
     synth_event(world, "HandEnded");
 }
 
-#[when(
-    regex = r"^the hand completes with sync_mode CASCADE and cascade_error_mode COMPENSATE$"
-)]
+#[when(regex = r"^the hand completes with sync_mode CASCADE and cascade_error_mode COMPENSATE$")]
 fn when_hand_completes_cascade_compensate(world: &mut AcceptanceWorld) {
     hand_state_mut(world).phase = "complete".to_string();
 }
@@ -1016,14 +977,8 @@ fn when_attempts_add_n(world: &mut AcceptanceWorld, name: String, amount: i64) {
 
 // ---- Sync mode command triggers ----
 
-#[when(
-    regex = r#"^I start a hand at table "([^"]+)" with sync_mode (ASYNC|SIMPLE|CASCADE)$"#
-)]
-fn when_start_hand_with_sync(
-    world: &mut AcceptanceWorld,
-    table_name: String,
-    mode: String,
-) {
+#[when(regex = r#"^I start a hand at table "([^"]+)" with sync_mode (ASYNC|SIMPLE|CASCADE)$"#)]
+fn when_start_hand_with_sync(world: &mut AcceptanceWorld, table_name: String, mode: String) {
     let sync = parse_sync_mode(&mode);
     world.last_sync_mode = Some(sync);
     world.command_start = Some(std::time::Instant::now());
@@ -1123,24 +1078,24 @@ fn query_table_hand_count(world: &AcceptanceWorld, name: &str) -> Option<i64> {
 
 #[then(regex = r#"^player "([^"]+)" has bankroll (\d+)$"#)]
 fn then_player_bankroll(world: &mut AcceptanceWorld, name: String, amount: i64) {
-    let actual = query_player_bankroll(world, &name)
-        .unwrap_or_else(|| world.players[&name].bankroll);
+    let actual =
+        query_player_bankroll(world, &name).unwrap_or_else(|| world.players[&name].bankroll);
     assert_eq!(actual, amount, "bankroll for {name}");
 }
 
 #[then(regex = r#"^player "([^"]+)" has available balance (\d+)$"#)]
 fn then_player_available(world: &mut AcceptanceWorld, name: String, amount: i64) {
-    let bankroll = query_player_bankroll(world, &name)
-        .unwrap_or_else(|| world.players[&name].bankroll);
-    let reserved = query_player_reserved(world, &name)
-        .unwrap_or_else(|| world.players[&name].reserved_funds);
+    let bankroll =
+        query_player_bankroll(world, &name).unwrap_or_else(|| world.players[&name].bankroll);
+    let reserved =
+        query_player_reserved(world, &name).unwrap_or_else(|| world.players[&name].reserved_funds);
     assert_eq!(bankroll - reserved, amount, "available for {name}");
 }
 
 #[then(regex = r#"^player "([^"]+)" has reserved funds (\d+)$"#)]
 fn then_player_reserved(world: &mut AcceptanceWorld, name: String, amount: i64) {
-    let actual = query_player_reserved(world, &name)
-        .unwrap_or_else(|| world.players[&name].reserved_funds);
+    let actual =
+        query_player_reserved(world, &name).unwrap_or_else(|| world.players[&name].reserved_funds);
     assert_eq!(actual, amount, "reserved for {name}");
 }
 
@@ -1420,11 +1375,7 @@ fn then_second_betting(world: &mut AcceptanceWorld) {
 }
 
 #[then(regex = r#"^"([^"]+)" is eliminated from table "([^"]+)"$"#)]
-fn then_player_eliminated(
-    world: &mut AcceptanceWorld,
-    name: String,
-    table_name: String,
-) {
+fn then_player_eliminated(world: &mut AcceptanceWorld, name: String, table_name: String) {
     let stack = get_stack(world, &name);
     assert_eq!(stack, 0, "{name} should have stack 0");
     world.tables.get_mut(&table_name).unwrap().seated_players -= 1;
@@ -1476,22 +1427,10 @@ fn then_posts_big_of(_world: &mut AcceptanceWorld, _name: String, _amount: i64) 
 fn then_acts_first_preflop(_world: &mut AcceptanceWorld, _name: String) {}
 
 #[then(regex = r#"^"([^"]+)" may call (\d+) or raise to at least (\d+)$"#)]
-fn then_may_call_or_raise(
-    _world: &mut AcceptanceWorld,
-    _name: String,
-    _call: i64,
-    _min: i64,
-) {
-}
+fn then_may_call_or_raise(_world: &mut AcceptanceWorld, _name: String, _call: i64, _min: i64) {}
 
 #[then(regex = r#"^"([^"]+)" may only call (\d+) if "([^"]+)" just calls$"#)]
-fn then_may_only_call(
-    _world: &mut AcceptanceWorld,
-    _name: String,
-    _amt: i64,
-    _other: String,
-) {
-}
+fn then_may_only_call(_world: &mut AcceptanceWorld, _name: String, _amt: i64, _other: String) {}
 
 #[then(regex = r#"^"([^"]+)" may re-raise if "([^"]+)" raises$"#)]
 fn then_may_reraise(_world: &mut AcceptanceWorld, _name: String, _other: String) {}

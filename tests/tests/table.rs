@@ -570,7 +570,9 @@ fn given_chips_added(world: &mut TableWorld, player_id: String, new_stack: i64) 
 // New When steps
 // =============================================================================
 
-#[when(expr = "I handle a SeatPlayer command for player {string} reservation {string} seat {int} amount {int}")]
+#[when(
+    expr = "I handle a SeatPlayer command for player {string} reservation {string} seat {int} amount {int}"
+)]
 fn when_seat_player(
     world: &mut TableWorld,
     player_id: String,
@@ -588,7 +590,9 @@ fn when_seat_player(
     world.result = Some(handle_seat_player(cmd, &state, world.next_seq()));
 }
 
-#[when(expr = "I handle an AddRebuyChips command for player {string} reservation {string} seat {int} amount {int}")]
+#[when(
+    expr = "I handle an AddRebuyChips command for player {string} reservation {string} seat {int} amount {int}"
+)]
 fn when_add_rebuy_chips(
     world: &mut TableWorld,
     player_id: String,

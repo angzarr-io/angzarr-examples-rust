@@ -92,12 +92,7 @@ impl HandAggregate {
     }
 
     #[handles(AwardPot)]
-    fn on_award_pot(
-        &self,
-        cmd: AwardPot,
-        state: &HandState,
-        seq: u32,
-    ) -> CommandResult<EventBook> {
+    fn on_award_pot(&self, cmd: AwardPot, state: &HandState, seq: u32) -> CommandResult<EventBook> {
         handlers::handle_award_pot(cmd, state, seq)
     }
 
@@ -291,15 +286,9 @@ mod applier_tests {
         HandAggregate::apply_community_cards_dealt(
             &mut state,
             CommunityCardsDealt {
-                cards: vec![Card {
-                    suit: 0,
-                    rank: 10,
-                }],
+                cards: vec![Card { suit: 0, rank: 10 }],
                 phase: BettingPhase::Flop as i32,
-                all_community_cards: vec![Card {
-                    suit: 0,
-                    rank: 10,
-                }],
+                all_community_cards: vec![Card { suit: 0, rank: 10 }],
                 dealt_at: None,
             },
         );

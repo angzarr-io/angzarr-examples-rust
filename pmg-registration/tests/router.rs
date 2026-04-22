@@ -127,7 +127,9 @@ fn dispatch_registration_requested_emits_response() {
 // Handlers — one test per `#[handles]` branch.
 // -----------------------------------------------------------------------------
 
-fn run(req: ProcessManagerHandleRequest) -> Result<ProcessManagerHandleResponse, angzarr_client::ClientError> {
+fn run(
+    req: ProcessManagerHandleRequest,
+) -> Result<ProcessManagerHandleResponse, angzarr_client::ClientError> {
     build().dispatch(req)
 }
 
@@ -159,8 +161,13 @@ fn dispatch_enrollment_rejected_arm() {
 // Applier branches — exercise every `#[applies]` arm during state rebuild.
 // -----------------------------------------------------------------------------
 
-fn replay_then_run(state_event: Any) -> Result<ProcessManagerHandleResponse, angzarr_client::ClientError> {
-    run(pm_request(registration_requested_event(), vec![state_event]))
+fn replay_then_run(
+    state_event: Any,
+) -> Result<ProcessManagerHandleResponse, angzarr_client::ClientError> {
+    run(pm_request(
+        registration_requested_event(),
+        vec![state_event],
+    ))
 }
 
 #[test]

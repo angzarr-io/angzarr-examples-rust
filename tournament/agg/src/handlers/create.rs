@@ -71,7 +71,7 @@ pub fn handle_create_tournament(
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
@@ -82,4 +82,3 @@ pub fn handle_create_tournament(
         ..Default::default()
     })
 }
-

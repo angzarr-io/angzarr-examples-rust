@@ -65,4 +65,3 @@ pub fn handle_release_funds(
         ..Default::default()
     })
 }
-

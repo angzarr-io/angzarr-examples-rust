@@ -28,7 +28,7 @@ pub fn handle_open_registration(
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard_open(state)?;
+    guard_open(state)?;
 
     let event = RegistrationOpened {
         opened_at: Some(angzarr_client::now()),
@@ -58,7 +58,7 @@ pub fn handle_close_registration(
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard_close(state)?;
+    guard_close(state)?;
 
     let event = RegistrationClosed {
         total_registrations: state.registered_players.len() as i32,
@@ -71,4 +71,3 @@ pub fn handle_close_registration(
         ..Default::default()
     })
 }
-

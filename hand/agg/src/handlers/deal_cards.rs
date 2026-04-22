@@ -72,12 +72,8 @@ fn compute(cmd: &DealCards) -> CardsDealt {
     }
 }
 
-pub fn handle_deal_cards(
-    cmd: DealCards,
-    state: &HandState,
-    seq: u32,
-) -> CommandResult<EventBook> {
-        guard(state)?;
+pub fn handle_deal_cards(cmd: DealCards, state: &HandState, seq: u32) -> CommandResult<EventBook> {
+    guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
@@ -127,4 +123,3 @@ fn shuffle_deck(deck: &mut [Card], seed: &[u8]) {
     let mut rng = StdRng::seed_from_u64(seed_int);
     deck.shuffle(&mut rng);
 }
-
