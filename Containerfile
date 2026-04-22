@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-# Rust poker examples - standalone repo build
+# Rust poker examples - self-contained repo build
 #
 # Build single image:
 #   docker build --target agg-player -t ghcr.io/angzarr-io/examples-rust-agg-player .
