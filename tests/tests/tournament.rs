@@ -567,8 +567,8 @@ fn then_command_fails_with_status(world: &mut TournamentWorld, status: String) {
         .expect("Expected command to fail but it succeeded");
     assert_eq!(
         err.status_code, status,
-        "Expected status {}, got {}",
-        status, err.status_code
+        "Expected status {}, got {} (reason={:?})",
+        status, err.status_code, err.reason
     );
 }
 
