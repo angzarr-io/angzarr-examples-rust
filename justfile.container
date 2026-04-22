@@ -76,30 +76,31 @@ run: build-release
         --features standalone,sqlite \
         -- --config examples/rust/standalone.yaml
 
-# Run mutation tests on aggregate packages (70% threshold)
+# Run mutation tests on aggregate packages (70% threshold over viable mutants)
 mutation-test:
     #!/usr/bin/env bash
-    set -euo pipefail
+    set -uo pipefail
+    # cargo mutants exits 2 when any mutant is missed; don't let that abort the recipe
     cargo mutants \
         --package agg-player \
         --package agg-table \
         --package agg-hand \
         --package agg-tournament \
-        --minimum-test-timeout 60
-    # Check mutation score meets 70% threshold
+        --minimum-test-timeout 60 || true
     RESULTS="mutants.out/caught.txt"
     MISSED="mutants.out/missed.txt"
     CAUGHT=$(wc -l < "$RESULTS" 2>/dev/null || echo 0)
     MISSED_COUNT=$(wc -l < "$MISSED" 2>/dev/null || echo 0)
     TOTAL=$((CAUGHT + MISSED_COUNT))
     if [ "$TOTAL" -eq 0 ]; then
-        echo "No mutants generated — check package selection"
+        echo "No viable mutants generated — check package selection"
         exit 1
     fi
     SCORE=$((CAUGHT * 100 / TOTAL))
     echo "Mutation score: ${SCORE}% (${CAUGHT}/${TOTAL} caught, threshold: 70%)"
     if [ "$SCORE" -lt 70 ]; then
         echo "FAIL: Mutation score ${SCORE}% is below 70% threshold"
+        echo "--- missed mutants ---"
         cat "$MISSED"
         exit 1
     fi
