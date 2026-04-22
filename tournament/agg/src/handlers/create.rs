@@ -1,4 +1,8 @@
 //! CreateTournament command handler.
+//!
+//! Validation uses `CommandRejectedError::new` (FAILED_PRECONDITION) for all
+//! business-rule violations, matching the gherkin expectations in
+//! `features/example/unit/tournament.feature` (@EU-0803..@EU-0806).
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
