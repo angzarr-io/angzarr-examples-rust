@@ -41,7 +41,7 @@ pub fn fmt_money(amount: i64) -> String {
     let s = amount.abs().to_string();
     let bytes = s.as_bytes();
     for (i, b) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i) % 3 == 0 {
+        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
             buf.push(',');
         }
         buf.push(*b as char);
