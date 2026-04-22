@@ -349,7 +349,6 @@ fn build_join_rejection_notification(table_name: &str) -> Notification {
         }),
         payload: Some(payload_any),
         sent_at: None,
-        metadata: Default::default(),
     }
 }
 

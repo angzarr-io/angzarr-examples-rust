@@ -1079,7 +1079,6 @@ mod handler_tests {
             }),
             payload: Some(payload_any),
             sent_at: None,
-            metadata: Default::default(),
         };
 
         let response = agg
