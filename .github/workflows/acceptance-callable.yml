@@ -93,13 +93,13 @@ jobs:
           # Build coordinator images JSON from version
           COORD=$(cat <<EOF
           {
-            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:${VERSION}",
-            "saga": "ghcr.io/angzarr-io/angzarr-saga:${VERSION}",
-            "projector": "ghcr.io/angzarr-io/angzarr-projector:${VERSION}",
-            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:${VERSION}",
-            "stream": "ghcr.io/angzarr-io/angzarr-stream:${VERSION}",
-            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:${VERSION}",
-            "log": "ghcr.io/angzarr-io/angzarr-log:${VERSION}"
+            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:5349d55cc56291f435eb21d660e115c8f17b58f6ce4d265c1a1b4158045ea78b",
+            "saga": "ghcr.io/angzarr-io/angzarr-saga-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:ea7ec02f56ff64ccae6942727b95fb34703b4d99ff9a16c215cc325fd8addc01",
+            "projector": "ghcr.io/angzarr-io/angzarr-projector-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:fdfd8fbc39b5465777e3cf7edd6096298fb8e25d04164fdd3670ffecb945e9a7",
+            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bf447d15c78f3b6c685e8064bc7c09162f53719a069cc42a1ee655a18cc04702",
+            "stream": "ghcr.io/angzarr-io/angzarr-stream-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bb0bb16dc8b1039ba0cf63f38e6dbea380a389fbaae3143deaf70b4e0c38778f",
+            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:bf4fa78@sha256:208379ef32cd63d032aeca9c994a9a034e74ba04f115a03195a36f393335fe38",
+            "log": "ghcr.io/angzarr-io/angzarr-log-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bf96d6a207d9328c3792c6d15d8a06eee2b3711b81beb74809bde41e20cfdf64"
           }
           EOF
           )
@@ -151,14 +151,19 @@ jobs:
         run: echo "${{ secrets.GHCR_TOKEN || github.token }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Pull and load coordinator images
+        # Refs are 'repo:tag@sha256:digest'; docker verifies by digest on
+        # pull. kind load takes a tag ref (no @digest) so we retag the
+        # pulled image under repo:tag before loading.
         run: |
           IMAGES='${{ steps.images.outputs.coordinators }}'
           echo "Pulling coordinator images..."
           echo "$IMAGES" | jq -r 'to_entries[] | "\(.key): \(.value)"'
-          echo "$IMAGES" | jq -r 'to_entries[] | .value' | while read img; do
-            echo "Pulling $img..."
-            docker pull "$img"
-            kind load docker-image "$img" --name angzarr-test
+          echo "$IMAGES" | jq -r 'to_entries[] | .value' | while read ref; do
+            echo "Pulling $ref..."
+            docker pull "$ref"
+            tagged="${ref%@sha256:*}"
+            docker tag "$ref" "$tagged"
+            kind load docker-image "$tagged" --name angzarr-test
           done
 
       - name: Build example images (if not provided)
