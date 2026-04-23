@@ -76,33 +76,10 @@ jobs:
       - name: Format check
         run: just -f justfile.container fmt
 
-      - name: Install cargo-mutants
-        run: cargo install cargo-mutants
-
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
-                      /usr/share/swift || true
-          df -h
-
-      - name: Compute PR diff for mutation scope
-        if: github.event_name == 'pull_request'
-        run: |
-          BASE="${{ github.event.pull_request.base.ref }}"
-          git fetch origin "$BASE" --depth=200
-          git diff "origin/$BASE...HEAD" -- \
-            'player/agg/**' 'table/agg/**' 'hand/agg/**' 'tournament/agg/**' \
-            > /tmp/pr.diff || true
-          echo "Diff scope: $(wc -l < /tmp/pr.diff) lines"
-          echo "CARGO_MUTANTS_DIFF=/tmp/pr.diff" >> "$GITHUB_ENV"
-
-      - name: Mutation test
-        env:
-          # Per-mutant scratch copies are ~8GB each; 2 jobs × copy would
-          # exceed the ~14GB runner disk. Keep sequential in CI.
-          CARGO_MUTANTS_JOBS: "1"
-        run: just -f justfile.container mutation-test
+      # Mutation testing runs on a schedule (.github/workflows/mutation.yml)
+      # against main rather than per-PR. See the blog post on CI gates for
+      # the rationale: cargo-mutants --test-workspace × 523 cucumber
+      # scenarios per mutant does not fit the 2-vCPU free-runner time cap.
 
   build-images:
     name: Build & Push Images

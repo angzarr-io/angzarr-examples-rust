@@ -1,0 +1,83 @@
+name: Mutation
+
+# Mutation testing lives out of the PR blocker path. The full sweep
+# (~1362 mutants × cucumber workspace tests per mutant) does not fit
+# in GitHub's 6h job cap on a 2-vCPU free runner. Instead we run it
+# on a schedule against `main`, and fail the scheduled run if the
+# kill rate dips below the threshold. PR CI stays fast; mutation is
+# a quality gate on the integrated branch, not a per-commit check.
+
+on:
+  schedule:
+    # 06:00 UTC every Monday.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  mutation:
+    name: Mutation test (full sweep)
+    runs-on: ubuntu-latest
+    # GitHub caps free jobs at 6h. Mutation sweep can approach that;
+    # let it run to completion rather than cancelling mid-sweep.
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: true
+
+      - name: Init nested angzarr-project submodule (non-recursive)
+        run: git -C angzarr-client-rust submodule update --init angzarr-project
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-mutants-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+                      /usr/share/swift || true
+          df -h
+
+      - name: Mutation test
+        env:
+          CARGO_MUTANTS_JOBS: "1"
+        run: just -f justfile.container mutation-test
+
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants.out
+          path: mutants.out/
+          retention-days: 30
