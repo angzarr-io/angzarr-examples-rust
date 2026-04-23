@@ -85,6 +85,17 @@ jobs:
                       /usr/share/swift || true
           df -h
 
+      - name: Compute PR diff for mutation scope
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE="${{ github.event.pull_request.base.ref }}"
+          git fetch origin "$BASE" --depth=200
+          git diff "origin/$BASE...HEAD" -- \
+            'player/agg/**' 'table/agg/**' 'hand/agg/**' 'tournament/agg/**' \
+            > /tmp/pr.diff || true
+          echo "Diff scope: $(wc -l < /tmp/pr.diff) lines"
+          echo "CARGO_MUTANTS_DIFF=/tmp/pr.diff" >> "$GITHUB_ENV"
+
       - name: Mutation test
         env:
           # Per-mutant scratch copies are ~8GB each; 2 jobs × copy would
