@@ -335,6 +335,9 @@ test-e2e:
         done
     done
     # Run acceptance tests
+    # Cluster is already up (kind in CI, local or external-provided) — skip
+    # the in-test bootstrap-cluster.sh path; URLs below drive the clients.
+    export CLUSTER_PROVIDER=external
     export PLAYER_URL="http://localhost:1310"
     export TABLE_URL="http://localhost:1311"
     export HAND_URL="http://localhost:1312"
