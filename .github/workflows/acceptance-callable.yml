@@ -80,6 +80,11 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
       - name: Export protos from submodule
         run: |
           cp -r angzarr-project/proto/examples examples-proto
