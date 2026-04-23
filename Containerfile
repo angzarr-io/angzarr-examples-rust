@@ -9,7 +9,7 @@
 #     docker build --target $target -t ghcr.io/angzarr-io/examples-rust-$target .
 #   done
 
-ARG RUST_VERSION=1.86
+ARG RUST_VERSION=1.87
 # Cache-busting arg for proto updates - change to invalidate buf export cache
 # Use BSR label (without 'v' prefix) from angzarr-examples-proto releases
 ARG PROTO_VERSION=0.1.2
@@ -57,6 +57,7 @@ RUN mkdir -p player/agg/src player/upc/src \
              pmg-hand-flow pmg-buy-in pmg-registration pmg-rebuy prj-output; do \
       echo "[package]\nname = \"stub\"\nversion = \"0.1.0\"\nedition = \"2021\"" > $d/Cargo.toml 2>/dev/null || true; \
       echo "fn main() {}" > $d/src/main.rs; \
+      : > $d/src/lib.rs; \
     done && \
     for t in player table hand orchestration saga process_manager projector betting_round game_rules raise_tracking tournament poker_game_unit acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
 
