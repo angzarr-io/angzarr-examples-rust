@@ -62,7 +62,13 @@ jobs:
         with:
           repository: angzarr-io/angzarr-examples-rust
           ref: ${{ steps.ref.outputs.ref }}
-          submodules: true
+          submodules: false  # fetched manually below without --depth=1
+
+      - name: Fetch submodules (unshallow; avoids HTTP 500 direct-fetch path)
+        run: git submodule update --init
+
+      - name: Init nested angzarr-project submodule (non-recursive)
+        run: git -C angzarr-client-rust submodule update --init angzarr-project
 
       - name: Install tools
         run: |
