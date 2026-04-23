@@ -87,8 +87,14 @@ jobs:
 
       - name: Export protos from submodule
         run: |
-          cp -r angzarr-project/proto/examples examples-proto
-          cp -r angzarr-project/proto/angzarr angzarr-proto
+          # Layout must match proto imports ("examples/poker_types.proto"),
+          # so keep the examples/ prefix rather than flattening.
+          buf export angzarr-project/proto -o _proto_export
+          rm -rf angzarr-proto examples-proto
+          cp -r _proto_export angzarr-proto
+          mkdir -p examples-proto/examples
+          cp _proto_export/examples/*.proto examples-proto/examples/
+          rm -rf _proto_export
 
       - name: Parse image inputs
         id: images
