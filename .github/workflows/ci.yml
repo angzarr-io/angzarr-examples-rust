@@ -197,7 +197,8 @@ jobs:
           path: /tmp/${{ matrix.target }}.tar
           retention-days: 1
 
-  # Compute image tag for acceptance tests
+  # Compute image tag for acceptance tests.
+  # Must match the primary tag emitted by the build-images step.
   compute-tag:
     name: Compute Image Tag
     runs-on: ubuntu-latest
@@ -205,22 +206,33 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       images-json: ${{ steps.images.outputs.json }}
-      coordinator-version: ${{ steps.coord.outputs.version }}
     steps:
-      - name: Output coordinator version
-        id: coord
-        run: echo "version=${{ env.COORDINATOR_VERSION }}" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+
+      - name: Install versionator
+        run: |
+          curl -fsSL -o /tmp/versionator.tgz \
+            https://github.com/benjaminabbitt/versionator/releases/download/v0.1.1/versionator-linux-amd64.tar.gz
+          echo "66ed07135eaeaa72d9ece6fa5c2814d239738d61e134b9b5dcbad0a4d07d458b  /tmp/versionator.tgz" | sha256sum -c -
+          tar -xz -f /tmp/versionator.tgz -C /tmp versionator-linux-amd64
+          sudo install -m 0755 /tmp/versionator-linux-amd64 /usr/local/bin/versionator
+
+      - name: Compute version variables
+        run: versionator output ci --format=github
 
       - name: Generate image tag
         id: tag
+        # Keep in lockstep with build-images: use the primary tag each
+        # event emits (see that step for the full rationale).
         run: |
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
+          SHORT="${GIT_SHA_SHORT}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
-            echo "tag=pr-${PR_NUM}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "tag=pr-${PR_NUM}-${SHORT}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "tag=v${VERSION}-dev.${SHORT}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build images JSON
@@ -258,8 +270,9 @@ jobs:
     with:
       # Use just-pushed example images
       example-images: ${{ needs.compute-tag.outputs.images-json }}
-      # Coordinator version (passed via job output since env context unavailable in uses)
-      coordinator-version: ${{ needs.compute-tag.outputs.coordinator-version }}
+      # Coordinator image refs are digest-pinned in acceptance-callable.yml;
+      # this input remains for signature compat but is a no-op.
+      coordinator-version: ""
       examples-ref: ${{ github.ref }}
     secrets: inherit
 
