@@ -83,7 +83,7 @@ pub fn handle_deal_community_cards(
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
     let validated = validate(&cmd, state)?;
 
     let event = compute(state, &validated);
@@ -94,4 +94,3 @@ pub fn handle_deal_community_cards(
         ..Default::default()
     })
 }
-

@@ -90,7 +90,7 @@ pub fn handle_request_draw(
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
     let (player, validated) = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player, &validated);
@@ -101,4 +101,3 @@ pub fn handle_request_draw(
         ..Default::default()
     })
 }
-

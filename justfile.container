@@ -76,30 +76,53 @@ run: build-release
         --features standalone,sqlite \
         -- --config examples/rust/standalone.yaml
 
-# Run mutation tests on aggregate packages (70% threshold)
+# Run mutation tests on aggregate packages (70% threshold over viable mutants)
 mutation-test:
     #!/usr/bin/env bash
-    set -euo pipefail
+    set -uo pipefail
+    # Per-mutant workspace copies are multi-GB and cargo-mutants must copy the
+    # source tree. TMPDIR must be on disk (not tmpfs) AND outside the source
+    # tree (otherwise each copy nests the previous one → ENAMETOOLONG).
+    SCRATCH="${CARGO_MUTANTS_TMPDIR:-${RUNNER_TEMP:-$HOME/.cargo-mutants-scratch}}"
+    mkdir -p "$SCRATCH"
+    export TMPDIR="$SCRATCH"
+    # cargo mutants exits 2 when any mutant is missed; don't let that abort the recipe
+    # --jobs pins parallelism so CI doesn't default to 1 on 2-core runners.
+    JOBS="${CARGO_MUTANTS_JOBS:-$(nproc 2>/dev/null || echo 2)}"
+    # Optional PR-scope: mutate only code touched by a diff (CI sets this
+    # from `git diff origin/<base>...HEAD`). Empty = full sweep.
+    DIFF_ARGS=""
+    if [ -n "${CARGO_MUTANTS_DIFF:-}" ] && [ -s "$CARGO_MUTANTS_DIFF" ]; then
+        echo "Scoping mutation test to diff: $CARGO_MUTANTS_DIFF ($(wc -l < "$CARGO_MUTANTS_DIFF") lines)"
+        DIFF_ARGS="--in-diff $CARGO_MUTANTS_DIFF"
+    fi
     cargo mutants \
         --package agg-player \
         --package agg-table \
         --package agg-hand \
         --package agg-tournament \
-        --minimum-test-timeout 60
-    # Check mutation score meets 70% threshold
+        --test-workspace true \
+        --jobs "$JOBS" \
+        --minimum-test-timeout 60 \
+        $DIFF_ARGS || true
     RESULTS="mutants.out/caught.txt"
     MISSED="mutants.out/missed.txt"
     CAUGHT=$(wc -l < "$RESULTS" 2>/dev/null || echo 0)
     MISSED_COUNT=$(wc -l < "$MISSED" 2>/dev/null || echo 0)
     TOTAL=$((CAUGHT + MISSED_COUNT))
     if [ "$TOTAL" -eq 0 ]; then
-        echo "No mutants generated — check package selection"
+        if [ -n "${CARGO_MUTANTS_DIFF:-}" ]; then
+            echo "No mutants in diff scope — nothing to gate."
+            exit 0
+        fi
+        echo "No viable mutants generated — check package selection"
         exit 1
     fi
     SCORE=$((CAUGHT * 100 / TOTAL))
     echo "Mutation score: ${SCORE}% (${CAUGHT}/${TOTAL} caught, threshold: 70%)"
     if [ "$SCORE" -lt 70 ]; then
         echo "FAIL: Mutation score ${SCORE}% is below 70% threshold"
+        echo "--- missed mutants ---"
         cat "$MISSED"
         exit 1
     fi

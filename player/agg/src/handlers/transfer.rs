@@ -59,4 +59,3 @@ pub fn handle_transfer_funds(
         ..Default::default()
     })
 }
-

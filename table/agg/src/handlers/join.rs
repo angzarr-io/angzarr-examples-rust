@@ -59,11 +59,7 @@ fn compute(cmd: &JoinTable, seat_position: i32) -> PlayerJoined {
     }
 }
 
-pub fn handle_join_table(
-    cmd: JoinTable,
-    state: &TableState,
-    seq: u32,
-) -> CommandResult<EventBook> {
+pub fn handle_join_table(cmd: JoinTable, state: &TableState, seq: u32) -> CommandResult<EventBook> {
     guard(state)?;
     let seat_position = validate(&cmd, state)?;
 
@@ -75,4 +71,3 @@ pub fn handle_join_table(
         ..Default::default()
     })
 }
-

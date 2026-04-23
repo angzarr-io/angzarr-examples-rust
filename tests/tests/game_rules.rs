@@ -108,7 +108,11 @@ fn variant_from_name(name: &str) -> GameVariant {
 }
 
 fn rules_from_label(label: &str) -> Box<dyn GameRules> {
-    let key = label.trim().to_lowercase().replace('\'', "").replace('-', " ");
+    let key = label
+        .trim()
+        .to_lowercase()
+        .replace('\'', "")
+        .replace('-', " ");
     let key = key.as_str();
     match key {
         "texas holdem" | "texas hold em" | "holdem" | "hold em" => Box::new(TexasHoldemRules),
@@ -183,7 +187,9 @@ fn when_evaluate_best_from_few(world: &mut RulesWorld, cards: String) {
 
 #[when(expr = "I get the next phase from {word}")]
 fn when_get_next_phase(world: &mut RulesWorld, phase: String) {
-    world.next_phase = world.current_rules().get_next_phase(phase_from_name(&phase));
+    world.next_phase = world
+        .current_rules()
+        .get_next_phase(phase_from_name(&phase));
 }
 
 // --- When: draw ---
@@ -270,8 +276,16 @@ fn when_get_game_rules_unknown(world: &mut RulesWorld) {
 #[then(expr = "the rank is {word}")]
 fn then_rank(world: &mut RulesWorld, rank: String) {
     let expected = rank_type_from_name(&rank);
-    let actual = world.last_rank.as_ref().expect("no hand evaluated").rank_type;
-    assert_eq!(actual, expected, "Expected rank {:?}, got {:?}", expected, actual);
+    let actual = world
+        .last_rank
+        .as_ref()
+        .expect("no hand evaluated")
+        .rank_type;
+    assert_eq!(
+        actual, expected,
+        "Expected rank {:?}, got {:?}",
+        expected, actual
+    );
 }
 
 #[then(expr = "the score is {int}")]
@@ -282,7 +296,12 @@ fn then_score(world: &mut RulesWorld, score: i32) {
 
 #[then(expr = "the kicker count is {int}")]
 fn then_kicker_count(world: &mut RulesWorld, n: usize) {
-    let actual = world.last_rank.as_ref().expect("no hand evaluated").kickers.len();
+    let actual = world
+        .last_rank
+        .as_ref()
+        .expect("no hand evaluated")
+        .kickers
+        .len();
     assert_eq!(actual, n, "Expected {} kickers, got {}", n, actual);
 }
 
@@ -300,7 +319,11 @@ fn then_kickers(world: &mut RulesWorld, kicker_list: String) {
         .iter()
         .map(|r| *r as i32)
         .collect();
-    assert_eq!(actual, expected, "Expected kickers {:?}, got {:?}", expected, actual);
+    assert_eq!(
+        actual, expected,
+        "Expected kickers {:?}, got {:?}",
+        expected, actual
+    );
 }
 
 // --- Then: variant property ---
@@ -413,7 +436,13 @@ fn then_remaining_deck(world: &mut RulesWorld, n: usize) {
     } else {
         &world.deck
     };
-    assert_eq!(remaining.len(), n, "Expected {} cards, got {}", n, remaining.len());
+    assert_eq!(
+        remaining.len(),
+        n,
+        "Expected {} cards, got {}",
+        n,
+        remaining.len()
+    );
 }
 
 #[then(expr = "the remaining deck has {int} card")]

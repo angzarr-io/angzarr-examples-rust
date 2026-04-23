@@ -19,10 +19,10 @@ use examples_proto::{
     AddRebuyChips, BuyInCompleted, BuyInFailed, BuyInInitiated, BuyInRequested, ConfirmBuyIn,
     ConfirmRebuyFee, ConfirmRegistrationFee, Currency, EndHand, EnrollPlayer, GameVariant,
     HandComplete, PlayerSeated, PotWinner, ProcessRebuy, RebuyChipsAdded, RebuyCompleted,
-    RebuyDenied, RebuyFailed, RebuyInitiated, RebuyProcessed, RebuyRequested, RegistrationInitiated,
-    RegistrationRequested, ReleaseBuyIn, ReleaseRebuyFee, ReleaseRegistrationFee, SeatingRejected,
-    TournamentCreated, TournamentEnrollmentRejected, TournamentPlayerEnrolled, TournamentStarted,
-    TournamentStatus,
+    RebuyDenied, RebuyFailed, RebuyInitiated, RebuyProcessed, RebuyRequested,
+    RegistrationInitiated, RegistrationRequested, ReleaseBuyIn, ReleaseRebuyFee,
+    ReleaseRegistrationFee, SeatingRejected, TournamentCreated, TournamentEnrollmentRejected,
+    TournamentPlayerEnrolled, TournamentStarted, TournamentStatus,
 };
 use pmg_buy_in::handler as buyin_handler;
 use pmg_buy_in::BuyInState;
@@ -1127,15 +1127,8 @@ fn given_rebuy_pm_tournament(world: &mut PMWorld, tournament_root: String) {
     };
 }
 
-#[given(
-    expr = "a RebuyPM with tournament_root {string}, table_root {string}, fee {int}"
-)]
-fn given_rebuy_pm_full(
-    world: &mut PMWorld,
-    tournament_root: String,
-    table_root: String,
-    fee: i64,
-) {
+#[given(expr = "a RebuyPM with tournament_root {string}, table_root {string}, fee {int}")]
+fn given_rebuy_pm_full(world: &mut PMWorld, tournament_root: String, table_root: String, fee: i64) {
     world.rebuy_state = RebuyState {
         tournament_root: tournament_root.into_bytes(),
         table_root: table_root.into_bytes(),
@@ -1501,8 +1494,7 @@ fn given_enrollment_rejected(
 #[when("the RegistrationPM handles registration_requested")]
 fn when_registration_handles_request(world: &mut PMWorld) {
     let ev = world.registration_requested_event.take().unwrap();
-    world.pm_response =
-        Some(registration_handler::handle_registration_requested(ev).expect("ok"));
+    world.pm_response = Some(registration_handler::handle_registration_requested(ev).expect("ok"));
 }
 
 #[when("the RegistrationPM handles player_enrolled")]
@@ -1609,7 +1601,11 @@ fn given_handflowpm_started_hand(world: &mut PMWorld) {
 
 #[when(expr = "the HandFlowPM handles a HandComplete event with {int} winner amount {int}")]
 fn when_handflowpm_hand_complete(world: &mut PMWorld, _n: usize, amount: i64) {
-    let state = world.handflow_state.as_ref().expect("HandFlowState").clone();
+    let state = world
+        .handflow_state
+        .as_ref()
+        .expect("HandFlowState")
+        .clone();
     let pm = pmg_hand_flow::HandFlowPm;
     let complete = HandComplete {
         table_root: vec![0xBB; 16],
@@ -1630,7 +1626,9 @@ fn when_handflowpm_hand_complete(world: &mut PMWorld, _n: usize, amount: i64) {
 fn then_end_hand_command_domain(world: &mut PMWorld, domain: String) {
     let resp = world.pm_response.as_ref().unwrap();
     assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp).type_url.ends_with("examples.EndHand"));
+    assert!(first_command_any(resp)
+        .type_url
+        .ends_with("examples.EndHand"));
 }
 
 #[then(expr = "the EndHand command has {int} result")]
@@ -1721,10 +1719,7 @@ fn given_tournament_event_book_table(world: &mut PMWorld, step: &cucumber::gherk
         let event_type = &row[h_event_type];
         match event_type.as_str() {
             "TournamentCreated" => {
-                let name = h_name
-                    .and_then(|i| row.get(i))
-                    .cloned()
-                    .unwrap_or_default();
+                let name = h_name.and_then(|i| row.get(i)).cloned().unwrap_or_default();
                 let max_players = h_max
                     .and_then(|i| row.get(i))
                     .and_then(|s| if s.is_empty() { None } else { s.parse().ok() })

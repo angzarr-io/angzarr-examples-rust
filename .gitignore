@@ -2,8 +2,9 @@
 target/
 *.rs.bk
 
-# Buf-exported protos (run `make protos` to fetch)
+# Buf-exported protos (run `just proto-gen` to fetch)
 examples-proto/
+angzarr-proto/
 
 # Binaries
 */*/agg-*

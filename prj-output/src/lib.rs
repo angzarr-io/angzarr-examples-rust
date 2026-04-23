@@ -41,7 +41,7 @@ pub fn fmt_money(amount: i64) -> String {
     let s = amount.abs().to_string();
     let bytes = s.as_bytes();
     for (i, b) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i) % 3 == 0 {
+        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
             buf.push(',');
         }
         buf.push(*b as char);
@@ -126,14 +126,18 @@ pub struct PrettyStore {
 impl PrettyStore {
     pub fn open(path: &PathBuf) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
-        let store = Self { conn: Mutex::new(conn) };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.init_schema()?;
         Ok(store)
     }
 
     pub fn open_in_memory() -> rusqlite::Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let store = Self { conn: Mutex::new(conn) };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.init_schema()?;
         Ok(store)
     }
@@ -225,7 +229,10 @@ impl PrettyStore {
                 fmt_variant(ev.game_variant),
             ],
         )?;
-        tx.execute("DELETE FROM hand_seats WHERE hand_root = ?1", params![ev.hand_root])?;
+        tx.execute(
+            "DELETE FROM hand_seats WHERE hand_root = ?1",
+            params![ev.hand_root],
+        )?;
         for seat in &ev.active_players {
             tx.execute(
                 "INSERT INTO hand_seats(hand_root, position, player_root, stack_start) VALUES (?1, ?2, ?3, ?4)",
@@ -249,7 +256,12 @@ impl PrettyStore {
         Ok(())
     }
 
-    pub fn record_board(&self, hand_root: &[u8], phase: &str, cards: &[Card]) -> rusqlite::Result<()> {
+    pub fn record_board(
+        &self,
+        hand_root: &[u8],
+        phase: &str,
+        cards: &[Card],
+    ) -> rusqlite::Result<()> {
         let cards_str = fmt_cards(cards);
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -320,7 +332,9 @@ pub struct MemSink {
 
 impl MemSink {
     pub fn new() -> Self {
-        Self { lines: Mutex::new(Vec::new()) }
+        Self {
+            lines: Mutex::new(Vec::new()),
+        }
     }
 
     pub fn output(&self) -> String {
@@ -423,7 +437,9 @@ impl PrettyOutputProjector {
 
     #[handles(PlayerJoined)]
     fn on_player_joined(&self, event: PlayerJoined) -> CommandResult<()> {
-        let _ = self.store.update_player_stack(&event.player_root, event.stack);
+        let _ = self
+            .store
+            .update_player_stack(&event.player_root, event.stack);
         self.emit(&format!(
             "Player {} joined at seat {} with {} buy-in (stack {})",
             fmt_player_short(&event.player_root),
@@ -499,7 +515,9 @@ impl PrettyOutputProjector {
 
     #[handles(ActionTaken)]
     fn on_action_taken(&self, event: ActionTaken) -> CommandResult<()> {
-        let _ = self.store.update_player_stack(&event.player_root, event.player_stack);
+        let _ = self
+            .store
+            .update_player_stack(&event.player_root, event.player_stack);
         let player = fmt_player_short(&event.player_root);
         let verb = match ActionType::try_from(event.action).unwrap_or_default() {
             ActionType::Fold => format!("{} folds", player),
@@ -597,8 +615,14 @@ mod tests {
     #[test]
     fn fmt_cards_wraps_in_brackets() {
         let cards = vec![
-            Card { rank: Rank::Ace as i32, suit: Suit::Spades as i32 },
-            Card { rank: Rank::King as i32, suit: Suit::Hearts as i32 },
+            Card {
+                rank: Rank::Ace as i32,
+                suit: Suit::Spades as i32,
+            },
+            Card {
+                rank: Rank::King as i32,
+                suit: Suit::Hearts as i32,
+            },
         ];
         assert_eq!(fmt_cards(&cards), "[As Kh]");
     }
@@ -675,7 +699,11 @@ mod tests {
         assert!(out.contains("$200 - $1,000"));
         let conn = proj.store.conn.lock().unwrap();
         let variant: String = conn
-            .query_row("SELECT game_variant FROM tables WHERE name = 'Main'", [], |r| r.get(0))
+            .query_row(
+                "SELECT game_variant FROM tables WHERE name = 'Main'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(variant, "TEXAS_HOLDEM");
     }
@@ -690,9 +718,21 @@ mod tests {
             small_blind_position: 0,
             big_blind_position: 1,
             active_players: vec![
-                SeatSnapshot { position: 0, player_root: vec![0xAA; 16], stack: 500 },
-                SeatSnapshot { position: 1, player_root: vec![0xBB; 16], stack: 500 },
-                SeatSnapshot { position: 2, player_root: vec![0xCC; 16], stack: 500 },
+                SeatSnapshot {
+                    position: 0,
+                    player_root: vec![0xAA; 16],
+                    stack: 500,
+                },
+                SeatSnapshot {
+                    position: 1,
+                    player_root: vec![0xBB; 16],
+                    stack: 500,
+                },
+                SeatSnapshot {
+                    position: 2,
+                    player_root: vec![0xCC; 16],
+                    stack: 500,
+                },
             ],
             game_variant: GameVariant::TexasHoldem as i32,
             small_blind: 5,
@@ -768,9 +808,18 @@ mod tests {
     fn on_community_dealt_labels_phase() {
         let (proj, sink) = make_projector();
         let flop = vec![
-            Card { rank: Rank::Ace as i32, suit: Suit::Hearts as i32 },
-            Card { rank: Rank::King as i32, suit: Suit::Diamonds as i32 },
-            Card { rank: Rank::Seven as i32, suit: Suit::Spades as i32 },
+            Card {
+                rank: Rank::Ace as i32,
+                suit: Suit::Hearts as i32,
+            },
+            Card {
+                rank: Rank::King as i32,
+                suit: Suit::Diamonds as i32,
+            },
+            Card {
+                rank: Rank::Seven as i32,
+                suit: Suit::Spades as i32,
+            },
         ];
         proj.on_community_dealt(CommunityCardsDealt {
             cards: flop.clone(),
@@ -829,8 +878,14 @@ mod tests {
     fn on_cards_dealt_renders_per_player_hole_cards() {
         let (proj, sink) = make_projector();
         let cards = vec![
-            Card { rank: Rank::Ace as i32, suit: Suit::Spades as i32 },
-            Card { rank: Rank::King as i32, suit: Suit::Hearts as i32 },
+            Card {
+                rank: Rank::Ace as i32,
+                suit: Suit::Spades as i32,
+            },
+            Card {
+                rank: Rank::King as i32,
+                suit: Suit::Hearts as i32,
+            },
         ];
         proj.on_cards_dealt(CardsDealt {
             table_root: vec![],
@@ -890,11 +945,19 @@ mod tests {
 
         let conn = proj.store.conn.lock().unwrap();
         let phase: String = conn
-            .query_row("SELECT phase FROM hands WHERE hand_root = ?1", params![hand_root], |r| r.get(0))
+            .query_row(
+                "SELECT phase FROM hands WHERE hand_root = ?1",
+                params![hand_root],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(phase, "flop");
         let pot: i64 = conn
-            .query_row("SELECT pot FROM pot_totals WHERE hand_root = ?1", params![hand_root], |r| r.get(0))
+            .query_row(
+                "SELECT pot FROM pot_totals WHERE hand_root = ?1",
+                params![hand_root],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(pot, 50);
     }

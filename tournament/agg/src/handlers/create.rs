@@ -1,4 +1,8 @@
 //! CreateTournament command handler.
+//!
+//! Validation uses `CommandRejectedError::new` (FAILED_PRECONDITION) for all
+//! business-rule violations, matching the gherkin expectations in
+//! `features/example/unit/tournament.feature` (@EU-0803..@EU-0806).
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
@@ -18,24 +22,16 @@ fn validate(cmd: &CreateTournament) -> CommandResult<()> {
         return Err(CommandRejectedError::new("name is required"));
     }
     if cmd.buy_in <= 0 {
-        return Err(CommandRejectedError::invalid_argument(
-            "buy_in must be positive",
-        ));
+        return Err(CommandRejectedError::new("buy_in must be positive"));
     }
     if cmd.starting_stack <= 0 {
-        return Err(CommandRejectedError::invalid_argument(
-            "starting_stack must be positive",
-        ));
+        return Err(CommandRejectedError::new("starting_stack must be positive"));
     }
     if cmd.max_players < 2 {
-        return Err(CommandRejectedError::invalid_argument(
-            "max_players must be at least 2",
-        ));
+        return Err(CommandRejectedError::new("max_players must be at least 2"));
     }
     if cmd.min_players < 2 {
-        return Err(CommandRejectedError::invalid_argument(
-            "min_players must be at least 2",
-        ));
+        return Err(CommandRejectedError::new("min_players must be at least 2"));
     }
     if cmd.min_players > cmd.max_players {
         return Err(CommandRejectedError::new(
@@ -66,7 +62,7 @@ pub fn handle_create_tournament(
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
     validate(&cmd)?;
 
     let event = compute(&cmd);
@@ -77,4 +73,3 @@ pub fn handle_create_tournament(
         ..Default::default()
     })
 }
-

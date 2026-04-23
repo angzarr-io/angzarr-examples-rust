@@ -8,16 +8,18 @@ use angzarr_client::proto::{
     business_response, command_page, event_page, BusinessResponse, CommandBook, CommandPage,
     ContextualCommand, EventBook, EventPage,
 };
-use angzarr_client::router::{Built, Handler, HandlerConfig, HandlerRequest, HandlerResponse, Router};
+use angzarr_client::router::{
+    Built, Handler, HandlerConfig, HandlerRequest, HandlerResponse, Router,
+};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::{
     BuyInConfirmed, BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, ConfirmRebuyFee,
     ConfirmRegistrationFee, Currency, DepositFunds, FundsDeposited, FundsReleased, FundsReserved,
-    FundsTransferred, FundsWithdrawn, InitiateBuyIn, InitiateRebuy,
-    InitiateTournamentRegistration, PlayerRegistered, PlayerType, RebuyFeeConfirmed,
-    RebuyFeeReleased, RebuyRequested, RegisterPlayer, RegistrationFeeConfirmed,
-    RegistrationFeeReleased, RegistrationRequested, ReleaseBuyIn, ReleaseFunds, ReleaseRebuyFee,
-    ReleaseRegistrationFee, ReserveFunds, TransferFunds, WithdrawFunds,
+    FundsTransferred, FundsWithdrawn, InitiateBuyIn, InitiateRebuy, InitiateTournamentRegistration,
+    PlayerRegistered, PlayerType, RebuyFeeConfirmed, RebuyFeeReleased, RebuyRequested,
+    RegisterPlayer, RegistrationFeeConfirmed, RegistrationFeeReleased, RegistrationRequested,
+    ReleaseBuyIn, ReleaseFunds, ReleaseRebuyFee, ReleaseRegistrationFee, ReserveFunds,
+    TransferFunds, WithdrawFunds,
 };
 use prost::Message;
 use prost_types::Any;
@@ -51,9 +53,9 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
         .enumerate()
         .map(|(i, a)| EventPage {
             header: Some(angzarr_client::proto::PageHeader {
-                sequence_type: Some(
-                    angzarr_client::proto::page_header::SequenceType::Sequence(i as u32),
-                ),
+                sequence_type: Some(angzarr_client::proto::page_header::SequenceType::Sequence(
+                    i as u32,
+                )),
             }),
             payload: Some(event_page::Payload::Event(a)),
             ..Default::default()

@@ -247,4 +247,3 @@ pub fn apply_hand_complete(state: &mut HandState, event: HandComplete) {
         }
     }
 }
-

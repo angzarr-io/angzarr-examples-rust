@@ -13,7 +13,10 @@ use prost::Message;
 use prost_types::Any;
 use std::sync::Arc;
 
-fn make_factory() -> (Arc<MemSink>, impl Fn() -> PrettyOutputProjector + Send + Sync + 'static) {
+fn make_factory() -> (
+    Arc<MemSink>,
+    impl Fn() -> PrettyOutputProjector + Send + Sync + 'static,
+) {
     let sink = Arc::new(MemSink::new());
     let sink_clone = Arc::clone(&sink);
     let factory = move || {

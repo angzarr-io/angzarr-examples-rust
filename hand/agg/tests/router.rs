@@ -41,9 +41,9 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
         .enumerate()
         .map(|(i, a)| EventPage {
             header: Some(angzarr_client::proto::PageHeader {
-                sequence_type: Some(
-                    angzarr_client::proto::page_header::SequenceType::Sequence(i as u32),
-                ),
+                sequence_type: Some(angzarr_client::proto::page_header::SequenceType::Sequence(
+                    i as u32,
+                )),
             }),
             payload: Some(event_page::Payload::Event(a)),
             ..Default::default()
@@ -192,10 +192,7 @@ fn dispatch_player_action_arm() {
 
 #[test]
 fn dispatch_deal_community_cards_arm() {
-    let ctx = contextual(
-        DealCommunityCards { count: 3 },
-        vec![cards_dealt_event()],
-    );
+    let ctx = contextual(DealCommunityCards { count: 3 }, vec![cards_dealt_event()]);
     let _ = run(ctx);
 }
 

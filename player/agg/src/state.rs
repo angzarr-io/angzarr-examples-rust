@@ -228,4 +228,3 @@ pub fn apply_rebuy_released(state: &mut PlayerState, event: RebuyFeeReleased) {
         state.reserved_funds -= pending.fee;
     }
 }
-

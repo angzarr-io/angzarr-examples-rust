@@ -54,4 +54,3 @@ pub fn handle_withdraw_funds(
         ..Default::default()
     })
 }
-

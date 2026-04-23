@@ -35,10 +35,7 @@ pub fn apply_registration_phase_changed(
     state.phase = event.to_phase();
 }
 
-pub fn apply_registration_completed(
-    state: &mut RegistrationState,
-    _event: RegistrationCompleted,
-) {
+pub fn apply_registration_completed(state: &mut RegistrationState, _event: RegistrationCompleted) {
     state.phase = RegistrationPhase::RegistrationCompleted;
 }
 

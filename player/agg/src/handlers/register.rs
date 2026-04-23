@@ -49,4 +49,3 @@ pub fn handle_register_player(
         ..Default::default()
     })
 }
-

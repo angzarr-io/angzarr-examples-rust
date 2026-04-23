@@ -39,7 +39,7 @@ pub fn handle_enroll_player(
     state: &TournamentState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
 
     // Validate and produce appropriate event
     match validate(&cmd, state) {
@@ -54,9 +54,9 @@ pub fn handle_enroll_player(
             };
             let event_any = pack_event(&event, "examples.TournamentPlayerEnrolled");
             Ok(EventBook {
-        pages: vec![event_page(seq, event_any)],
-        ..Default::default()
-    })
+                pages: vec![event_page(seq, event_any)],
+                ..Default::default()
+            })
         }
         Err(reason) => {
             let event = TournamentEnrollmentRejected {
@@ -67,10 +67,9 @@ pub fn handle_enroll_player(
             };
             let event_any = pack_event(&event, "examples.TournamentEnrollmentRejected");
             Ok(EventBook {
-        pages: vec![event_page(seq, event_any)],
-        ..Default::default()
-    })
+                pages: vec![event_page(seq, event_any)],
+                ..Default::default()
+            })
         }
     }
 }
-

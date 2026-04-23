@@ -345,12 +345,7 @@ fn given_cards_dealt(world: &mut ProjectorWorld, player: String, c1: String, c2:
 }
 
 #[given(expr = "a BlindPosted event for {string} type {string} amount {int}")]
-fn given_blind_posted(
-    world: &mut ProjectorWorld,
-    player: String,
-    blind_type: String,
-    amount: i64,
-) {
+fn given_blind_posted(world: &mut ProjectorWorld, player: String, blind_type: String, amount: i64) {
     world.player_names.insert(player.clone(), player.clone());
     world.render(format!(
         "{} posts {} ${}",

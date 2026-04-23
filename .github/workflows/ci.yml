@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
   pull_request:
     branches: [main]
   repository_dispatch:
@@ -15,8 +16,6 @@ env:
   ANGZARR_PROTO_ROOT: ${{ github.workspace }}/angzarr-proto
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/angzarr-io/examples-rust
-  # Coordinator version for acceptance tests
-  COORDINATOR_VERSION: latest
   # Opt into Node.js 24 for GitHub Actions (required after June 2026)
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -27,7 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false  # fetched manually below without --depth=1
+
+      - name: Fetch submodules (unshallow; avoids HTTP 500 direct-fetch path)
+        run: git submodule update --init
+
+      - name: Init nested angzarr-project submodule (non-recursive)
+        run: git -C angzarr-client-rust submodule update --init angzarr-project
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -57,8 +62,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
       # Use justfile.container directly (CI runs without container wrapper)
       - name: Build
@@ -73,11 +77,10 @@ jobs:
       - name: Format check
         run: just -f justfile.container fmt
 
-      - name: Install cargo-mutants
-        run: cargo install cargo-mutants
-
-      - name: Mutation test
-        run: just -f justfile.container mutation-test
+      # Mutation testing runs on a schedule (.github/workflows/mutation.yml)
+      # against main rather than per-PR. See the blog post on CI gates for
+      # the rationale: cargo-mutants --test-workspace × 523 cucumber
+      # scenarios per mutant does not fit the 2-vCPU free-runner time cap.
 
   build-images:
     name: Build & Push Images
@@ -105,7 +108,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: false  # fetched manually below without --depth=1
+
+      - name: Fetch submodules (unshallow; avoids HTTP 500 direct-fetch path)
+        run: git submodule update --init
+
+      - name: Init nested angzarr-project submodule (non-recursive)
+        run: git -C angzarr-client-rust submodule update --init angzarr-project
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -117,18 +126,58 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install versionator
+        # Pinned by sha256 digest; matches the supply-chain rule from
+        # the container-versioning blog post. The tarball ships the
+        # binary as `versionator-linux-amd64`; rename on install.
+        run: |
+          curl -fsSL -o /tmp/versionator.tgz \
+            https://github.com/benjaminabbitt/versionator/releases/download/v0.1.1/versionator-linux-amd64.tar.gz
+          echo "66ed07135eaeaa72d9ece6fa5c2814d239738d61e134b9b5dcbad0a4d07d458b  /tmp/versionator.tgz" | sha256sum -c -
+          tar -xz -f /tmp/versionator.tgz -C /tmp versionator-linux-amd64
+          sudo install -m 0755 /tmp/versionator-linux-amd64 /usr/local/bin/versionator
+          versionator output version
+
+      - name: Compute version variables
+        id: version
+        run: versionator output ci --format=github
+
       - name: Generate image tags
         id: tags
+        # Tagging policy (matches angzarr/core's release workflow):
+        #   * pull_request         → pr-<N>-<short-sha>
+        #   * push to main         → v<semver>-dev.<short-sha>, dev
+        #   * tag push v*.*.*      → v<semver>, v<major>.<minor>, v<major>
+        # No :latest ever. See blog/container-versioning-no-latest.
         run: |
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
+          REPO="${{ env.IMAGE_PREFIX }}-${{ matrix.target }}"
+          V="${VERSION}"               # e.g. 0.2.0
+          MAJ="${VERSION_MAJOR}"       # e.g. 0
+          MIN="${VERSION_MAJOR}.${VERSION_MINOR}"  # e.g. 0.2
+          SHORT="${GIT_SHA_SHORT}"     # versionator-provided
+          tags=""
+          append() { tags="${tags:+$tags,}$1"; }
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
-            echo "tags=${{ env.IMAGE_PREFIX }}-${{ matrix.target }}:pr-${PR_NUM}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            append "$REPO:pr-${PR_NUM}-${SHORT}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # Release tag push. Require a clean semver match with VERSION file.
+            TAG_V="${GITHUB_REF#refs/tags/v}"
+            if [ "$TAG_V" != "$V" ]; then
+              echo "::error::Tag v$TAG_V does not match VERSION file ($V). Bump VERSION before tagging."
+              exit 1
+            fi
+            append "$REPO:v$V"
+            append "$REPO:v$MIN"
+            append "$REPO:v$MAJ"
           else
-            echo "tags=${{ env.IMAGE_PREFIX }}-${{ matrix.target }}:${SHORT_SHA},${{ env.IMAGE_PREFIX }}-${{ matrix.target }}:latest" >> $GITHUB_OUTPUT
+            # Push to main (or other non-tag branch).
+            append "$REPO:v${V}-dev.${SHORT}"
+            append "$REPO:dev"
           fi
+          echo "Computed tags: $tags"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -154,7 +203,8 @@ jobs:
           path: /tmp/${{ matrix.target }}.tar
           retention-days: 1
 
-  # Compute image tag for acceptance tests
+  # Compute image tag for acceptance tests.
+  # Must match the primary tag emitted by the build-images step.
   compute-tag:
     name: Compute Image Tag
     runs-on: ubuntu-latest
@@ -162,22 +212,33 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       images-json: ${{ steps.images.outputs.json }}
-      coordinator-version: ${{ steps.coord.outputs.version }}
     steps:
-      - name: Output coordinator version
-        id: coord
-        run: echo "version=${{ env.COORDINATOR_VERSION }}" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+
+      - name: Install versionator
+        run: |
+          curl -fsSL -o /tmp/versionator.tgz \
+            https://github.com/benjaminabbitt/versionator/releases/download/v0.1.1/versionator-linux-amd64.tar.gz
+          echo "66ed07135eaeaa72d9ece6fa5c2814d239738d61e134b9b5dcbad0a4d07d458b  /tmp/versionator.tgz" | sha256sum -c -
+          tar -xz -f /tmp/versionator.tgz -C /tmp versionator-linux-amd64
+          sudo install -m 0755 /tmp/versionator-linux-amd64 /usr/local/bin/versionator
+
+      - name: Compute version variables
+        run: versionator output ci --format=github
 
       - name: Generate image tag
         id: tag
+        # Keep in lockstep with build-images: use the primary tag each
+        # event emits (see that step for the full rationale).
         run: |
-          SHA="${{ github.sha }}"
-          SHORT_SHA="${SHA:0:7}"
+          SHORT="${GIT_SHA_SHORT}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
-            echo "tag=pr-${PR_NUM}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "tag=pr-${PR_NUM}-${SHORT}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "tag=v${VERSION}-dev.${SHORT}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build images JSON
@@ -215,8 +276,9 @@ jobs:
     with:
       # Use just-pushed example images
       example-images: ${{ needs.compute-tag.outputs.images-json }}
-      # Coordinator version (passed via job output since env context unavailable in uses)
-      coordinator-version: ${{ needs.compute-tag.outputs.coordinator-version }}
+      # Coordinator image refs are digest-pinned in acceptance-callable.yml;
+      # this input remains for signature compat but is a no-op.
+      coordinator-version: ""
       examples-ref: ${{ github.ref }}
     secrets: inherit
 

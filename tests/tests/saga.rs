@@ -17,8 +17,8 @@ use angzarr_client::router::{Built, Router};
 use angzarr_client::{full_type_url, type_name_from_url, unpack};
 use cucumber::{given, then, when, World, WriterExt};
 use examples_proto::{
-    DealCards, DepositFunds, EndHand, GameVariant, HandComplete, HandEnded, HandStarted, PotAwarded,
-    PotWinner, ReleaseFunds, SeatSnapshot,
+    DealCards, DepositFunds, EndHand, GameVariant, HandComplete, HandEnded, HandStarted,
+    PotAwarded, PotWinner, ReleaseFunds, SeatSnapshot,
 };
 use poker_tests::uuid_for;
 use prost::Message as _;
@@ -640,7 +640,11 @@ fn then_result_deal_cards(world: &mut SagaWorld) {
         "hand"
     );
     let types = world.get_command_types();
-    assert!(types.iter().any(|t| t.ends_with("DealCards")), "got {:?}", types);
+    assert!(
+        types.iter().any(|t| t.ends_with("DealCards")),
+        "got {:?}",
+        types
+    );
 }
 
 #[then(expr = "the command DealCards has hand_number {int} and {int} players")]
@@ -664,7 +668,11 @@ fn then_result_end_hand(world: &mut SagaWorld) {
         "table"
     );
     let types = world.get_command_types();
-    assert!(types.iter().any(|t| t.ends_with("EndHand")), "got {:?}", types);
+    assert!(
+        types.iter().any(|t| t.ends_with("EndHand")),
+        "got {:?}",
+        types
+    );
 }
 
 #[then(expr = "the EndHand command has {int} result with winner {string} amount {int}")]
@@ -692,7 +700,10 @@ fn then_end_hand_result_count(world: &mut SagaWorld, count: usize) {
 fn then_end_hand_result_has_winning_hand(world: &mut SagaWorld, idx: usize) {
     let any = world.first_command_any().expect("no payload");
     let eh: EndHand = unpack(&any).expect("decode EndHand");
-    let result = eh.results.get(idx).unwrap_or_else(|| panic!("no result at {}", idx));
+    let result = eh
+        .results
+        .get(idx)
+        .unwrap_or_else(|| panic!("no result at {}", idx));
     assert!(result.winning_hand.is_some(), "winning_hand was None");
 }
 
@@ -715,7 +726,11 @@ fn then_each_release(world: &mut SagaWorld) {
                 _ => None,
             })
             .expect("payload");
-        assert!(any.type_url.ends_with("ReleaseFunds"), "got {}", any.type_url);
+        assert!(
+            any.type_url.ends_with("ReleaseFunds"),
+            "got {}",
+            any.type_url
+        );
         ReleaseFunds::decode(any.value.as_slice()).expect("decode ReleaseFunds");
     }
 }
@@ -731,7 +746,11 @@ fn then_each_deposit(world: &mut SagaWorld) {
                 _ => None,
             })
             .expect("payload");
-        assert!(any.type_url.ends_with("DepositFunds"), "got {}", any.type_url);
+        assert!(
+            any.type_url.ends_with("DepositFunds"),
+            "got {}",
+            any.type_url
+        );
         DepositFunds::decode(any.value.as_slice()).expect("decode DepositFunds");
     }
 }
@@ -767,7 +786,11 @@ fn then_only_start_emits(world: &mut SagaWorld) {
         "hand"
     );
     let types = world.get_command_types();
-    assert!(types.iter().any(|t| t.ends_with("DealCards")), "got {:?}", types);
+    assert!(
+        types.iter().any(|t| t.ends_with("DealCards")),
+        "got {:?}",
+        types
+    );
 }
 
 #[then("no commands are emitted")]

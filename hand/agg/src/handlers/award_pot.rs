@@ -101,11 +101,7 @@ fn compute(cmd: &AwardPot, state: &HandState) -> (PotAwarded, HandComplete) {
     (pot_awarded, hand_complete)
 }
 
-pub fn handle_award_pot(
-    cmd: AwardPot,
-    state: &HandState,
-    seq: u32,
-) -> CommandResult<EventBook> {
+pub fn handle_award_pot(cmd: AwardPot, state: &HandState, seq: u32) -> CommandResult<EventBook> {
     guard(state)?;
     validate(&cmd, state)?;
 
@@ -124,4 +120,3 @@ pub fn handle_award_pot(
         ..Default::default()
     })
 }
-

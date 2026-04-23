@@ -62,7 +62,13 @@ jobs:
         with:
           repository: angzarr-io/angzarr-examples-rust
           ref: ${{ steps.ref.outputs.ref }}
-          submodules: true
+          submodules: false  # fetched manually below without --depth=1
+
+      - name: Fetch submodules (unshallow; avoids HTTP 500 direct-fetch path)
+        run: git submodule update --init
+
+      - name: Init nested angzarr-project submodule (non-recursive)
+        run: git -C angzarr-client-rust submodule update --init angzarr-project
 
       - name: Install tools
         run: |
@@ -80,10 +86,21 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
       - name: Export protos from submodule
         run: |
-          cp -r angzarr-project/proto/examples examples-proto
-          cp -r angzarr-project/proto/angzarr angzarr-proto
+          # Layout must match proto imports ("examples/poker_types.proto"),
+          # so keep the examples/ prefix rather than flattening.
+          buf export angzarr-project/proto -o _proto_export
+          rm -rf angzarr-proto examples-proto
+          cp -r _proto_export angzarr-proto
+          mkdir -p examples-proto/examples
+          cp _proto_export/examples/*.proto examples-proto/examples/
+          rm -rf _proto_export
 
       - name: Parse image inputs
         id: images
@@ -93,13 +110,13 @@ jobs:
           # Build coordinator images JSON from version
           COORD=$(cat <<EOF
           {
-            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:${VERSION}",
-            "saga": "ghcr.io/angzarr-io/angzarr-saga:${VERSION}",
-            "projector": "ghcr.io/angzarr-io/angzarr-projector:${VERSION}",
-            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:${VERSION}",
-            "stream": "ghcr.io/angzarr-io/angzarr-stream:${VERSION}",
-            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:${VERSION}",
-            "log": "ghcr.io/angzarr-io/angzarr-log:${VERSION}"
+            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:21c113f@sha256:54bd2432effec9e35ffe0b150c362c0500c1d6c0fb4bcbb9113849c108ddf7e4",
+            "saga": "ghcr.io/angzarr-io/angzarr-saga:21c113f@sha256:fe4bc5bcdd252a8ebae92ac8e4faa3b6626eb22ebdd1a20c1f91b5398b01d539",
+            "projector": "ghcr.io/angzarr-io/angzarr-projector:21c113f@sha256:df5c4a32cdd5855c044c52860ae2b5eec7d60599d55c46c6cecd9dba7661f66c",
+            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:21c113f@sha256:bb9726f2d6ef0ea54d8ecc56c2944fa659cbcadcbe163b9782362740139f1ed4",
+            "stream": "ghcr.io/angzarr-io/angzarr-stream-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bb0bb16dc8b1039ba0cf63f38e6dbea380a389fbaae3143deaf70b4e0c38778f",
+            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:21c113f@sha256:ac5f95d76dcd1d6b504d5c654d75b3340757872c8a092955d6f29230547f4ffb",
+            "log": "ghcr.io/angzarr-io/angzarr-log-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bf96d6a207d9328c3792c6d15d8a06eee2b3711b81beb74809bde41e20cfdf64"
           }
           EOF
           )
@@ -151,14 +168,19 @@ jobs:
         run: echo "${{ secrets.GHCR_TOKEN || github.token }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Pull and load coordinator images
+        # Refs are 'repo:tag@sha256:digest'; docker verifies by digest on
+        # pull. kind load takes a tag ref (no @digest) so we retag the
+        # pulled image under repo:tag before loading.
         run: |
           IMAGES='${{ steps.images.outputs.coordinators }}'
           echo "Pulling coordinator images..."
           echo "$IMAGES" | jq -r 'to_entries[] | "\(.key): \(.value)"'
-          echo "$IMAGES" | jq -r 'to_entries[] | .value' | while read img; do
-            echo "Pulling $img..."
-            docker pull "$img"
-            kind load docker-image "$img" --name angzarr-test
+          echo "$IMAGES" | jq -r 'to_entries[] | .value' | while read ref; do
+            echo "Pulling $ref..."
+            docker pull "$ref"
+            tagged="${ref%@sha256:*}"
+            docker tag "$ref" "$tagged"
+            kind load docker-image "$tagged" --name angzarr-test
           done
 
       - name: Build example images (if not provided)

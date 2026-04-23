@@ -116,9 +116,7 @@ pub fn handle_rebuy_denied(event: RebuyDenied) -> CommandResult<ProcessManagerHa
     })
 }
 
-pub fn handle_chips_added(
-    event: RebuyChipsAdded,
-) -> CommandResult<ProcessManagerHandleResponse> {
+pub fn handle_chips_added(event: RebuyChipsAdded) -> CommandResult<ProcessManagerHandleResponse> {
     let confirm = ConfirmRebuyFee {
         reservation_id: event.reservation_id.clone(),
     };
@@ -194,4 +192,3 @@ fn make_pm_event_book(event: Any) -> EventBook {
         next_sequence: 0,
     }
 }
-

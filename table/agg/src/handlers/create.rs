@@ -73,4 +73,3 @@ pub fn handle_create_table(
         ..Default::default()
     })
 }
-

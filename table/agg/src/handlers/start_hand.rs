@@ -104,4 +104,3 @@ fn advance_to_next_active(current_pos: i32, state: &TableState) -> i32 {
     }
     current_pos // Shouldn't happen if we have active players
 }
-

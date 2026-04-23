@@ -55,4 +55,3 @@ pub fn handle_leave_table(
         ..Default::default()
     })
 }
-

@@ -57,9 +57,7 @@ fn validate<'a>(
         }
         ActionType::Check => {
             if amount_to_call > 0 {
-                return Err(CommandRejectedError::new(
-                    "Cannot check, must call or fold",
-                ));
+                return Err(CommandRejectedError::new("Cannot check, must call or fold"));
             }
             chips_put_in = 0;
             event_amount = 0;
@@ -91,9 +89,7 @@ fn validate<'a>(
         }
         ActionType::Raise => {
             if state.current_bet <= 0 {
-                return Err(CommandRejectedError::new(
-                    "Cannot raise, there is no bet",
-                ));
+                return Err(CommandRejectedError::new("Cannot raise, there is no bet"));
             }
             if cmd.amount > player.bet_this_round + player.stack {
                 return Err(CommandRejectedError::new("Raise exceeds stack"));
@@ -161,7 +157,7 @@ pub fn handle_player_action(
     state: &HandState,
     seq: u32,
 ) -> CommandResult<EventBook> {
-        guard(state)?;
+    guard(state)?;
     let (player, validated) = validate(&cmd, state)?;
 
     let event = compute(&cmd, state, player, &validated);
@@ -172,4 +168,3 @@ pub fn handle_player_action(
         ..Default::default()
     })
 }
-

@@ -23,18 +23,18 @@ use angzarr_client::proto::{
     PageHeader, RejectionNotification, Uuid as ProtoUuid,
 };
 use angzarr_client::{try_unpack, type_matches};
-use prost::Message;
 use cucumber::{given, then, when, World};
 use examples_proto::{
     BuyInConfirmed, BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, ConfirmRebuyFee,
     ConfirmRegistrationFee, DepositFunds, FundsDeposited, FundsReleased, FundsReserved,
-    FundsTransferred, FundsWithdrawn, InitiateBuyIn, InitiateRebuy,
-    InitiateTournamentRegistration, PlayerRegistered, PlayerType, RebuyFeeConfirmed,
-    RebuyFeeReleased, RebuyRequested, RegisterPlayer, RegistrationFeeConfirmed,
-    RegistrationFeeReleased, RegistrationRequested, ReleaseBuyIn, ReleaseFunds,
-    ReleaseRebuyFee, ReleaseRegistrationFee, ReserveFunds, TransferFunds, WithdrawFunds,
+    FundsTransferred, FundsWithdrawn, InitiateBuyIn, InitiateRebuy, InitiateTournamentRegistration,
+    PlayerRegistered, PlayerType, RebuyFeeConfirmed, RebuyFeeReleased, RebuyRequested,
+    RegisterPlayer, RegistrationFeeConfirmed, RegistrationFeeReleased, RegistrationRequested,
+    ReleaseBuyIn, ReleaseFunds, ReleaseRebuyFee, ReleaseRegistrationFee, ReserveFunds,
+    TransferFunds, WithdrawFunds,
 };
 use poker_tests::{currency, uuid_for};
+use prost::Message;
 use prost_types::Any;
 
 /// Test context for player scenarios.
@@ -349,7 +349,6 @@ fn build_join_rejection_notification(table_name: &str) -> Notification {
         }),
         payload: Some(payload_any),
         sent_at: None,
-        metadata: Default::default(),
     }
 }
 
@@ -644,11 +643,7 @@ fn pending_buy_in(
 }
 
 #[given(expr = "a BuyInConfirmed event for reservation {string} table {string}")]
-fn buy_in_confirmed_event(
-    world: &mut PlayerWorld,
-    reservation: String,
-    table_name: String,
-) {
+fn buy_in_confirmed_event(world: &mut PlayerWorld, reservation: String, table_name: String) {
     // Look up amount/seat from prior pending buy-in if present
     let state = world.rebuild_state();
     let res_hex = hex::encode(uuid_for(&reservation));
@@ -727,9 +722,7 @@ fn pending_rebuy(
     };
     world.add_event(pack_event_any(&event));
     // Stash for the matching RebuyFeeConfirmed seeder
-    world
-        .pending_rebuy_chips
-        .insert(reservation.clone(), chips);
+    world.pending_rebuy_chips.insert(reservation.clone(), chips);
     // RebuyRequested doesn't carry chips_to_add — patch it into the
     // materialized state after replay.
     let res_hex = hex::encode(uuid_for(&reservation));
@@ -781,7 +774,9 @@ macro_rules! handle_cmd {
     }};
 }
 
-#[when(expr = "I handle a TransferFunds command from {string} with amount {int} for hand {string} reason {string}")]
+#[when(
+    expr = "I handle a TransferFunds command from {string} with amount {int} for hand {string} reason {string}"
+)]
 fn handle_transfer_funds_cmd(
     world: &mut PlayerWorld,
     from: String,
@@ -799,12 +794,7 @@ fn handle_transfer_funds_cmd(
 }
 
 #[when(expr = "I handle an InitiateBuyIn command for table {string} seat {int} amount {int}")]
-fn handle_initiate_buy_in_cmd(
-    world: &mut PlayerWorld,
-    table_name: String,
-    seat: i32,
-    amount: i64,
-) {
+fn handle_initiate_buy_in_cmd(world: &mut PlayerWorld, table_name: String, seat: i32, amount: i64) {
     let cmd = InitiateBuyIn {
         table_root: uuid_for_or_empty(&table_name),
         seat,
@@ -859,7 +849,9 @@ fn handle_release_registration_fee_cmd(
     handle_cmd!(world, handle_release_registration_fee, cmd);
 }
 
-#[when(expr = "I handle an InitiateRebuy command for tournament {string} table {string} seat {int}")]
+#[when(
+    expr = "I handle an InitiateRebuy command for tournament {string} table {string} seat {int}"
+)]
 fn handle_initiate_rebuy_cmd(
     world: &mut PlayerWorld,
     tournament: String,
@@ -1024,7 +1016,10 @@ fn player_event_has_new_reserved_balance(world: &mut PlayerWorld, expected: i64)
     } else if let Some(e) = try_unpack::<FundsReleased>(event_any) {
         e.new_reserved_balance.map(|c| c.amount).unwrap_or(0)
     } else {
-        panic!("Unknown event type for new_reserved_balance: {}", event_any.type_url);
+        panic!(
+            "Unknown event type for new_reserved_balance: {}",
+            event_any.type_url
+        );
     };
     assert_eq!(reserved, expected);
 }

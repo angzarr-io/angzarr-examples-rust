@@ -357,12 +357,13 @@ fn when_run_preflop(world: &mut BettingWorld, seat: i32) {
 
 #[then(regex = r"^the seats asked to act are \[([^\]]*)\]$")]
 fn then_seats_asked_csv(world: &mut BettingWorld, list: String) {
-    let expected: Vec<i32> = list
-        .split(',')
-        .map(|s| s.trim().parse().unwrap())
-        .collect();
+    let expected: Vec<i32> = list.split(',').map(|s| s.trim().parse().unwrap()).collect();
     let actual = &world.tester().seats_asked_to_act;
-    assert_eq!(actual, &expected, "Expected {:?}, got {:?}", expected, actual);
+    assert_eq!(
+        actual, &expected,
+        "Expected {:?}, got {:?}",
+        expected, actual
+    );
 }
 
 #[then(expr = "seat {int} is asked to act after seat {int}")]
@@ -390,9 +391,13 @@ fn then_seat_asked_exact_one(world: &mut BettingWorld, seat: i32, n: usize) {
         .filter(|&&s| s == seat)
         .count();
     assert_eq!(
-        count, n,
+        count,
+        n,
         "seat {} asked {} times, expected {}. full order: {:?}",
-        seat, count, n, world.tester().seats_asked_to_act
+        seat,
+        count,
+        n,
+        world.tester().seats_asked_to_act
     );
 }
 
@@ -410,7 +415,11 @@ fn then_seat_all_in(world: &mut BettingWorld, seat: i32) {
 #[then(expr = "seat {int} has stack {int}")]
 fn then_seat_stack(world: &mut BettingWorld, seat: i32, stack: i64) {
     let p = &world.tester().players[&seat];
-    assert_eq!(p.stack, stack, "seat {} has stack {}, expected {}", seat, p.stack, stack);
+    assert_eq!(
+        p.stack, stack,
+        "seat {} has stack {}, expected {}",
+        seat, p.stack, stack
+    );
 }
 
 #[tokio::main]

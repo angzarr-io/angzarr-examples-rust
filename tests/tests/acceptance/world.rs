@@ -98,6 +98,7 @@ pub struct AcceptanceWorld {
     pub test_players: Vec<String>,
     pub deposit_times_ms: Vec<f64>,
     pub event_without_correlation: bool,
+    pub correlation_id: String,
 }
 
 impl std::fmt::Debug for AcceptanceWorld {
@@ -143,6 +144,7 @@ impl AcceptanceWorld {
             test_players: Vec::new(),
             deposit_times_ms: Vec::new(),
             event_without_correlation: false,
+            correlation_id: String::new(),
         }
     }
 

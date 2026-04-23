@@ -513,9 +513,7 @@ mod applier_tests {
             },
         );
         assert_eq!(state.reserved_funds, 250);
-        assert!(state
-            .pending_registrations
-            .contains_key(&hex::encode(&rid)));
+        assert!(state.pending_registrations.contains_key(&hex::encode(&rid)));
     }
 
     #[test]
@@ -852,7 +850,13 @@ mod handler_tests {
             },
         );
         let book = agg
-            .on_confirm_buy_in(ConfirmBuyIn { reservation_id: rid }, &state, 7)
+            .on_confirm_buy_in(
+                ConfirmBuyIn {
+                    reservation_id: rid,
+                },
+                &state,
+                7,
+            )
             .expect("handler should succeed");
         assert_eq!(book.pages.len(), 1);
     }
@@ -917,7 +921,9 @@ mod handler_tests {
         );
         let book = agg
             .on_confirm_registration(
-                ConfirmRegistrationFee { reservation_id: rid },
+                ConfirmRegistrationFee {
+                    reservation_id: rid,
+                },
                 &state,
                 10,
             )
@@ -987,7 +993,13 @@ mod handler_tests {
             },
         );
         let book = agg
-            .on_confirm_rebuy(ConfirmRebuyFee { reservation_id: rid }, &state, 13)
+            .on_confirm_rebuy(
+                ConfirmRebuyFee {
+                    reservation_id: rid,
+                },
+                &state,
+                13,
+            )
             .expect("handler should succeed");
         assert_eq!(book.pages.len(), 1);
     }
@@ -1079,7 +1091,6 @@ mod handler_tests {
             }),
             payload: Some(payload_any),
             sent_at: None,
-            metadata: Default::default(),
         };
 
         let response = agg

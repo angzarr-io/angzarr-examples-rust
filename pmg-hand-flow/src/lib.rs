@@ -23,8 +23,7 @@ use angzarr_client::proto::{
 };
 use angzarr_client::{pack_event, process_manager, type_url, CommandResult};
 use examples_proto::{
-    CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PlayerInHand,
-    PostBlind,
+    CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PlayerInHand, PostBlind,
 };
 use prost::Message;
 use prost_types::Any;
@@ -56,9 +55,13 @@ pub struct HandFlowState {
 
 impl HandFlowState {
     fn player_at_position(&self, pos: i32) -> Option<&[u8]> {
-        self.active_players
-            .iter()
-            .find_map(|(p, root)| if *p == pos { Some(root.as_slice()) } else { None })
+        self.active_players.iter().find_map(|(p, root)| {
+            if *p == pos {
+                Some(root.as_slice())
+            } else {
+                None
+            }
+        })
     }
 }
 // docs:end:pm_state
@@ -133,12 +136,7 @@ impl HandFlowPm {
             blind_type: "small".to_string(),
             amount: state.small_blind,
         };
-        let cmd = make_command(
-            "hand",
-            &state.hand_root,
-            "examples.PostBlind",
-            &post_blind,
-        );
+        let cmd = make_command("hand", &state.hand_root, "examples.PostBlind", &post_blind);
         let pm_event = pack_event(&event, "examples.CardsDealt");
 
         Ok(ProcessManagerHandleResponse {
@@ -302,7 +300,9 @@ mod tests {
     fn hand_started_emits_pm_event_for_replay() {
         let pm = HandFlowPm;
         let event = sample_hand_started();
-        let resp = pm.on_hand_started(event.clone(), &HandFlowState::default()).unwrap();
+        let resp = pm
+            .on_hand_started(event.clone(), &HandFlowState::default())
+            .unwrap();
 
         let pm_book = resp.process_events.expect("process_events");
         let any = first_event_any(&pm_book);
@@ -310,5 +310,4 @@ mod tests {
         let decoded = HandStarted::decode(any.value.as_slice()).unwrap();
         assert_eq!(decoded.hand_number, 1);
     }
-
 }

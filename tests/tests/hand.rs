@@ -1245,9 +1245,7 @@ fn then_revealed_ranking(world: &mut HandWorld, expected: String) {
 // Additional Given steps
 // =============================================================================
 
-#[given(
-    expr = "a CardsDealt event with table_root {string} and hand_number {int}"
-)]
+#[given(expr = "a CardsDealt event with table_root {string} and hand_number {int}")]
 fn given_cards_dealt_raw(world: &mut HandWorld, table_root_hex: String, hand_number: i64) {
     let table_root = hex::decode(&table_root_hex).expect("valid hex");
     let event = CardsDealt {
@@ -1264,9 +1262,7 @@ fn given_cards_dealt_raw(world: &mut HandWorld, table_root_hex: String, hand_num
     world.hand_number = hand_number;
 }
 
-#[given(
-    expr = "short-stacked blinds posted with small {int} big {int} and stack {int}"
-)]
+#[given(expr = "short-stacked blinds posted with small {int} big {int} and stack {int}")]
 fn given_short_stacked_blinds(world: &mut HandWorld, small: i64, big: i64, stack: i64) {
     let sb = BlindPosted {
         player_root: world.player_root("player-1"),

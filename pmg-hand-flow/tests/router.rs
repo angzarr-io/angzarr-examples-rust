@@ -3,9 +3,7 @@
 use std::collections::HashMap;
 
 use angzarr_client::proto::command_page::Payload as CommandPayload;
-use angzarr_client::proto::{
-    event_page, EventBook, EventPage, ProcessManagerHandleRequest,
-};
+use angzarr_client::proto::{event_page, EventBook, EventPage, ProcessManagerHandleRequest};
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::{
@@ -214,4 +212,3 @@ fn dispatch_hand_complete_emits_end_hand_to_table() {
     assert_eq!(end.results.len(), 1);
     assert_eq!(end.results[0].amount, 15);
 }
-

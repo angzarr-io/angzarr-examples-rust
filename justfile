@@ -258,24 +258,20 @@ deploy-apps example_tag="latest" coordinator_version="latest":
     kubectl get pods -n angzarr-test
 
 # Deploy poker applications with CI overlay (imagePullSecrets)
-deploy-apps-ci example_tag="latest" coordinator_version="latest":
+deploy-apps-ci example_tag="latest" coordinator_version="":
     #!/usr/bin/env bash
     set -euo pipefail
     example_tag="{{example_tag}}"
-    coord_ver="{{coordinator_version}}"
+    # Coordinator image tags come from values-ci.yaml (digest-pinned).
+    # The coordinator_version arg is kept for caller compat but ignored —
+    # changing it in flight would break the repo:tag lookup against what
+    # was kind-loaded by the acceptance-callable pull step.
 
     echo "Deploying poker applications via Helm (CI mode)..."
     helm upgrade --install poker {{CHART_REGISTRY}}/angzarr \
       --version {{ANGZARR_CHART_VERSION}} \
       -f deploy/k8s/helm/values.yaml \
       -f deploy/k8s/helm/values-ci.yaml \
-      --set images.aggregate.tag="${coord_ver}" \
-      --set images.saga.tag="${coord_ver}" \
-      --set images.projector.tag="${coord_ver}" \
-      --set images.processManager.tag="${coord_ver}" \
-      --set images.stream.tag="${coord_ver}" \
-      --set images.gateway.tag="${coord_ver}" \
-      --set images.log.tag="${coord_ver}" \
       --set "applications.business[0].image.tag=${example_tag}" \
       --set "applications.business[1].image.tag=${example_tag}" \
       --set "applications.business[2].image.tag=${example_tag}" \
@@ -339,6 +335,9 @@ test-e2e:
         done
     done
     # Run acceptance tests
+    # Cluster is already up (kind in CI, local or external-provided) — skip
+    # the in-test bootstrap-cluster.sh path; URLs below drive the clients.
+    export CLUSTER_PROVIDER=external
     export PLAYER_URL="http://localhost:1310"
     export TABLE_URL="http://localhost:1311"
     export HAND_URL="http://localhost:1312"

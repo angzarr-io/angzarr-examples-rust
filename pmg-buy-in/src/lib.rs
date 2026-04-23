@@ -13,8 +13,7 @@ use examples_proto::{
 };
 
 use crate::state::{
-    apply_buy_in_completed, apply_buy_in_failed, apply_buy_in_initiated,
-    apply_buy_in_phase_changed,
+    apply_buy_in_completed, apply_buy_in_failed, apply_buy_in_initiated, apply_buy_in_phase_changed,
 };
 
 pub struct BuyInPm;
@@ -208,10 +207,7 @@ mod handler_tests {
             )
             .expect("handler should succeed");
         assert_eq!(response.commands.len(), 1);
-        assert_eq!(
-            response.commands[0].cover.as_ref().unwrap().domain,
-            "table"
-        );
+        assert_eq!(response.commands[0].cover.as_ref().unwrap().domain, "table");
         assert!(response.process_events.is_some());
     }
 
