@@ -374,11 +374,13 @@ impl PrettyOutputProjector {
 
     /// Construct a projector backed by an on-disk SQLite file, with output
     /// directed at stdout. The DB path is read from `PRJ_PRETTY_OUTPUT_DB`
-    /// if set, falling back to `pretty_output.db` in the CWD.
+    /// if set, falling back to `/tmp/pretty_output.db` (the container's
+    /// `/app` is owned by root + read-only for the `nonroot` user under
+    /// distroless, so a CWD-relative default fails to open).
     pub fn from_env() -> Self {
         let path: PathBuf = std::env::var("PRJ_PRETTY_OUTPUT_DB")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("pretty_output.db"));
+            .unwrap_or_else(|_| PathBuf::from("/tmp/pretty_output.db"));
         let store = PrettyStore::open(&path).expect("open sqlite store");
         Self::new(store, Box::new(StdoutSink))
     }
