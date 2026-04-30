@@ -1413,6 +1413,7 @@ dependencies = [
  "hex",
  "pmg-hand-flow",
  "pmg-reservation",
+ "prj-pretty-output",
  "prost",
  "prost-types",
  "regex",

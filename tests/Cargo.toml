@@ -22,6 +22,7 @@ agg-tournament = { path = "../tournament/agg" }
 agg-reservation = { path = "../reservation/agg" }
 pmg-reservation = { path = "../pmg-reservation" }
 pmg-hand-flow = { path = "../pmg-hand-flow" }
+prj-pretty-output = { path = "../prj-output" }
 saga-table-hand = { path = "../table/saga-hand" }
 saga-hand-table = { path = "../hand/saga-table" }
 saga-table-player = { path = "../table/saga-player" }

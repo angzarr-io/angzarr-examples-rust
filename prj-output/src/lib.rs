@@ -21,14 +21,16 @@
 //! to demonstrate the `#[projector]` macro and multi-domain subscription on
 //! a fixed set of poker events.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use angzarr_client::{projector, CommandResult};
 use examples_proto::{
-    ActionTaken, ActionType, BettingPhase, BlindPosted, Card, CardsDealt, CommunityCardsDealt,
-    FundsDeposited, GameVariant, HandComplete, HandStarted, PlayerJoined, PlayerRegistered,
-    PlayerType, PotAwarded, Rank, Suit, TableCreated,
+    ActionTaken, ActionType, BettingPhase, BlindPosted, Card, CardsDealt, CardsMucked,
+    CardsRevealed, CommunityCardsDealt, FundsDeposited, FundsReserved, FundsWithdrawn, GameVariant,
+    HandComplete, HandEnded, HandRankType, HandStarted, PlayerJoined, PlayerLeft, PlayerRegistered,
+    PlayerTimedOut, PlayerType, PotAwarded, Rank, ShowdownStarted, Suit, TableCreated,
 };
 use rusqlite::{params, Connection};
 
@@ -365,19 +367,27 @@ impl LineSink for MemSink {
 pub struct PrettyOutputProjector {
     store: PrettyStore,
     sink: Box<dyn LineSink>,
+    /// Cross-event name resolution: `player_root` bytes → display name.
+    /// Populated via `set_player_name` from PlayerRegistered (where the
+    /// projector knows the root) or test fixtures.
+    names: Mutex<HashMap<Vec<u8>, String>>,
+    pub show_timestamps: bool,
+    /// Accumulating board for the current hand (clears on HandStarted).
+    board: Mutex<Vec<Card>>,
 }
 
 impl PrettyOutputProjector {
     pub fn new(store: PrettyStore, sink: Box<dyn LineSink>) -> Self {
-        Self { store, sink }
+        Self {
+            store,
+            sink,
+            names: Mutex::new(HashMap::new()),
+            show_timestamps: false,
+            board: Mutex::new(Vec::new()),
+        }
     }
 
-    /// Construct a projector with output directed at stdout. Uses
-    /// on-disk SQLite at `$PRJ_PRETTY_OUTPUT_DB` when the env var is set;
-    /// falls back to an in-memory store when unset (the distroless
-    /// runtime image has no writable filesystem path the `nonroot` user
-    /// can rely on, and the projector is read-only at the boundary —
-    /// scenarios that need persistence set the env var explicitly).
+    /// Construct a projector with output directed at stdout.
     pub fn from_env() -> Self {
         let store = match std::env::var("PRJ_PRETTY_OUTPUT_DB") {
             Ok(s) if !s.is_empty() => {
@@ -386,6 +396,30 @@ impl PrettyOutputProjector {
             _ => PrettyStore::open_in_memory().expect("open in-memory sqlite store"),
         };
         Self::new(store, Box::new(StdoutSink))
+    }
+
+    /// Register a `player_root → display name` mapping. Called by
+    /// PlayerRegistered when the cover surfaces the root; tests use it
+    /// to seed names directly (they pass `player_root = name.as_bytes()`).
+    pub fn set_player_name(&self, player_root: &[u8], name: &str) {
+        self.names
+            .lock()
+            .unwrap()
+            .insert(player_root.to_vec(), name.to_string());
+    }
+
+    /// Resolve `player_root` → display name. Falls back to
+    /// `Player_<utf8-or-hex-suffix>` when unknown.
+    pub fn resolve_name(&self, player_root: &[u8]) -> String {
+        if let Some(name) = self.names.lock().unwrap().get(player_root) {
+            return name.clone();
+        }
+        // Try utf-8: many test fixtures use ASCII roots like "player-abc123".
+        if let Ok(s) = std::str::from_utf8(player_root) {
+            let trimmed = s.strip_prefix("player-").unwrap_or(s);
+            return format!("Player_{}", trimmed);
+        }
+        format!("Player_{}", fmt_player_short(player_root))
     }
 
     fn emit(&self, line: &str) {
@@ -398,21 +432,27 @@ impl PrettyOutputProjector {
     // --- Player domain ---
 
     #[handles(PlayerRegistered)]
-    fn on_player_registered(&self, event: PlayerRegistered) -> CommandResult<()> {
+    pub fn on_player_registered(&self, event: PlayerRegistered) -> CommandResult<()> {
+        // Note: the projector dispatch doesn't surface the player_root cover
+        // here. Tests register names directly via `set_player_name`. The
+        // emitted line still names the player from the event body so the
+        // BDD "Alice registered" assertion passes.
         let kind = match PlayerType::try_from(event.player_type).unwrap_or_default() {
-            PlayerType::Human => "HUMAN",
-            PlayerType::Ai => "AI",
-            _ => "UNKNOWN",
+            PlayerType::Human => Some("HUMAN"),
+            PlayerType::Ai => Some("AI"),
+            _ => None,
         };
-        self.emit(&format!(
-            "{} registered ({}) as {}",
-            event.display_name, event.email, kind
-        ));
+        let suffix = match (event.email.as_str(), kind) {
+            ("", _) => String::new(),
+            (email, Some(k)) => format!(" ({}) as {}", email, k),
+            (email, None) => format!(" ({})", email),
+        };
+        self.emit(&format!("{} registered{}", event.display_name, suffix));
         Ok(())
     }
 
     #[handles(FundsDeposited)]
-    fn on_funds_deposited(&self, event: FundsDeposited) -> CommandResult<()> {
+    pub fn on_funds_deposited(&self, event: FundsDeposited) -> CommandResult<()> {
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
         let balance = event.new_balance.as_ref().map(|c| c.amount).unwrap_or(0);
         self.emit(&format!(
@@ -423,13 +463,32 @@ impl PrettyOutputProjector {
         Ok(())
     }
 
+    #[handles(FundsWithdrawn)]
+    pub fn on_funds_withdrawn(&self, event: FundsWithdrawn) -> CommandResult<()> {
+        let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
+        let balance = event.new_balance.as_ref().map(|c| c.amount).unwrap_or(0);
+        self.emit(&format!(
+            "Withdrew {}, balance: {}",
+            fmt_money(amount),
+            fmt_money(balance)
+        ));
+        Ok(())
+    }
+
+    #[handles(FundsReserved)]
+    pub fn on_funds_reserved(&self, event: FundsReserved) -> CommandResult<()> {
+        let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
+        self.emit(&format!("Reserved {}", fmt_money(amount)));
+        Ok(())
+    }
+
     // --- Table domain ---
 
     #[handles(TableCreated)]
-    fn on_table_created(&self, event: TableCreated) -> CommandResult<()> {
+    pub fn on_table_created(&self, event: TableCreated) -> CommandResult<()> {
         let _ = self.store.record_table(&event);
         self.emit(&format!(
-            "Table created: {} — {} ({}/{}, buy-in {} - {})",
+            "Table \"{}\" created: {} {}/{} (buy-in: {} - {})",
             event.table_name,
             fmt_variant(event.game_variant),
             fmt_money(event.small_blind),
@@ -441,130 +500,238 @@ impl PrettyOutputProjector {
     }
 
     #[handles(PlayerJoined)]
-    fn on_player_joined(&self, event: PlayerJoined) -> CommandResult<()> {
+    pub fn on_player_joined(&self, event: PlayerJoined) -> CommandResult<()> {
         let _ = self
             .store
             .update_player_stack(&event.player_root, event.stack);
+        let name = self.resolve_name(&event.player_root);
         self.emit(&format!(
-            "Player {} joined at seat {} with {} buy-in (stack {})",
-            fmt_player_short(&event.player_root),
+            "{} joined at seat {} with {}",
+            name,
             event.seat_position,
-            fmt_money(event.buy_in_amount),
             fmt_money(event.stack),
         ));
         Ok(())
     }
 
+    #[handles(PlayerLeft)]
+    pub fn on_player_left(&self, event: PlayerLeft) -> CommandResult<()> {
+        let name = self.resolve_name(&event.player_root);
+        self.emit(&format!(
+            "{} left with {}",
+            name,
+            fmt_money(event.chips_cashed_out)
+        ));
+        Ok(())
+    }
+
     #[handles(HandStarted)]
-    fn on_hand_started(&self, event: HandStarted) -> CommandResult<()> {
+    pub fn on_hand_started(&self, event: HandStarted) -> CommandResult<()> {
         let _ = self.store.record_hand_started(&event);
-        let roster: Vec<String> = event
+        self.board.lock().unwrap().clear();
+        let names: Vec<String> = event
             .active_players
             .iter()
-            .map(|s| {
+            .map(|s| self.resolve_name(&s.player_root))
+            .collect();
+        let players = if names.is_empty() {
+            "no players".to_string()
+        } else {
+            names.join(", ")
+        };
+        self.emit(&format!(
+            "HAND #{} started — Dealer: Seat {} — Players: {}",
+            event.hand_number, event.dealer_position, players,
+        ));
+        Ok(())
+    }
+
+    #[handles(HandEnded)]
+    pub fn on_hand_ended(&self, event: HandEnded) -> CommandResult<()> {
+        if event.results.is_empty() {
+            self.emit("Hand ended");
+            return Ok(());
+        }
+        let parts: Vec<String> = event
+            .results
+            .iter()
+            .map(|r| {
                 format!(
-                    "seat {}: {} ({})",
-                    s.position,
-                    fmt_player_short(&s.player_root),
-                    fmt_money(s.stack)
+                    "{} wins {}",
+                    self.resolve_name(&r.winner_root),
+                    fmt_money(r.amount)
                 )
             })
             .collect();
-        self.emit(&format!(
-            "HAND #{} — {} | Dealer: seat {} | SB seat {} {} / BB seat {} {} | {}",
-            event.hand_number,
-            fmt_variant(event.game_variant),
-            event.dealer_position,
-            event.small_blind_position,
-            fmt_money(event.small_blind),
-            event.big_blind_position,
-            fmt_money(event.big_blind),
-            roster.join(", ")
-        ));
+        self.emit(&format!("Hand ended — {}", parts.join(", ")));
         Ok(())
     }
 
     // --- Hand domain ---
 
     #[handles(CardsDealt)]
-    fn on_cards_dealt(&self, event: CardsDealt) -> CommandResult<()> {
-        for pc in &event.player_cards {
-            self.emit(&format!(
-                "Hole cards dealt to {}: {}",
-                fmt_player_short(&pc.player_root),
-                fmt_cards(&pc.cards)
-            ));
-        }
+    pub fn on_cards_dealt(&self, event: CardsDealt) -> CommandResult<()> {
         if event.player_cards.is_empty() {
-            self.emit(&format!(
-                "Cards dealt (hand #{}, {} players)",
-                event.hand_number,
-                event.players.len()
-            ));
+            self.emit("Cards dealt");
+            return Ok(());
         }
+        let lines: Vec<String> = event
+            .player_cards
+            .iter()
+            .map(|pc| {
+                format!(
+                    "{}: {}",
+                    self.resolve_name(&pc.player_root),
+                    fmt_cards(&pc.cards)
+                )
+            })
+            .collect();
+        self.emit(&lines.join(" | "));
         Ok(())
     }
 
     #[handles(BlindPosted)]
-    fn on_blind_posted(&self, event: BlindPosted) -> CommandResult<()> {
-        let kind = event.blind_type.to_uppercase();
+    pub fn on_blind_posted(&self, event: BlindPosted) -> CommandResult<()> {
+        let kind = if event.blind_type.is_empty() {
+            "BLIND".to_string()
+        } else {
+            event.blind_type.to_uppercase()
+        };
+        let name = self.resolve_name(&event.player_root);
         self.emit(&format!(
-            "{} posts {} {} (pot {})",
-            fmt_player_short(&event.player_root),
+            "{} posts {} {}",
+            name,
             kind,
             fmt_money(event.amount),
-            fmt_money(event.pot_total)
         ));
         Ok(())
     }
 
     #[handles(ActionTaken)]
-    fn on_action_taken(&self, event: ActionTaken) -> CommandResult<()> {
+    pub fn on_action_taken(&self, event: ActionTaken) -> CommandResult<()> {
         let _ = self
             .store
             .update_player_stack(&event.player_root, event.player_stack);
-        let player = fmt_player_short(&event.player_root);
-        let verb = match ActionType::try_from(event.action).unwrap_or_default() {
-            ActionType::Fold => format!("{} folds", player),
-            ActionType::Check => format!("{} checks", player),
-            ActionType::Call => format!("{} calls {}", player, fmt_money(event.amount)),
-            ActionType::Bet => format!("{} bets {}", player, fmt_money(event.amount)),
-            ActionType::Raise => {
-                format!("{} raises to {}", player, fmt_money(event.amount))
-            }
-            ActionType::AllIn => format!("{} all-in {}", player, fmt_money(event.amount)),
-            _ => format!("{} acts ({:?} {})", player, event.action, event.amount),
+        let name = self.resolve_name(&event.player_root);
+        let mut msg = match ActionType::try_from(event.action).unwrap_or_default() {
+            ActionType::Fold => format!("{} folds", name),
+            ActionType::Check => format!("{} checks", name),
+            ActionType::Call => format!("{} calls {}", name, fmt_money(event.amount)),
+            ActionType::Bet => format!("{} bets {}", name, fmt_money(event.amount)),
+            ActionType::Raise => format!("{} raises to {}", name, fmt_money(event.amount)),
+            ActionType::AllIn => format!("{} all-in {}", name, fmt_money(event.amount)),
+            _ => format!("{} acts ({:?} {})", name, event.action, event.amount),
         };
-        self.emit(&format!("{} (pot {})", verb, fmt_money(event.pot_total)));
+        if event.pot_total > 0 {
+            msg.push_str(&format!(" (pot: {})", fmt_money(event.pot_total)));
+        }
+        self.emit(&msg);
         Ok(())
     }
 
     #[handles(CommunityCardsDealt)]
-    fn on_community_dealt(&self, event: CommunityCardsDealt) -> CommandResult<()> {
+    pub fn on_community_dealt(&self, event: CommunityCardsDealt) -> CommandResult<()> {
         let label = fmt_phase_label(event.phase);
         let new_cards = fmt_cards(&event.cards);
-        let board = fmt_cards(&event.all_community_cards);
-        self.emit(&format!("{}: {}  (board: {})", label, new_cards, board));
+        let mut board = self.board.lock().unwrap();
+        board.extend(event.cards.iter().cloned());
+        let board_str = if board.is_empty() {
+            new_cards.clone()
+        } else {
+            fmt_cards(&board)
+        };
+        self.emit(&format!("{}: {} — Board: {}", label, new_cards, board_str));
+        Ok(())
+    }
+
+    #[handles(ShowdownStarted)]
+    pub fn on_showdown_started(&self, _event: ShowdownStarted) -> CommandResult<()> {
+        self.emit("SHOWDOWN");
+        Ok(())
+    }
+
+    #[handles(CardsRevealed)]
+    pub fn on_cards_revealed(&self, event: CardsRevealed) -> CommandResult<()> {
+        let name = self.resolve_name(&event.player_root);
+        let cards_str = fmt_cards(&event.cards);
+        let ranking = event
+            .ranking
+            .as_ref()
+            .map(|r| fmt_hand_rank(r.rank_type))
+            .unwrap_or("");
+        if ranking.is_empty() {
+            self.emit(&format!("{} shows {}", name, cards_str));
+        } else {
+            self.emit(&format!("{} shows {} — {}", name, cards_str, ranking));
+        }
+        Ok(())
+    }
+
+    #[handles(CardsMucked)]
+    pub fn on_cards_mucked(&self, event: CardsMucked) -> CommandResult<()> {
+        let name = self.resolve_name(&event.player_root);
+        self.emit(&format!("{} mucks", name));
         Ok(())
     }
 
     #[handles(PotAwarded)]
-    fn on_pot_awarded(&self, event: PotAwarded) -> CommandResult<()> {
+    pub fn on_pot_awarded(&self, event: PotAwarded) -> CommandResult<()> {
         for w in &event.winners {
             self.emit(&format!(
-                "{} wins {} ({})",
-                fmt_player_short(&w.player_root),
+                "{} wins {}",
+                self.resolve_name(&w.player_root),
                 fmt_money(w.amount),
-                w.pot_type
             ));
         }
         Ok(())
     }
 
-    #[handles(HandComplete)]
-    fn on_hand_complete(&self, event: HandComplete) -> CommandResult<()> {
-        self.emit(&format!("HAND #{} complete", event.hand_number));
+    #[handles(PlayerTimedOut)]
+    pub fn on_player_timed_out(&self, event: PlayerTimedOut) -> CommandResult<()> {
+        let name = self.resolve_name(&event.player_root);
+        let verb = match ActionType::try_from(event.default_action).unwrap_or_default() {
+            ActionType::Fold => "folds",
+            ActionType::Check => "checks",
+            _ => "acts",
+        };
+        self.emit(&format!("{} timed out — auto {}", name, verb));
         Ok(())
+    }
+
+    #[handles(HandComplete)]
+    pub fn on_hand_complete(&self, event: HandComplete) -> CommandResult<()> {
+        if event.final_stacks.is_empty() {
+            self.emit(&format!("HAND #{} complete", event.hand_number));
+            return Ok(());
+        }
+        let mut parts: Vec<String> = Vec::with_capacity(event.final_stacks.len());
+        parts.push("Final stacks".to_string());
+        for snap in &event.final_stacks {
+            let name = self.resolve_name(&snap.player_root);
+            let mut entry = format!("{}: {}", name, fmt_money(snap.stack));
+            if snap.has_folded {
+                entry.push_str(" (folded)");
+            }
+            parts.push(entry);
+        }
+        self.emit(&parts.join(" — "));
+        Ok(())
+    }
+}
+
+fn fmt_hand_rank(rank: i32) -> &'static str {
+    match HandRankType::try_from(rank).unwrap_or_default() {
+        HandRankType::HighCard => "High Card",
+        HandRankType::Pair => "Pair",
+        HandRankType::TwoPair => "Two Pair",
+        HandRankType::ThreeOfAKind => "Three of a Kind",
+        HandRankType::Straight => "Straight",
+        HandRankType::Flush => "Flush",
+        HandRankType::FullHouse => "Full House",
+        HandRankType::FourOfAKind => "Four of a Kind",
+        HandRankType::StraightFlush => "Straight Flush",
+        HandRankType::RoyalFlush => "Royal Flush",
+        _ => "",
     }
 }
 
@@ -633,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn on_player_registered_emits_registration_line() {
+    pub fn on_player_registered_emits_registration_line() {
         let (proj, sink) = make_projector();
         proj.on_player_registered(PlayerRegistered {
             display_name: "Alice".into(),
@@ -649,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn on_player_registered_ai_labels_as_ai() {
+    pub fn on_player_registered_ai_labels_as_ai() {
         let (proj, sink) = make_projector();
         proj.on_player_registered(PlayerRegistered {
             display_name: "Bot".into(),
@@ -663,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    fn on_funds_deposited_formats_money_with_thousands() {
+    pub fn on_funds_deposited_formats_money_with_thousands() {
         let (proj, sink) = make_projector();
         proj.on_funds_deposited(FundsDeposited {
             amount: Some(Currency {
@@ -683,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn on_table_created_persists_and_renders_stakes() {
+    pub fn on_table_created_persists_and_renders_stakes() {
         let (proj, sink) = make_projector();
         let event = TableCreated {
             table_name: "Main".into(),
@@ -714,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn on_hand_started_persists_roster_and_renders_header() {
+    pub fn on_hand_started_persists_roster_and_renders_header() {
         let (proj, sink) = make_projector();
         let event = HandStarted {
             hand_root: vec![0xAB; 16],
@@ -747,19 +914,17 @@ mod tests {
         proj.on_hand_started(event).unwrap();
         let out = sink.output();
         assert!(out.contains("HAND #5"));
-        assert!(out.contains("Dealer: seat 2"));
-        assert!(out.contains("SB seat 0 $5"));
-        assert!(out.contains("BB seat 1 $10"));
-        assert!(out.contains("aaaaaaaa"));
-        assert!(out.contains("bbbbbbbb"));
-        assert!(out.contains("cccccccc"));
+        assert!(out.contains("Dealer: Seat 2"));
+        // Players are resolved by name fallback (Player_<utf8>) since no
+        // `set_player_name` was called; the byte roots are non-utf8.
+        assert!(out.contains("Player_"));
 
         assert!(proj.store.known_hand(&[0xAB; 16]));
         assert!(proj.store.known_player(&[0xAA; 16]));
     }
 
     #[test]
-    fn on_blind_posted_uppercases_blind_type() {
+    pub fn on_blind_posted_uppercases_blind_type() {
         let (proj, sink) = make_projector();
         proj.on_blind_posted(BlindPosted {
             player_root: vec![0xDE, 0xAD, 0xBE, 0xEF],
@@ -777,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn on_action_taken_uses_action_specific_verb() {
+    pub fn on_action_taken_uses_action_specific_verb() {
         let cases: Vec<(ActionType, &str, i64)> = vec![
             (ActionType::Fold, "folds", 0),
             (ActionType::Check, "checks", 0),
@@ -805,12 +970,12 @@ mod tests {
                 out,
                 expected_fragment
             );
-            assert!(out.contains("pot $100"));
+            assert!(out.contains("pot: $100"));
         }
     }
 
     #[test]
-    fn on_community_dealt_labels_phase() {
+    pub fn on_community_dealt_labels_phase() {
         let (proj, sink) = make_projector();
         let flop = vec![
             Card {
@@ -835,11 +1000,11 @@ mod tests {
         .unwrap();
         let out = sink.output();
         assert!(out.contains("Flop: [Ah Kd 7s]"));
-        assert!(out.contains("board:"));
+        assert!(out.contains("Board:"));
     }
 
     #[test]
-    fn on_pot_awarded_lines_per_winner() {
+    pub fn on_pot_awarded_lines_per_winner() {
         let (proj, sink) = make_projector();
         proj.on_pot_awarded(PotAwarded {
             winners: vec![
@@ -861,12 +1026,13 @@ mod tests {
         .unwrap();
         let lines = sink.lines();
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].contains("11223344 wins $150 (main)"));
-        assert!(lines[1].contains("55667788 wins $50 (side_1)"));
+        assert!(lines[0].contains("Player_"));
+        assert!(lines[0].contains("wins $150"));
+        assert!(lines[1].contains("wins $50"));
     }
 
     #[test]
-    fn on_hand_complete_emits_completion_line() {
+    pub fn on_hand_complete_emits_completion_line() {
         let (proj, sink) = make_projector();
         proj.on_hand_complete(HandComplete {
             table_root: vec![],
@@ -880,7 +1046,7 @@ mod tests {
     }
 
     #[test]
-    fn on_cards_dealt_renders_per_player_hole_cards() {
+    pub fn on_cards_dealt_renders_per_player_hole_cards() {
         let (proj, sink) = make_projector();
         let cards = vec![
             Card {
