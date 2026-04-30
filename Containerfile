@@ -216,19 +216,24 @@ RUN BUILD_DIR=$(ls -d target/x86_64-unknown-linux-musl/release/build/examples-pr
         cp -r /proto-cache/* "$BUILD_DIR/" 2>/dev/null || true; \
     fi
 
-# Clean workspace crate artifacts to force rebuild
+# Clean workspace crate artifacts to force rebuild from real source
+# (the builder-deps stage built against empty stub lib.rs files).
 RUN rm -rf target/x86_64-unknown-linux-musl/release/.fingerprint/agg-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/saga-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/pmg-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/prj-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/upc-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/hand-flow-oo-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/examples-proto-* \
+    target/x86_64-unknown-linux-musl/release/.fingerprint/examples-utils-* \
     target/x86_64-unknown-linux-musl/release/deps/libagg* \
     target/x86_64-unknown-linux-musl/release/deps/libsaga* \
     target/x86_64-unknown-linux-musl/release/deps/libpmg* \
     target/x86_64-unknown-linux-musl/release/deps/libprj* \
     target/x86_64-unknown-linux-musl/release/deps/libupc* \
-    target/x86_64-unknown-linux-musl/release/deps/libexamples_proto*
+    target/x86_64-unknown-linux-musl/release/deps/libhand_flow_oo* \
+    target/x86_64-unknown-linux-musl/release/deps/libexamples_proto* \
+    target/x86_64-unknown-linux-musl/release/deps/libexamples_utils*
 
 # Build all binaries
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
