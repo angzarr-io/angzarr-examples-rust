@@ -221,9 +221,18 @@ jobs:
       - name: Load example images from artifacts (PR)
         if: steps.images.outputs.build-examples == 'false' && github.event_name == 'pull_request'
         run: |
+          # Tarballs carry the PR-build tag (`pr-<N>-<sha>`); the chart's
+          # `tag: "latest"` references won't match, so load into the local
+          # docker daemon, retag as `:latest`, and load again into Kind.
+          # Mirrors what the build-locally branch above does.
           for tarball in /tmp/images/image-*/*.tar; do
             echo "Loading $tarball..."
-            kind load image-archive "$tarball" --name angzarr-test
+            img=$(docker load -i "$tarball" | grep -oE 'Loaded image: \S+' | awk '{print $NF}' | head -1)
+            base="${img%:*}"
+            echo "  loaded $img -> retag as $base:latest"
+            docker tag "$img" "$base:latest"
+            kind load docker-image "$img" --name angzarr-test
+            kind load docker-image "$base:latest" --name angzarr-test
           done
 
       - name: Pull and load provided example images (push)
