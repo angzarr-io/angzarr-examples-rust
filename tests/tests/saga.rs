@@ -646,8 +646,9 @@ fn trigger_source_domain(trigger: &Trigger) -> &'static str {
     }
 }
 
-#[then("the result is a examples.DealCards command to hand domain")]
-fn then_result_deal_cards(world: &mut SagaWorld) {
+#[then(expr = "the result is a {word} command to hand domain")]
+fn then_result_deal_cards(world: &mut SagaWorld, type_name: String) {
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     assert_eq!(world.result_commands.len(), 1);
     assert_eq!(
         world.result_commands[0].cover.as_ref().unwrap().domain,
@@ -655,8 +656,9 @@ fn then_result_deal_cards(world: &mut SagaWorld) {
     );
     let types = world.get_command_types();
     assert!(
-        types.iter().any(|t| t.ends_with("DealCards")),
-        "got {:?}",
+        types.iter().any(|t| t.ends_with(suffix)),
+        "expected {}, got {:?}",
+        suffix,
         types
     );
 }
@@ -674,8 +676,9 @@ fn then_deal_variant(world: &mut SagaWorld, variant: String) {
     then_game_variant(world, variant);
 }
 
-#[then("the result is a examples.EndHand command to table domain")]
-fn then_result_end_hand(world: &mut SagaWorld) {
+#[then(expr = "the result is a {word} command to table domain")]
+fn then_result_end_hand(world: &mut SagaWorld, type_name: String) {
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     assert_eq!(world.result_commands.len(), 1);
     assert_eq!(
         world.result_commands[0].cover.as_ref().unwrap().domain,
@@ -683,8 +686,9 @@ fn then_result_end_hand(world: &mut SagaWorld) {
     );
     let types = world.get_command_types();
     assert!(
-        types.iter().any(|t| t.ends_with("EndHand")),
-        "got {:?}",
+        types.iter().any(|t| t.ends_with(suffix)),
+        "expected {}, got {:?}",
+        suffix,
         types
     );
 }
@@ -729,8 +733,9 @@ fn then_n_commands_player(world: &mut SagaWorld, n: usize) {
     }
 }
 
-#[then("each command is a examples.ReleaseFunds")]
-fn then_each_release(world: &mut SagaWorld) {
+#[then(expr = "each command is a {word}")]
+fn then_each_command_is(world: &mut SagaWorld, type_name: String) {
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     for cb in &world.result_commands {
         let any = cb
             .pages
@@ -741,33 +746,23 @@ fn then_each_release(world: &mut SagaWorld) {
             })
             .expect("payload");
         assert!(
-            any.type_url.ends_with("ReleaseFunds"),
-            "got {}",
+            any.type_url.ends_with(suffix),
+            "expected {}, got {}",
+            suffix,
             any.type_url
         );
-        ReleaseFunds::decode(any.value.as_slice()).expect("decode ReleaseFunds");
+        match suffix {
+            "ReleaseFunds" => {
+                ReleaseFunds::decode(any.value.as_slice()).expect("decode ReleaseFunds");
+            }
+            "DepositFunds" => {
+                DepositFunds::decode(any.value.as_slice()).expect("decode DepositFunds");
+            }
+            _ => {}
+        }
     }
 }
 
-#[then("each command is a examples.DepositFunds")]
-fn then_each_deposit(world: &mut SagaWorld) {
-    for cb in &world.result_commands {
-        let any = cb
-            .pages
-            .first()
-            .and_then(|p| match &p.payload {
-                Some(command_page::Payload::Command(c)) => Some(c),
-                _ => None,
-            })
-            .expect("payload");
-        assert!(
-            any.type_url.ends_with("DepositFunds"),
-            "got {}",
-            any.type_url
-        );
-        DepositFunds::decode(any.value.as_slice()).expect("decode DepositFunds");
-    }
-}
 
 #[then(expr = "DepositFunds {int} has amount {int} for {string}")]
 fn then_deposit_index(world: &mut SagaWorld, idx: usize, amount: i64, player: String) {
