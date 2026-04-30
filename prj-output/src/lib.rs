@@ -372,16 +372,19 @@ impl PrettyOutputProjector {
         Self { store, sink }
     }
 
-    /// Construct a projector backed by an on-disk SQLite file, with output
-    /// directed at stdout. The DB path is read from `PRJ_PRETTY_OUTPUT_DB`
-    /// if set, falling back to `/tmp/pretty_output.db` (the container's
-    /// `/app` is owned by root + read-only for the `nonroot` user under
-    /// distroless, so a CWD-relative default fails to open).
+    /// Construct a projector with output directed at stdout. Uses
+    /// on-disk SQLite at `$PRJ_PRETTY_OUTPUT_DB` when the env var is set;
+    /// falls back to an in-memory store when unset (the distroless
+    /// runtime image has no writable filesystem path the `nonroot` user
+    /// can rely on, and the projector is read-only at the boundary —
+    /// scenarios that need persistence set the env var explicitly).
     pub fn from_env() -> Self {
-        let path: PathBuf = std::env::var("PRJ_PRETTY_OUTPUT_DB")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/tmp/pretty_output.db"));
-        let store = PrettyStore::open(&path).expect("open sqlite store");
+        let store = match std::env::var("PRJ_PRETTY_OUTPUT_DB") {
+            Ok(s) if !s.is_empty() => {
+                PrettyStore::open(&PathBuf::from(s)).expect("open sqlite store")
+            }
+            _ => PrettyStore::open_in_memory().expect("open in-memory sqlite store"),
+        };
         Self::new(store, Box::new(StdoutSink))
     }
 
