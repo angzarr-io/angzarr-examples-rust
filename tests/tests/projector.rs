@@ -581,22 +581,52 @@ fn given_timed_out(world: &mut ProjectorWorld, player: String, action: String) {
 
 #[given(expr = "an event with created_at {word}")]
 fn given_event_with_time(world: &mut ProjectorWorld, time: String) {
-    // The cluster runtime stamps timestamps from the event page; the
-    // projector only receives the body. To exercise the spec format
-    // without bringing the page-level wrapping into scope, prepend the
-    // timestamp here when the projector is configured to show them.
-    if world.projector.show_timestamps {
-        world
-            .sink
-            .write_line(&format!("[{}] Test registered", time));
-    } else {
-        world.sink.write_line("Test registered");
-    }
+    // Pass the timestamp into a real event body so the projector's
+    // `emit()` consults `show_timestamps` and prepends `[HH:MM:SS]`
+    // from the event's own `*_at` field. PlayerRegistered is the
+    // simplest single-line event with a timestamp slot.
+    let ts = parse_hms_to_timestamp(&time);
+    world
+        .projector
+        .on_player_registered(PlayerRegistered {
+            display_name: "Test".to_string(),
+            email: String::new(),
+            player_type: PlayerType::Human as i32,
+            ai_model_id: String::new(),
+            registered_at: Some(ts),
+        })
+        .unwrap();
 }
 
 #[given("an event with created_at")]
 fn given_event_with_default_time(world: &mut ProjectorWorld) {
-    world.sink.write_line("Test registered");
+    // No explicit time — pass a populated timestamp so the projector's
+    // show_timestamps=false path elides the prefix; the assertion is
+    // "the output does not start with [14:".
+    world
+        .projector
+        .on_player_registered(PlayerRegistered {
+            display_name: "Test".to_string(),
+            email: String::new(),
+            player_type: PlayerType::Human as i32,
+            ai_model_id: String::new(),
+            registered_at: Some(prost_types::Timestamp {
+                seconds: 52_200,
+                nanos: 0,
+            }),
+        })
+        .unwrap();
+}
+
+fn parse_hms_to_timestamp(s: &str) -> prost_types::Timestamp {
+    let mut parts = s.split(':');
+    let h: i64 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let m: i64 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let sec: i64 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    prost_types::Timestamp {
+        seconds: h * 3_600 + m * 60 + sec,
+        nanos: 0,
+    }
 }
 
 #[given("an event book with PlayerJoined and BlindPosted events")]
@@ -627,12 +657,31 @@ fn given_event_book(world: &mut ProjectorWorld) {
 
 #[given(expr = "an event with unknown type_url {string}")]
 fn given_unknown_event(world: &mut ProjectorWorld, type_url: String) {
-    // Production projector dispatches by type_url. The unknown-event
-    // arm is a router-level concern; since the scenario asserts on a
-    // string template we emit the spec'd line directly through the sink.
+    // Build an EventBook carrying an Any whose `type_url` matches no
+    // `#[handles]` arm, then drive it through the macro-generated
+    // `Handler::dispatch`. The framework emits a `tracing::warn!` and
+    // (because the projector declares `#[handles_unknown]`) calls
+    // `on_unknown`, which sinks the spec'd line.
+    use angzarr_client::proto::{event_page, EventBook, EventPage};
+    use angzarr_client::router::{Handler, HandlerRequest};
+    use prost_types::Any;
+
+    let book = EventBook {
+        cover: None,
+        pages: vec![EventPage {
+            payload: Some(event_page::Payload::Event(Any {
+                type_url,
+                value: Vec::new(),
+            })),
+            ..Default::default()
+        }],
+        snapshot: None,
+        next_sequence: 0,
+    };
     world
-        .sink
-        .write_line(&format!("[Unknown event type: {}]", type_url));
+        .projector
+        .dispatch(HandlerRequest::Projector(book))
+        .expect("dispatch ok");
 }
 
 // =========================================================================

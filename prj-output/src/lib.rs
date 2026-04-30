@@ -422,9 +422,28 @@ impl PrettyOutputProjector {
         format!("Player_{}", fmt_player_short(player_root))
     }
 
-    fn emit(&self, line: &str) {
-        self.sink.write_line(line);
+    fn emit(&self, line: &str, ts: Option<&prost_types::Timestamp>) {
+        if !self.show_timestamps {
+            self.sink.write_line(line);
+            return;
+        }
+        match ts {
+            Some(t) => self
+                .sink
+                .write_line(&format!("[{}] {line}", fmt_timestamp_hms(t))),
+            None => self.sink.write_line(line),
+        }
     }
+}
+
+/// Format a `prost_types::Timestamp` as `HH:MM:SS` (UTC, modulo a day —
+/// the projector's observability output asserts on the prefix only).
+fn fmt_timestamp_hms(ts: &prost_types::Timestamp) -> String {
+    let secs = ts.seconds.rem_euclid(86_400);
+    let h = (secs / 3_600) as u8;
+    let m = ((secs % 3_600) / 60) as u8;
+    let s = (secs % 60) as u8;
+    format!("{:02}:{:02}:{:02}", h, m, s)
 }
 
 #[projector(name = "pretty-output", domains = ["player", "table", "hand"])]
@@ -447,7 +466,10 @@ impl PrettyOutputProjector {
             (email, Some(k)) => format!(" ({}) as {}", email, k),
             (email, None) => format!(" ({})", email),
         };
-        self.emit(&format!("{} registered{}", event.display_name, suffix));
+        self.emit(
+            &format!("{} registered{}", event.display_name, suffix),
+            event.registered_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -455,11 +477,14 @@ impl PrettyOutputProjector {
     pub fn on_funds_deposited(&self, event: FundsDeposited) -> CommandResult<()> {
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
         let balance = event.new_balance.as_ref().map(|c| c.amount).unwrap_or(0);
-        self.emit(&format!(
-            "Deposited {}, balance: {}",
-            fmt_money(amount),
-            fmt_money(balance)
-        ));
+        self.emit(
+            &format!(
+                "Deposited {}, balance: {}",
+                fmt_money(amount),
+                fmt_money(balance)
+            ),
+            event.deposited_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -467,18 +492,24 @@ impl PrettyOutputProjector {
     pub fn on_funds_withdrawn(&self, event: FundsWithdrawn) -> CommandResult<()> {
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
         let balance = event.new_balance.as_ref().map(|c| c.amount).unwrap_or(0);
-        self.emit(&format!(
-            "Withdrew {}, balance: {}",
-            fmt_money(amount),
-            fmt_money(balance)
-        ));
+        self.emit(
+            &format!(
+                "Withdrew {}, balance: {}",
+                fmt_money(amount),
+                fmt_money(balance)
+            ),
+            event.withdrawn_at.as_ref(),
+        );
         Ok(())
     }
 
     #[handles(FundsReserved)]
     pub fn on_funds_reserved(&self, event: FundsReserved) -> CommandResult<()> {
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
-        self.emit(&format!("Reserved {}", fmt_money(amount)));
+        self.emit(
+            &format!("Reserved {}", fmt_money(amount)),
+            event.reserved_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -487,15 +518,18 @@ impl PrettyOutputProjector {
     #[handles(TableCreated)]
     pub fn on_table_created(&self, event: TableCreated) -> CommandResult<()> {
         let _ = self.store.record_table(&event);
-        self.emit(&format!(
-            "Table \"{}\" created: {} {}/{} (buy-in: {} - {})",
-            event.table_name,
-            fmt_variant(event.game_variant),
-            fmt_money(event.small_blind),
-            fmt_money(event.big_blind),
-            fmt_money(event.min_buy_in),
-            fmt_money(event.max_buy_in),
-        ));
+        self.emit(
+            &format!(
+                "Table \"{}\" created: {} {}/{} (buy-in: {} - {})",
+                event.table_name,
+                fmt_variant(event.game_variant),
+                fmt_money(event.small_blind),
+                fmt_money(event.big_blind),
+                fmt_money(event.min_buy_in),
+                fmt_money(event.max_buy_in),
+            ),
+            event.created_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -505,23 +539,25 @@ impl PrettyOutputProjector {
             .store
             .update_player_stack(&event.player_root, event.stack);
         let name = self.resolve_name(&event.player_root);
-        self.emit(&format!(
-            "{} joined at seat {} with {}",
-            name,
-            event.seat_position,
-            fmt_money(event.stack),
-        ));
+        self.emit(
+            &format!(
+                "{} joined at seat {} with {}",
+                name,
+                event.seat_position,
+                fmt_money(event.stack),
+            ),
+            event.joined_at.as_ref(),
+        );
         Ok(())
     }
 
     #[handles(PlayerLeft)]
     pub fn on_player_left(&self, event: PlayerLeft) -> CommandResult<()> {
         let name = self.resolve_name(&event.player_root);
-        self.emit(&format!(
-            "{} left with {}",
-            name,
-            fmt_money(event.chips_cashed_out)
-        ));
+        self.emit(
+            &format!("{} left with {}", name, fmt_money(event.chips_cashed_out)),
+            event.left_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -539,17 +575,20 @@ impl PrettyOutputProjector {
         } else {
             names.join(", ")
         };
-        self.emit(&format!(
-            "HAND #{} started — Dealer: Seat {} — Players: {}",
-            event.hand_number, event.dealer_position, players,
-        ));
+        self.emit(
+            &format!(
+                "HAND #{} started — Dealer: Seat {} — Players: {}",
+                event.hand_number, event.dealer_position, players,
+            ),
+            event.started_at.as_ref(),
+        );
         Ok(())
     }
 
     #[handles(HandEnded)]
     pub fn on_hand_ended(&self, event: HandEnded) -> CommandResult<()> {
         if event.results.is_empty() {
-            self.emit("Hand ended");
+            self.emit("Hand ended", event.ended_at.as_ref());
             return Ok(());
         }
         let parts: Vec<String> = event
@@ -563,7 +602,10 @@ impl PrettyOutputProjector {
                 )
             })
             .collect();
-        self.emit(&format!("Hand ended — {}", parts.join(", ")));
+        self.emit(
+            &format!("Hand ended — {}", parts.join(", ")),
+            event.ended_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -572,7 +614,7 @@ impl PrettyOutputProjector {
     #[handles(CardsDealt)]
     pub fn on_cards_dealt(&self, event: CardsDealt) -> CommandResult<()> {
         if event.player_cards.is_empty() {
-            self.emit("Cards dealt");
+            self.emit("Cards dealt", event.dealt_at.as_ref());
             return Ok(());
         }
         let lines: Vec<String> = event
@@ -586,7 +628,7 @@ impl PrettyOutputProjector {
                 )
             })
             .collect();
-        self.emit(&lines.join(" | "));
+        self.emit(&lines.join(" | "), event.dealt_at.as_ref());
         Ok(())
     }
 
@@ -598,12 +640,10 @@ impl PrettyOutputProjector {
             event.blind_type.to_uppercase()
         };
         let name = self.resolve_name(&event.player_root);
-        self.emit(&format!(
-            "{} posts {} {}",
-            name,
-            kind,
-            fmt_money(event.amount),
-        ));
+        self.emit(
+            &format!("{} posts {} {}", name, kind, fmt_money(event.amount),),
+            event.posted_at.as_ref(),
+        );
         Ok(())
     }
 
@@ -625,7 +665,7 @@ impl PrettyOutputProjector {
         if event.pot_total > 0 {
             msg.push_str(&format!(" (pot: {})", fmt_money(event.pot_total)));
         }
-        self.emit(&msg);
+        self.emit(&msg, event.action_at.as_ref());
         Ok(())
     }
 
@@ -640,13 +680,16 @@ impl PrettyOutputProjector {
         } else {
             fmt_cards(&board)
         };
-        self.emit(&format!("{}: {} — Board: {}", label, new_cards, board_str));
+        self.emit(
+            &format!("{}: {} — Board: {}", label, new_cards, board_str),
+            event.dealt_at.as_ref(),
+        );
         Ok(())
     }
 
     #[handles(ShowdownStarted)]
-    pub fn on_showdown_started(&self, _event: ShowdownStarted) -> CommandResult<()> {
-        self.emit("SHOWDOWN");
+    pub fn on_showdown_started(&self, event: ShowdownStarted) -> CommandResult<()> {
+        self.emit("SHOWDOWN", event.started_at.as_ref());
         Ok(())
     }
 
@@ -660,9 +703,15 @@ impl PrettyOutputProjector {
             .map(|r| fmt_hand_rank(r.rank_type))
             .unwrap_or("");
         if ranking.is_empty() {
-            self.emit(&format!("{} shows {}", name, cards_str));
+            self.emit(
+                &format!("{} shows {}", name, cards_str),
+                event.revealed_at.as_ref(),
+            );
         } else {
-            self.emit(&format!("{} shows {} — {}", name, cards_str, ranking));
+            self.emit(
+                &format!("{} shows {} — {}", name, cards_str, ranking),
+                event.revealed_at.as_ref(),
+            );
         }
         Ok(())
     }
@@ -670,18 +719,21 @@ impl PrettyOutputProjector {
     #[handles(CardsMucked)]
     pub fn on_cards_mucked(&self, event: CardsMucked) -> CommandResult<()> {
         let name = self.resolve_name(&event.player_root);
-        self.emit(&format!("{} mucks", name));
+        self.emit(&format!("{} mucks", name), event.mucked_at.as_ref());
         Ok(())
     }
 
     #[handles(PotAwarded)]
     pub fn on_pot_awarded(&self, event: PotAwarded) -> CommandResult<()> {
         for w in &event.winners {
-            self.emit(&format!(
-                "{} wins {}",
-                self.resolve_name(&w.player_root),
-                fmt_money(w.amount),
-            ));
+            self.emit(
+                &format!(
+                    "{} wins {}",
+                    self.resolve_name(&w.player_root),
+                    fmt_money(w.amount),
+                ),
+                event.awarded_at.as_ref(),
+            );
         }
         Ok(())
     }
@@ -694,14 +746,20 @@ impl PrettyOutputProjector {
             ActionType::Check => "checks",
             _ => "acts",
         };
-        self.emit(&format!("{} timed out — auto {}", name, verb));
+        self.emit(
+            &format!("{} timed out — auto {}", name, verb),
+            event.timed_out_at.as_ref(),
+        );
         Ok(())
     }
 
     #[handles(HandComplete)]
     pub fn on_hand_complete(&self, event: HandComplete) -> CommandResult<()> {
         if event.final_stacks.is_empty() {
-            self.emit(&format!("HAND #{} complete", event.hand_number));
+            self.emit(
+                &format!("HAND #{} complete", event.hand_number),
+                event.completed_at.as_ref(),
+            );
             return Ok(());
         }
         let mut parts: Vec<String> = Vec::with_capacity(event.final_stacks.len());
@@ -714,8 +772,17 @@ impl PrettyOutputProjector {
             }
             parts.push(entry);
         }
-        self.emit(&parts.join(" — "));
+        self.emit(&parts.join(" — "), event.completed_at.as_ref());
         Ok(())
+    }
+
+    /// Catch-all for events whose `type_url` matches no `#[handles]` arm.
+    /// The framework also emits a `tracing::warn!` regardless of whether
+    /// this method is declared; emitting a sink line gives observability
+    /// through the projector's own output channel.
+    #[handles_unknown]
+    pub fn on_unknown(&self, type_url: &str) {
+        self.emit(&format!("[Unknown event type: {}]", type_url), None);
     }
 }
 
