@@ -11,7 +11,7 @@ pub mod state;
 pub use state::PlayerState;
 
 use angzarr_client::proto::{BusinessResponse, EventBook, Notification};
-use angzarr_client::{applies, command_handler, handles, rejected, state_factory, CommandResult};
+use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
     DeductReservedFunds, DepositFunds, FundsDeducted, FundsDeposited, FundsReleased, FundsReserved,
     FundsTransferred, FundsWithdrawn, PlayerRegistered, RegisterPlayer, ReleaseFunds, ReserveFunds,

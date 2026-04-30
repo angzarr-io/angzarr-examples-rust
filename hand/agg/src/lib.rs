@@ -7,7 +7,7 @@ pub mod state;
 pub use state::{HandState, PlayerHandState, PotState};
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{command_handler, applies, handles, rejected, state_factory, CommandResult};
+use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
     ActionTaken, AwardPot, BettingRoundComplete, BlindPosted, CardsDealt, CommunityCardsDealt,
     DealCards, DealCommunityCards, DrawCompleted, HandComplete, PlayerAction, PostBlind,

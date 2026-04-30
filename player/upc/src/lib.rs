@@ -8,7 +8,7 @@
 //! schemas evolve.
 
 use angzarr_client::router::{Built, Router, UpcasterRouter};
-use angzarr_client::{state_factory, upcaster, upcasts};
+use angzarr_client::upcaster;
 use examples_proto::PlayerRegistered;
 
 struct PlayerUpcaster;
@@ -19,9 +19,6 @@ impl PlayerUpcaster {
     fn passthrough(old: PlayerRegistered) -> PlayerRegistered {
         old
     }
-
-    #[state_factory]
-    fn empty_state() -> () {}
 }
 
 // docs:start:upcaster_router

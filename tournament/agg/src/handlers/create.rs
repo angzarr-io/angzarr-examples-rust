@@ -5,7 +5,7 @@
 //! `features/example/unit/tournament.feature` (@EU-0803..@EU-0806).
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{CreateTournament, TournamentCreated};
 

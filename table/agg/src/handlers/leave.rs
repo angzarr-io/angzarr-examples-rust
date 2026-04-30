@@ -1,7 +1,7 @@
 //! LeaveTable command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{LeaveTable, PlayerLeft};
 

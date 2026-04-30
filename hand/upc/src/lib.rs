@@ -6,7 +6,7 @@
 //! evolve.
 
 use angzarr_client::router::{Built, Router, UpcasterRouter};
-use angzarr_client::{state_factory, upcaster, upcasts};
+use angzarr_client::upcaster;
 use examples_proto::CardsDealt;
 
 struct HandUpcaster;
@@ -17,9 +17,6 @@ impl HandUpcaster {
     fn passthrough(old: CardsDealt) -> CardsDealt {
         old
     }
-
-    #[state_factory]
-    fn empty_state() -> () {}
 }
 
 pub fn build_router() -> UpcasterRouter {

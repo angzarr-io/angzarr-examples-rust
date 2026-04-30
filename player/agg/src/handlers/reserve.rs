@@ -4,7 +4,7 @@
 //!      Update documentation when making changes to handler patterns.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Currency, FundsReserved, ReserveFunds};
 use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 

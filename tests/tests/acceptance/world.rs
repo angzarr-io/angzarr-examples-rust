@@ -3,6 +3,12 @@
 //! Mirrors Python's `context.players/tables/hands` bookkeeping — scenarios
 //! send commands via `CommandClient` and assert against tracked state maps.
 
+// Test-only infrastructure shared between the `acceptance` (cluster, gated
+// by the `acceptance-test` feature) and `poker_game_unit` (in-process)
+// targets. Different targets exercise different fields; the dead-code lint
+// can't see across feature gates, so silence it here rather than per-item.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use cucumber::World;

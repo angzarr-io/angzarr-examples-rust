@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use angzarr_client::proto::{
-    command_page::Payload as CommandPayload, event_page::Payload as EventPayload, EventBook,
+    command_page::Payload as CommandPayload, event_page::Payload as EventPayload,
     ProcessManagerHandleResponse,
 };
 use cucumber::{given, then, when, World};
@@ -197,15 +197,6 @@ fn first_command_any(resp: &ProcessManagerHandleResponse) -> &Any {
         CommandPayload::Command(a) => a,
         _ => panic!("expected Command payload"),
     }
-}
-
-fn first_command_domain(resp: &ProcessManagerHandleResponse) -> &str {
-    resp.commands[0]
-        .cover
-        .as_ref()
-        .expect("cover")
-        .domain
-        .as_str()
 }
 
 /// Find the first command in `resp` whose payload type ends with `suffix`.
@@ -808,7 +799,7 @@ fn then_advances(_world: &mut PMWorld) {}
 fn then_deal_community(world: &mut PMWorld, count: i32) {
     let expected = format!("DealCommunityCards:{}", count);
     assert!(
-        world.emitted_commands.iter().any(|c| *c == expected),
+        world.emitted_commands.contains(&expected),
         "Expected {}, got {:?}",
         expected,
         world.emitted_commands
@@ -856,7 +847,7 @@ fn then_excluded(world: &mut PMWorld) {
 #[then(expr = "the process manager sends PlayerAction with {word}")]
 fn then_auto_action(world: &mut PMWorld, action: String) {
     let expected = format!("PlayerAction:{}", action);
-    assert!(world.emitted_commands.iter().any(|c| *c == expected));
+    assert!(world.emitted_commands.contains(&expected));
 }
 
 #[then(expr = "all players have bet_this_round reset to {int}")]

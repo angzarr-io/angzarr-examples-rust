@@ -1,7 +1,7 @@
 //! DepositFunds command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 use examples_proto::{Currency, DepositFunds, FundsDeposited};
 

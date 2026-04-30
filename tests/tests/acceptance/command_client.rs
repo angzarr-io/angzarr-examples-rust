@@ -1,3 +1,6 @@
+// See `world.rs` for the rationale on the file-level dead-code allow.
+#![allow(dead_code)]
+
 //! CommandClient abstraction mirroring examples-python/main/tests/command_client.py.
 //!
 //! - InProcessClient: calls handler functions directly, maintains an in-memory

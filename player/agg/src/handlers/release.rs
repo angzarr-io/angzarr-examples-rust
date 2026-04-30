@@ -1,7 +1,7 @@
 //! ReleaseFunds command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Currency, FundsReleased, ReleaseFunds};
 use examples_utils::{event_page, pack_event, rejected};
 

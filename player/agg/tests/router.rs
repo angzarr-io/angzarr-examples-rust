@@ -66,7 +66,6 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
                 payload: Some(command_page::Payload::Command(any)),
                 ..Default::default()
             }],
-            ..Default::default()
         }),
         events: Some(EventBook {
             pages,

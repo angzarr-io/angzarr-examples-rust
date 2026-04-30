@@ -6,7 +6,7 @@ pub mod state;
 pub use state::TournamentState;
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{command_handler, applies, handles, rejected, state_factory, CommandResult};
+use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
     AdvanceBlindLevel, BlindLevelAdvanced, CloseRegistration, CompleteTournament, CreateTournament,
     EliminatePlayer, EnrollPlayer, OpenRegistration, PauseTournament, PlayerEliminated,
@@ -283,7 +283,7 @@ mod applier_tests {
             total_registrations: 0,
             closed_at: None,
         };
-        TournamentAggregate::apply_registration_closed(&mut state_a, event.clone());
+        TournamentAggregate::apply_registration_closed(&mut state_a, event);
         apply_registration_closed(&mut state_b, event);
         assert_eq!(state_a.status, state_b.status);
         assert_eq!(state_a.total_prize_pool, state_b.total_prize_pool);
@@ -364,7 +364,7 @@ mod applier_tests {
         assert_eq!(
             state
                 .registered_players
-                .get(&hex::encode(&[0xaau8]))
+                .get(&hex::encode([0xaau8]))
                 .unwrap()
                 .rebuys_used,
             1
@@ -444,7 +444,7 @@ mod applier_tests {
         assert_eq!(state.players_remaining, 1);
         assert!(!state
             .registered_players
-            .contains_key(&hex::encode(&[0xaau8])));
+            .contains_key(&hex::encode([0xaau8])));
     }
 
     #[test]

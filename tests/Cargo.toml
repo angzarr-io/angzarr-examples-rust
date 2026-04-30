@@ -84,3 +84,4 @@ harness = false
 [[test]]
 name = "acceptance"
 harness = false
+required-features = ["acceptance-test"]

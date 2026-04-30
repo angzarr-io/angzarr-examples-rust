@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::{
-    applies, command_handler, handles, CommandRejectedError, CommandResult, QueryClient,
+    command_handler, CommandResult, QueryClient,
 };
 use examples_proto::{
     BuyInConfirmed, BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, ConfirmRebuyFee,

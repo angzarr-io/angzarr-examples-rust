@@ -43,7 +43,7 @@ use angzarr_client::proto::{
     Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse,
     Uuid as ProtoUuid,
 };
-use angzarr_client::{applies, handles, process_manager, type_url, CommandResult, QueryClient};
+use angzarr_client::{process_manager, type_url, CommandResult, QueryClient};
 use examples_proto::{
     AddRebuyChips, BuyInCompleted, BuyInConfirmed, BuyInFailed, BuyInInitiated, BuyInPhase,
     BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, ConfirmRebuyFee,

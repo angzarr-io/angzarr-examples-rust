@@ -5,7 +5,7 @@
 //! a previously-reserved amount: bankroll AND reserved_funds drop.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Currency, DeductReservedFunds, FundsDeducted};
 use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 

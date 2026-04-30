@@ -21,8 +21,8 @@ use angzarr_client::proto::{
     Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse,
     Uuid as ProtoUuid,
 };
-use angzarr_client::{process_manager, type_url, CommandResult, handles, applies, rejected, state_factory};
-use examples_utils::{pack_event, rejected as rejected_fn};
+use angzarr_client::{process_manager, type_url, CommandResult};
+use examples_utils::pack_event;
 use examples_proto::{
     CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PlayerInHand, PostBlind,
 };
