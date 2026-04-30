@@ -1,7 +1,7 @@
 //! Pretty Output Projector gRPC server.
 
 use angzarr_client::router::{Built, Router};
-use angzarr_client::{run_projector_server, ProjectorHandler};
+use angzarr_client::run_projector_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use prj_pretty_output::PrettyOutputProjector;
@@ -29,7 +29,7 @@ async fn main() {
         panic!("expected Projector variant");
     };
 
-    run_projector_server("pretty-output", 50391, ProjectorHandler::new(pr))
+    run_projector_server(pr, 50391)
         .await
         .expect("Server failed");
 }

@@ -13,19 +13,20 @@ acceptance-test = ["tonic", "tokio-stream"]
 
 [dependencies]
 examples-proto.workspace = true
+examples-utils.workspace = true
 angzarr-client.workspace = true
 agg-player = { path = "../player/agg" }
 agg-table = { path = "../table/agg" }
 agg-hand = { path = "../hand/agg" }
 agg-tournament = { path = "../tournament/agg" }
-pmg-buy-in = { path = "../pmg-buy-in" }
-pmg-registration = { path = "../pmg-registration" }
-pmg-rebuy = { path = "../pmg-rebuy" }
+agg-reservation = { path = "../reservation/agg" }
+pmg-reservation = { path = "../pmg-reservation" }
 pmg-hand-flow = { path = "../pmg-hand-flow" }
 saga-table-hand = { path = "../table/saga-hand" }
 saga-hand-table = { path = "../hand/saga-table" }
 saga-table-player = { path = "../table/saga-player" }
 saga-hand-player = { path = "../hand/saga-player" }
+saga-player-table = { path = "../player/saga-table" }
 hex = { workspace = true }
 cucumber = "0.21"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

@@ -7,7 +7,7 @@ pub mod state;
 pub use state::{HandState, PlayerHandState, PotState};
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{aggregate, CommandResult};
+use angzarr_client::{command_handler, applies, handles, rejected, state_factory, CommandResult};
 use examples_proto::{
     ActionTaken, AwardPot, BettingRoundComplete, BlindPosted, CardsDealt, CommunityCardsDealt,
     DealCards, DealCommunityCards, DrawCompleted, HandComplete, PlayerAction, PostBlind,
@@ -22,7 +22,7 @@ use crate::state::{
 
 pub struct HandAggregate;
 
-#[aggregate(domain = "hand", state = HandState)]
+#[command_handler(domain = "hand", state = HandState)]
 impl HandAggregate {
     #[state_factory]
     fn default_state() -> HandState {

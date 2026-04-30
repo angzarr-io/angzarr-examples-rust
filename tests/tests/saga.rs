@@ -616,8 +616,13 @@ fn given_router_three(world: &mut SagaWorld) {
 fn when_dispatch(world: &mut SagaWorld, dest: String) {
     let trigger = world.trigger.as_ref().expect("trigger set");
     let any = trigger_to_any(trigger);
+    let source_domain = trigger_source_domain(trigger);
     let req = SagaHandleRequest {
         source: Some(EventBook {
+            cover: Some(angzarr_client::proto::Cover {
+                domain: source_domain.to_string(),
+                ..Default::default()
+            }),
             pages: vec![EventPage {
                 payload: Some(event_page::Payload::Event(any)),
                 ..Default::default()
@@ -630,6 +635,15 @@ fn when_dispatch(world: &mut SagaWorld, dest: String) {
     let router = build_saga_router(&world.router_sagas);
     let resp = router.dispatch(req).unwrap_or_default();
     world.result_commands = resp.commands;
+}
+
+fn trigger_source_domain(trigger: &Trigger) -> &'static str {
+    match trigger {
+        Trigger::HandStarted(_) => "table",
+        Trigger::HandComplete(_) => "hand",
+        Trigger::HandEnded(_) => "table",
+        Trigger::PotAwarded(_) => "hand",
+    }
 }
 
 #[then("the result is a examples.DealCards command to hand domain")]

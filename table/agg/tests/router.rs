@@ -3,7 +3,7 @@
 use agg_table::TableAggregate;
 use angzarr_client::proto::{
     business_response, command_page, event_page, BusinessResponse, CommandBook, CommandPage,
-    ContextualCommand, EventBook, EventPage,
+    ContextualCommand, Cover, EventBook, EventPage,
 };
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
@@ -51,6 +51,10 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
     let next_seq = pages.len() as u32;
     ContextualCommand {
         command: Some(CommandBook {
+            cover: Some(Cover {
+                domain: "table".to_string(),
+                ..Default::default()
+            }),
             pages: vec![CommandPage {
                 payload: Some(command_page::Payload::Command(any)),
                 ..Default::default()

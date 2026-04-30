@@ -1,24 +1,25 @@
 //! RegisterPlayer command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::{CommandRejectedError, CommandResult};
+use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{PlayerRegistered, RegisterPlayer};
 
 use crate::state::PlayerState;
 
 fn register_player_guard(state: &PlayerState) -> CommandResult<()> {
     if state.exists() {
-        return Err(CommandRejectedError::new("Player already exists"));
+        return Err(rejected("Player already exists"));
     }
     Ok(())
 }
 
 fn register_player_validate(cmd: &RegisterPlayer) -> CommandResult<()> {
     if cmd.display_name.is_empty() {
-        return Err(CommandRejectedError::new("display_name is required"));
+        return Err(rejected("display_name is required"));
     }
     if cmd.email.is_empty() {
-        return Err(CommandRejectedError::new("email is required"));
+        return Err(rejected("email is required"));
     }
     Ok(())
 }

@@ -35,7 +35,7 @@ impl TableHandSaga {
         };
 
         let command_any = Any {
-            type_url: "type.googleapis.com/examples.DealCards".to_string(),
+            type_url: angzarr_client::full_type_url::<DealCards>(),
             value: deal_cards.encode_to_vec(),
         };
 

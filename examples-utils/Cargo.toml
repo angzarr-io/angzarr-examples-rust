@@ -1,0 +1,9 @@
+[package]
+name = "examples-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+angzarr-client = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }

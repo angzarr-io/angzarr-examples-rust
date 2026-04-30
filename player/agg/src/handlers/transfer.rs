@@ -1,14 +1,15 @@
 //! TransferFunds command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::{CommandRejectedError, CommandResult};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 use examples_proto::{Currency, FundsTransferred, TransferFunds};
 
 use crate::state::PlayerState;
 
 fn transfer_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Player does not exist"));
+        return Err(rejected("Player does not exist"));
     }
     Ok(())
 }
@@ -16,9 +17,7 @@ fn transfer_funds_guard(state: &PlayerState) -> CommandResult<()> {
 fn transfer_funds_validate(cmd: &TransferFunds) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount == 0 {
-        return Err(CommandRejectedError::invalid_argument(
-            "amount must be non-zero",
-        ));
+        return Err(invalid_arg("amount must be non-zero"));
     }
     Ok(amount)
 }

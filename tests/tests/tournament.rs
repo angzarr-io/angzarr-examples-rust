@@ -29,7 +29,7 @@ use examples_proto::{
 use prost_types::Any;
 
 fn pack<T: prost::Message + prost::Name>(event: &T) -> Any {
-    angzarr_client::pack_event(event, &T::full_name())
+    examples_utils::pack_event(event, &T::full_name())
 }
 
 fn player_root_bytes(label: &str) -> Vec<u8> {
@@ -346,7 +346,7 @@ fn given_running_with_n_players(
                 }
             }
         }
-        Err(e) => panic!("start failed: {}", e.reason),
+        Err(e) => panic!("start failed: {}", e.message),
     }
     // Inject a post-start status flip via a "started_at" paused/resumed noop:
     // use apply_resumed which sets status to Running. Seed a TournamentResumed
@@ -470,81 +470,20 @@ fn when_eliminate_player_with_hand(world: &mut TournamentWorld, label: String, h
 
 // --- Then steps ---
 
-macro_rules! result_is {
-    ($name:ident, $ty:ty, $event_name:expr) => {
-        #[then($event_name)]
-        fn $name(world: &mut TournamentWorld) {
-            let event = world.get_last_event().expect("No event found");
-            assert!(
-                angzarr_client::type_matches::<$ty>(event),
-                "Expected {} but got {}",
-                stringify!($ty),
-                event.type_url
-            );
-        }
-    };
+#[then(expr = "the result is a {word} event")]
+fn result_is_event(world: &mut TournamentWorld, type_name: String) {
+    let event = world.get_last_event().expect("No event found");
+    let suffix = type_name
+        .rsplit('.')
+        .next()
+        .unwrap_or(type_name.as_str());
+    assert!(
+        event.type_url.ends_with(suffix),
+        "Expected event ending in {} but got {}",
+        suffix,
+        event.type_url,
+    );
 }
-
-result_is!(
-    result_is_tournament_created,
-    TournamentCreated,
-    "the result is a examples.TournamentCreated event"
-);
-result_is!(
-    result_is_registration_opened,
-    RegistrationOpened,
-    "the result is a examples.RegistrationOpened event"
-);
-result_is!(
-    result_is_registration_closed,
-    RegistrationClosed,
-    "the result is a examples.RegistrationClosed event"
-);
-result_is!(
-    result_is_player_enrolled,
-    TournamentPlayerEnrolled,
-    "the result is a examples.TournamentPlayerEnrolled event"
-);
-result_is!(
-    result_is_enrollment_rejected,
-    TournamentEnrollmentRejected,
-    "the result is a examples.TournamentEnrollmentRejected event"
-);
-result_is!(
-    result_is_rebuy_denied,
-    RebuyDenied,
-    "the result is a examples.RebuyDenied event"
-);
-result_is!(
-    result_is_tournament_started,
-    TournamentStarted,
-    "the result is a examples.TournamentStarted event"
-);
-result_is!(
-    result_is_blind_level_advanced,
-    BlindLevelAdvanced,
-    "the result is a examples.BlindLevelAdvanced event"
-);
-result_is!(
-    result_is_player_eliminated,
-    PlayerEliminated,
-    "the result is a examples.PlayerEliminated event"
-);
-result_is!(
-    result_is_tournament_paused,
-    TournamentPaused,
-    "the result is a examples.TournamentPaused event"
-);
-result_is!(
-    result_is_tournament_resumed,
-    TournamentResumed,
-    "the result is a examples.TournamentResumed event"
-);
-result_is!(
-    result_is_rebuy_processed,
-    RebuyProcessed,
-    "the result is a examples.RebuyProcessed event"
-);
 
 #[then(expr = "the command fails with status {string}")]
 fn then_command_fails_with_status(world: &mut TournamentWorld, status: String) {
@@ -555,7 +494,7 @@ fn then_command_fails_with_status(world: &mut TournamentWorld, status: String) {
     assert_eq!(
         err.status_code, status,
         "Expected status {}, got {} (reason={:?})",
-        status, err.status_code, err.reason
+        status, err.status_code, err.message
     );
 }
 
@@ -563,10 +502,12 @@ fn then_command_fails_with_status(world: &mut TournamentWorld, status: String) {
 fn then_error_contains(world: &mut TournamentWorld, expected: String) {
     let err = world.last_error.as_ref().expect("No error found");
     assert!(
-        err.reason.to_lowercase().contains(&expected.to_lowercase()),
+        err.message
+            .to_lowercase()
+            .contains(&expected.to_lowercase()),
         "Expected error to contain '{}' but got '{}'",
         expected,
-        err.reason
+        err.message
     );
 }
 
