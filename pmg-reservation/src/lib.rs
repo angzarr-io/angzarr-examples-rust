@@ -31,8 +31,13 @@
 //!     tournament.TournamentEnrollmentRejected → reservation.ReleaseRegistrationFee
 //!     reservation.RegistrationFeeReleased → player.ReleaseFunds
 
+pub mod cross_aggregate_state;
 pub mod state;
 
+pub use cross_aggregate_state::{
+    fetch_table_state, fetch_tournament_state, table_state_from_event_book,
+    tournament_state_from_event_book, CrossAggregateQuery, TableStateHelper, TournamentStateHelper,
+};
 pub use state::{Kind, ReservationPMState};
 
 use std::sync::Arc;
@@ -43,7 +48,7 @@ use angzarr_client::proto::{
     Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse,
     Uuid as ProtoUuid,
 };
-use angzarr_client::{process_manager, type_url, CommandResult, QueryClient};
+use angzarr_client::{process_manager, type_url, CommandResult};
 use examples_proto::{
     AddRebuyChips, BuyInCompleted, BuyInConfirmed, BuyInFailed, BuyInInitiated, BuyInPhase,
     BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, ConfirmRebuyFee,
@@ -53,7 +58,7 @@ use examples_proto::{
     RebuyRequested, RegistrationCompleted, RegistrationFailed, RegistrationFeeConfirmed,
     RegistrationFeeReleased, RegistrationInitiated, RegistrationPhase, RegistrationRequested,
     ReleaseBuyIn, ReleaseFunds, ReleaseRebuyFee, ReleaseRegistrationFee, ReserveFunds, SeatPlayer,
-    SeatingRejected, TournamentEnrollmentRejected, TournamentPlayerEnrolled,
+    SeatingRejected, TournamentEnrollmentRejected, TournamentPlayerEnrolled, TournamentStatus,
 };
 use examples_utils::pack_event;
 use prost::Message;
@@ -132,7 +137,7 @@ fn failure(code: &str, message: &str, phase: &str) -> OrchestrationFailure {
 /// Consolidated reservation process manager.
 #[derive(Default)]
 pub struct ReservationPm {
-    query_client: Option<Arc<QueryClient>>,
+    query: Option<Arc<dyn CrossAggregateQuery>>,
 }
 
 impl ReservationPm {
@@ -140,18 +145,123 @@ impl ReservationPm {
         Self::default()
     }
 
-    pub fn with_query_client(query_client: Arc<QueryClient>) -> Self {
-        Self {
-            query_client: Some(query_client),
+    /// Inject a synchronous cross-aggregate query implementation.
+    ///
+    /// Live cluster runs leave this as `None` — the destination aggregate
+    /// re-validates anyway and the async gRPC `QueryClient` can't be driven
+    /// from a `#[handles]` body without nesting runtimes. Tests inject an
+    /// in-memory fixture that serves event books from a fake backing store.
+    pub fn with_query(query: Arc<dyn CrossAggregateQuery>) -> Self {
+        Self { query: Some(query) }
+    }
+
+    fn query(&self) -> Option<&dyn CrossAggregateQuery> {
+        self.query.as_deref()
+    }
+
+    fn fail_buy_in(
+        &self,
+        reservation_id: &[u8],
+        player_root: &[u8],
+        table_root: &[u8],
+        code: &str,
+        message: &str,
+        phase: &str,
+    ) -> ProcessManagerHandleResponse {
+        let release = ReleaseBuyIn {
+            reservation_id: reservation_id.to_vec(),
+            reason: message.to_string(),
+        };
+        let failed = BuyInFailed {
+            player_root: player_root.to_vec(),
+            table_root: table_root.to_vec(),
+            reservation_id: reservation_id.to_vec(),
+            failure: Some(failure(code, message, phase)),
+        };
+        ProcessManagerHandleResponse {
+            commands: vec![make_command(
+                "reservation",
+                reservation_id,
+                "examples.ReleaseBuyIn",
+                &release,
+            )],
+            process_events: vec![single_event_book(
+                PM_DOMAIN,
+                reservation_id,
+                pack_event(&failed, "examples.BuyInFailed"),
+            )],
+            facts: vec![],
         }
     }
 
-    /// Reads the configured query client (used in cross-aggregate sync DECISION
-    /// pre-validation). Currently soft-skipped: the async client cannot be
-    /// driven from the sync `#[handles]` signature without nesting runtimes,
-    /// so live cluster runs lean on the destination aggregate to re-validate.
-    pub fn query_client(&self) -> Option<&Arc<QueryClient>> {
-        self.query_client.as_ref()
+    fn fail_rebuy(
+        &self,
+        reservation_id: &[u8],
+        player_root: &[u8],
+        tournament_root: &[u8],
+        code: &str,
+        message: &str,
+        phase: &str,
+    ) -> ProcessManagerHandleResponse {
+        let release = ReleaseRebuyFee {
+            reservation_id: reservation_id.to_vec(),
+            reason: message.to_string(),
+        };
+        let failed = RebuyFailed {
+            player_root: player_root.to_vec(),
+            tournament_root: tournament_root.to_vec(),
+            reservation_id: reservation_id.to_vec(),
+            failure: Some(failure(code, message, phase)),
+        };
+        ProcessManagerHandleResponse {
+            commands: vec![make_command(
+                "reservation",
+                reservation_id,
+                "examples.ReleaseRebuyFee",
+                &release,
+            )],
+            process_events: vec![single_event_book(
+                PM_DOMAIN,
+                reservation_id,
+                pack_event(&failed, "examples.RebuyFailed"),
+            )],
+            facts: vec![],
+        }
+    }
+
+    fn fail_registration(
+        &self,
+        reservation_id: &[u8],
+        player_root: &[u8],
+        tournament_root: &[u8],
+        code: &str,
+        message: &str,
+        phase: &str,
+    ) -> ProcessManagerHandleResponse {
+        let release = ReleaseRegistrationFee {
+            reservation_id: reservation_id.to_vec(),
+            reason: message.to_string(),
+        };
+        let failed = RegistrationFailed {
+            player_root: player_root.to_vec(),
+            tournament_root: tournament_root.to_vec(),
+            reservation_id: reservation_id.to_vec(),
+            failure: Some(failure(code, message, phase)),
+        };
+        ProcessManagerHandleResponse {
+            commands: vec![make_command(
+                "reservation",
+                reservation_id,
+                "examples.ReleaseRegistrationFee",
+                &release,
+            )],
+            process_events: vec![single_event_book(
+                PM_DOMAIN,
+                reservation_id,
+                pack_event(&failed, "examples.RegistrationFailed"),
+            )],
+            facts: vec![],
+        }
     }
 }
 
@@ -174,6 +284,51 @@ impl ReservationPm {
         _state: &ReservationPMState,
     ) -> CommandResult<ProcessManagerHandleResponse> {
         let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
+
+        // Pre-validate against live table state where available.
+        let tbl = fetch_table_state(self.query(), &event.table_root);
+        if tbl.max_players > 0 {
+            if amount < tbl.min_buy_in {
+                return Ok(self.fail_buy_in(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.table_root,
+                    "INVALID_AMOUNT",
+                    &format!("amount {} below minimum {}", amount, tbl.min_buy_in),
+                    "VALIDATING",
+                ));
+            }
+            if amount > tbl.max_buy_in {
+                return Ok(self.fail_buy_in(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.table_root,
+                    "INVALID_AMOUNT",
+                    &format!("amount {} exceeds maximum {}", amount, tbl.max_buy_in),
+                    "VALIDATING",
+                ));
+            }
+            if (tbl.seats.len() as i32) >= tbl.max_players {
+                return Ok(self.fail_buy_in(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.table_root,
+                    "TABLE_FULL",
+                    "table has no available seats",
+                    "VALIDATING",
+                ));
+            }
+            if event.seat >= 0 && tbl.seats.contains_key(&event.seat) {
+                return Ok(self.fail_buy_in(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.table_root,
+                    "SEAT_OCCUPIED",
+                    &format!("seat {} is occupied", event.seat),
+                    "VALIDATING",
+                ));
+            }
+        }
 
         let reserve = ReserveFunds {
             amount: Some(currency(amount)),
@@ -357,7 +512,49 @@ impl ReservationPm {
         event: RebuyRequested,
         _state: &ReservationPMState,
     ) -> CommandResult<ProcessManagerHandleResponse> {
-        let fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
+        let event_fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
+
+        let tour = fetch_tournament_state(self.query(), &event.tournament_root);
+        let tbl = fetch_table_state(self.query(), &event.table_root);
+
+        let tournament_loaded = tour.status != TournamentStatus::Unspecified;
+        let table_loaded = tbl.max_players > 0;
+
+        if tournament_loaded {
+            let running = tour.status == TournamentStatus::TournamentRunning;
+            if !running || !tour.rebuy_allowed {
+                return Ok(self.fail_rebuy(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.tournament_root,
+                    "TOURNAMENT_NOT_RUNNING",
+                    "tournament is not accepting rebuys",
+                    "VALIDATING",
+                ));
+            }
+        }
+
+        if table_loaded {
+            let seated_at = tbl.find_seat_by_player(&event.player_root);
+            if seated_at.is_none() || seated_at != Some(event.seat) {
+                return Ok(self.fail_rebuy(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.tournament_root,
+                    "NOT_SEATED",
+                    &format!("player is not seated at position {}", event.seat),
+                    "VALIDATING",
+                ));
+            }
+        }
+
+        // Fee: prefer tournament config; fall back to event for tests
+        // without a query client.
+        let fee = if tour.rebuy_cost > 0 {
+            tour.rebuy_cost
+        } else {
+            event_fee
+        };
 
         let reserve = ReserveFunds {
             amount: Some(currency(fee)),
@@ -375,7 +572,7 @@ impl ReservationPm {
             reservation_id: event.reservation_id.clone(),
             seat: event.seat,
             fee: Some(currency(fee)),
-            chips_to_add: 0,
+            chips_to_add: tour.rebuy_chips,
             phase: RebuyPhase::RebuyApproving as i32,
             initiated_at: Some(angzarr_client::now()),
         };
@@ -566,7 +763,52 @@ impl ReservationPm {
         event: RegistrationRequested,
         _state: &ReservationPMState,
     ) -> CommandResult<ProcessManagerHandleResponse> {
-        let fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
+        let event_fee = event.fee.as_ref().map(|c| c.amount).unwrap_or(0);
+
+        let tour = fetch_tournament_state(self.query(), &event.tournament_root);
+
+        if tour.max_players > 0 {
+            if !tour.registration_open {
+                return Ok(self.fail_registration(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.tournament_root,
+                    "REGISTRATION_CLOSED",
+                    "tournament is not accepting registrations",
+                    "VALIDATING",
+                ));
+            }
+            if tour.registered_count >= tour.max_players {
+                return Ok(self.fail_registration(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.tournament_root,
+                    "REGISTRATION_CLOSED",
+                    "tournament is full",
+                    "VALIDATING",
+                ));
+            }
+            if !event.player_root.is_empty()
+                && tour
+                    .registered_players
+                    .contains(&hex::encode(&event.player_root))
+            {
+                return Ok(self.fail_registration(
+                    &event.reservation_id,
+                    &event.player_root,
+                    &event.tournament_root,
+                    "ALREADY_REGISTERED",
+                    "player is already registered",
+                    "VALIDATING",
+                ));
+            }
+        }
+
+        let fee = if tour.buy_in > 0 {
+            tour.buy_in
+        } else {
+            event_fee
+        };
 
         let reserve = ReserveFunds {
             amount: Some(currency(fee)),

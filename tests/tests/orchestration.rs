@@ -1,28 +1,28 @@
 //! Process Manager orchestration BDD tests.
 //!
-//! Drives BuyIn / Rebuy / Registration trigger events through
-//! `ReservationPm` (replaces former pmg-buy-in / pmg-rebuy /
-//! pmg-registration) and asserts on the cross-aggregate command stream
-//! plus PM process events.
-//!
-//! Pre-validation guards (buy-in too low/high, table full, registration
-//! closed, rebuy window closed, player not seated) are simulated in the
-//! step defs themselves rather than dispatched through `ReservationPm`,
-//! mirroring the same approach examples-python takes — the rust PM is
-//! intentionally thin and would otherwise need a sync DECISION query
-//! path against table/tournament aggregates to gate these.
+//! Drives BuyIn / Rebuy / Registration trigger events through the real
+//! `pmg_reservation::ReservationPm`. Pre-validation (buy-in too low/high,
+//! seat occupied, table full, registration closed, rebuy window closed,
+//! player not seated) is exercised by injecting a `FakeQueryClient` that
+//! holds in-memory event books — the PM queries it synchronously via the
+//! `CrossAggregateQuery` trait and emits the real `*Failed` events.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use angzarr_client::proto::{command_page, event_page, ProcessManagerHandleResponse};
-use angzarr_client::{now, type_name_from_url, unpack};
+use angzarr_client::proto::{
+    command_page, event_page, event_page::Payload as EventPayload, page_header::SequenceType,
+    EventBook, EventPage, PageHeader, ProcessManagerHandleResponse,
+};
+use angzarr_client::{type_name_from_url, unpack};
 use cucumber::{given, then, when, World};
 use examples_proto::{
-    BuyInFailed, BuyInRequested, Currency, OrchestrationFailure, PlayerSeated, RebuyChipsAdded,
-    RebuyDenied, RebuyFailed, RebuyProcessed, RebuyRequested, RegistrationFailed,
-    RegistrationRequested, SeatingRejected, TournamentEnrollmentRejected, TournamentPlayerEnrolled,
+    BuyInRequested, Currency, GameVariant, PlayerJoined, RebuyChipsAdded, RebuyConfig, RebuyDenied,
+    RebuyProcessed, RebuyRequested, RegistrationClosed, RegistrationOpened, RegistrationRequested,
+    SeatingRejected, TableCreated, TournamentCreated, TournamentEnrollmentRejected,
+    TournamentPlayerEnrolled, TournamentStarted,
 };
-use pmg_reservation::{Kind, ReservationPMState, ReservationPm};
+use pmg_reservation::{CrossAggregateQuery, Kind, ReservationPMState, ReservationPm};
 use poker_tests::uuid_for;
 use prost_types::Any;
 
@@ -30,6 +30,62 @@ fn currency(amount: i64) -> Currency {
     Currency {
         amount,
         currency_code: "CHIPS".to_string(),
+    }
+}
+
+fn pack<M: prost::Message + prost::Name>(msg: &M) -> Any {
+    examples_utils::pack_event(msg, &M::full_name())
+}
+
+fn event_page_for(any: Any) -> EventPage {
+    EventPage {
+        header: Some(PageHeader {
+            sequence_type: Some(SequenceType::Sequence(0)),
+        }),
+        created_at: Some(angzarr_client::now()),
+        no_commit: false,
+        cascade_id: None,
+        payload: Some(EventPayload::Event(any)),
+    }
+}
+
+// =============================================================================
+// FakeQueryClient — in-memory event-book backing store
+// =============================================================================
+
+#[derive(Default)]
+struct FakeQueryClientInner {
+    books: HashMap<(String, Vec<u8>), Vec<Any>>,
+}
+
+#[derive(Default)]
+pub struct FakeQueryClient {
+    inner: Mutex<FakeQueryClientInner>,
+}
+
+impl FakeQueryClient {
+    fn append(&self, domain: &str, root: &[u8], event: Any) {
+        let mut inner = self.inner.lock().unwrap();
+        inner
+            .books
+            .entry((domain.to_string(), root.to_vec()))
+            .or_default()
+            .push(event);
+    }
+}
+
+impl CrossAggregateQuery for FakeQueryClient {
+    fn get_event_book(&self, domain: &str, root: &[u8]) -> Option<EventBook> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .books
+            .get(&(domain.to_string(), root.to_vec()))
+            .map(|events| EventBook {
+                cover: None,
+                pages: events.iter().cloned().map(event_page_for).collect(),
+                snapshot: None,
+                next_sequence: 0,
+            })
     }
 }
 
@@ -52,45 +108,11 @@ pub struct OrchestrationWorld {
     /// matching RebuyRequested event can carry the right seat.
     seat_hint: i32,
 
-    /// Pre-validation context populated by `Given` steps — mirrors the
-    /// fields python's orchestration_steps.py stashes on its `context`.
-    table: TableContext,
-    tournament: TournamentContext,
-    /// True when a `a table with the player seated …` Given fired;
-    /// rebuy validation gates on this.
-    player_seated: bool,
+    fake: Arc<FakeQueryClient>,
 
     emitted_commands: Vec<String>,
     emitted_events: Vec<Any>,
     pm_invoked: bool,
-}
-
-#[derive(Debug, Clone)]
-struct TableContext {
-    min_buy_in: i64,
-    max_buy_in: i64,
-    max_players: i32,
-    occupied_seats: HashSet<i32>,
-}
-
-impl Default for TableContext {
-    fn default() -> Self {
-        // Permissive defaults so non-rejection scenarios don't trip the
-        // pre-validation guards. Specific Givens overwrite these.
-        Self {
-            min_buy_in: 0,
-            max_buy_in: i64::MAX,
-            max_players: 9,
-            occupied_seats: HashSet::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct TournamentContext {
-    is_full: bool,
-    registration_closed: bool,
-    rebuy_window_closed: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -114,11 +136,6 @@ impl std::fmt::Debug for OrchestrationWorld {
 impl OrchestrationWorld {
     fn new() -> Self {
         Self::default()
-    }
-
-    fn record_failure_event(&mut self, event_any: Any) {
-        self.emitted_events.push(event_any);
-        self.pm_invoked = true;
     }
 
     fn record_response(&mut self, response: ProcessManagerHandleResponse) {
@@ -153,19 +170,63 @@ impl OrchestrationWorld {
             .find(|a| type_name_from_url(&a.type_url).ends_with(suffix))
             .cloned()
     }
+
+    fn pm(&self) -> ReservationPm {
+        // The fake query client is shared; clone the Arc so the PM holds
+        // a trait object referring to the same backing store.
+        let q: Arc<dyn CrossAggregateQuery> = self.fake.clone();
+        ReservationPm::with_query(q)
+    }
 }
 
 // =============================================================================
 // Given steps — BuyIn scenarios
 // =============================================================================
 
+fn seed_table(
+    world: &OrchestrationWorld,
+    min_buy_in: i64,
+    max_buy_in: i64,
+    max_players: i32,
+    occupied: &[i32],
+) {
+    world.fake.append(
+        "table",
+        &world.table_root,
+        pack(&TableCreated {
+            table_name: "Test".to_string(),
+            game_variant: GameVariant::TexasHoldem as i32,
+            small_blind: 1,
+            big_blind: 2,
+            min_buy_in,
+            max_buy_in,
+            max_players,
+            action_timeout_seconds: 30,
+            created_at: None,
+        }),
+    );
+    for (i, seat) in occupied.iter().enumerate() {
+        let other = uuid_for(&format!("other-player-{}", i));
+        world.fake.append(
+            "table",
+            &world.table_root,
+            pack(&PlayerJoined {
+                player_root: other,
+                seat_position: *seat,
+                buy_in_amount: 500,
+                stack: 500,
+                joined_at: None,
+            }),
+        );
+    }
+}
+
 #[given(expr = "a table with seat {int} available and buy-in range {int}-{int}")]
 fn given_table_available(world: &mut OrchestrationWorld, _seat: i32, min: i64, max: i64) {
     world.player_root = uuid_for("test-player");
     world.table_root = uuid_for("test-table");
     world.reservation_id = uuid_for("test-reservation");
-    world.table.min_buy_in = min;
-    world.table.max_buy_in = max;
+    seed_table(world, min, max, 9, &[]);
 }
 
 #[given(expr = "a table with seat {int} occupied by another player")]
@@ -173,9 +234,7 @@ fn given_seat_occupied(world: &mut OrchestrationWorld, seat: i32) {
     world.player_root = uuid_for("test-player");
     world.table_root = uuid_for("test-table");
     world.reservation_id = uuid_for("test-reservation");
-    world.table.min_buy_in = 200;
-    world.table.max_buy_in = 2000;
-    world.table.occupied_seats.insert(seat);
+    seed_table(world, 200, 2000, 9, &[seat]);
 }
 
 #[given(expr = "a table that is full with {int} players")]
@@ -183,10 +242,8 @@ fn given_table_full(world: &mut OrchestrationWorld, count: i32) {
     world.player_root = uuid_for("test-player");
     world.table_root = uuid_for("test-table");
     world.reservation_id = uuid_for("test-reservation");
-    world.table.min_buy_in = 200;
-    world.table.max_buy_in = 2000;
-    world.table.max_players = count;
-    world.table.occupied_seats.extend(0..count);
+    let occupied: Vec<i32> = (0..count).collect();
+    seed_table(world, 200, 2000, count, &occupied);
 }
 
 #[given(expr = "a player with a BuyInRequested event for any seat with amount {int}")]
@@ -219,11 +276,117 @@ fn given_pending_buy_in(world: &mut OrchestrationWorld) {
 // Given steps — Registration scenarios
 // =============================================================================
 
+fn seed_tournament_open(world: &OrchestrationWorld, max_players: i32, registered: i32) {
+    world.fake.append(
+        "tournament",
+        &world.tournament_root,
+        pack(&TournamentCreated {
+            name: "Test Tour".to_string(),
+            game_variant: GameVariant::TexasHoldem as i32,
+            buy_in: 1000,
+            starting_stack: 5000,
+            max_players,
+            min_players: 2,
+            scheduled_start: None,
+            rebuy_config: None,
+            addon_config: None,
+            blind_structure: vec![],
+            created_at: None,
+        }),
+    );
+    world.fake.append(
+        "tournament",
+        &world.tournament_root,
+        pack(&RegistrationOpened { opened_at: None }),
+    );
+    for i in 0..registered {
+        let p = uuid_for(&format!("registrant-{}", i));
+        world.fake.append(
+            "tournament",
+            &world.tournament_root,
+            pack(&TournamentPlayerEnrolled {
+                player_root: p,
+                reservation_id: vec![],
+                fee_paid: 1000,
+                starting_stack: 5000,
+                registration_number: i + 1,
+                enrolled_at: None,
+            }),
+        );
+    }
+}
+
+fn seed_tournament_closed(world: &OrchestrationWorld, max_players: i32) {
+    world.fake.append(
+        "tournament",
+        &world.tournament_root,
+        pack(&TournamentCreated {
+            name: "Test Tour".to_string(),
+            game_variant: GameVariant::TexasHoldem as i32,
+            buy_in: 1000,
+            starting_stack: 5000,
+            max_players,
+            min_players: 2,
+            scheduled_start: None,
+            rebuy_config: None,
+            addon_config: None,
+            blind_structure: vec![],
+            created_at: None,
+        }),
+    );
+    world.fake.append(
+        "tournament",
+        &world.tournament_root,
+        pack(&RegistrationClosed {
+            closed_at: None,
+            total_registrations: 0,
+        }),
+    );
+}
+
+fn seed_tournament_rebuy_running(world: &OrchestrationWorld, rebuy_allowed: bool) {
+    world.fake.append(
+        "tournament",
+        &world.tournament_root,
+        pack(&TournamentCreated {
+            name: "Test Tour".to_string(),
+            game_variant: GameVariant::TexasHoldem as i32,
+            buy_in: 1000,
+            starting_stack: 5000,
+            max_players: 9,
+            min_players: 2,
+            scheduled_start: None,
+            rebuy_config: Some(RebuyConfig {
+                enabled: rebuy_allowed,
+                rebuy_cost: 1000,
+                rebuy_chips: 5000,
+                max_rebuys: 3,
+                rebuy_level_cutoff: 0,
+                stack_threshold: 0,
+            }),
+            addon_config: None,
+            blind_structure: vec![],
+            created_at: None,
+        }),
+    );
+    world.fake.append(
+        "tournament",
+        &world.tournament_root,
+        pack(&TournamentStarted {
+            started_at: None,
+            total_players: 4,
+            tables_created: 1,
+            total_prize_pool: 0,
+        }),
+    );
+}
+
 #[given("a tournament with registration open and capacity available")]
 fn given_tournament_open(world: &mut OrchestrationWorld) {
     world.player_root = uuid_for("test-player");
     world.tournament_root = uuid_for("test-tournament");
     world.reservation_id = uuid_for("test-reservation");
+    seed_tournament_open(world, 9, 0);
 }
 
 #[given("a tournament that is full")]
@@ -231,7 +394,7 @@ fn given_tournament_full(world: &mut OrchestrationWorld) {
     world.player_root = uuid_for("test-player");
     world.tournament_root = uuid_for("test-tournament");
     world.reservation_id = uuid_for("test-reservation");
-    world.tournament.is_full = true;
+    seed_tournament_open(world, 4, 4);
 }
 
 #[given("a tournament with registration closed")]
@@ -239,7 +402,7 @@ fn given_registration_closed(world: &mut OrchestrationWorld) {
     world.player_root = uuid_for("test-player");
     world.tournament_root = uuid_for("test-tournament");
     world.reservation_id = uuid_for("test-reservation");
-    world.tournament.registration_closed = true;
+    seed_tournament_closed(world, 9);
 }
 
 #[given("a tournament with rebuy window closed")]
@@ -248,12 +411,16 @@ fn given_rebuy_window_closed(world: &mut OrchestrationWorld) {
     world.tournament_root = uuid_for("test-tournament");
     world.table_root = uuid_for("test-table");
     world.reservation_id = uuid_for("test-reservation");
-    world.tournament.rebuy_window_closed = true;
+    // "Closed" rebuy = tournament running but rebuy_allowed=false.
+    seed_tournament_rebuy_running(world, false);
 }
 
 #[given("a table without the player seated")]
 fn given_player_not_seated(world: &mut OrchestrationWorld) {
-    world.player_seated = false;
+    if world.table_root.is_empty() {
+        world.table_root = uuid_for("test-table");
+    }
+    seed_table(world, 200, 2000, 9, &[]);
 }
 
 #[given(expr = "a player with a RegistrationRequested event with fee {int}")]
@@ -286,12 +453,42 @@ fn given_tournament_rebuy_open(world: &mut OrchestrationWorld) {
     world.tournament_root = uuid_for("test-tournament");
     world.table_root = uuid_for("test-table");
     world.reservation_id = uuid_for("test-reservation");
+    seed_tournament_rebuy_running(world, true);
 }
 
 #[given(expr = "a table with the player seated at position {int}")]
 fn given_player_seated(world: &mut OrchestrationWorld, seat: i32) {
     world.seat_hint = seat;
-    world.player_seated = true;
+    if world.table_root.is_empty() {
+        world.table_root = uuid_for("test-table");
+    }
+    // Table with the test-player at the given seat.
+    world.fake.append(
+        "table",
+        &world.table_root,
+        pack(&TableCreated {
+            table_name: "Rebuy Table".to_string(),
+            game_variant: GameVariant::TexasHoldem as i32,
+            small_blind: 1,
+            big_blind: 2,
+            min_buy_in: 200,
+            max_buy_in: 2000,
+            max_players: 9,
+            action_timeout_seconds: 30,
+            created_at: None,
+        }),
+    );
+    world.fake.append(
+        "table",
+        &world.table_root,
+        pack(&PlayerJoined {
+            player_root: world.player_root.clone(),
+            seat_position: seat,
+            buy_in_amount: 1000,
+            stack: 1000,
+            joined_at: None,
+        }),
+    );
 }
 
 #[given(expr = "a player with a RebuyRequested event for amount {int}")]
@@ -345,80 +542,22 @@ fn pm_state_for(world: &OrchestrationWorld, kind: Kind) -> ReservationPMState {
 fn when_buy_in_pm_handles(world: &mut OrchestrationWorld) {
     let any = world.trigger_event.as_ref().expect("no trigger").clone();
     let event: BuyInRequested = unpack(&any).expect("decode BuyInRequested");
-
-    if let Some(failure) = pre_validate_buy_in(world, &event) {
-        world.record_failure_event(failure);
-        return;
-    }
-
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::BuyIn);
     let response = pm.on_buy_in_requested(event, &state).expect("handler ok");
     world.record_response(response);
 }
 
-fn pre_validate_buy_in(world: &OrchestrationWorld, event: &BuyInRequested) -> Option<Any> {
-    let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
-    if amount < world.table.min_buy_in || amount > world.table.max_buy_in {
-        return Some(buy_in_failed(
-            world,
-            event,
-            "INVALID_AMOUNT",
-            "amount out of range",
-        ));
-    }
-    if event.seat == -1 {
-        let any_open =
-            (0..world.table.max_players).any(|i| !world.table.occupied_seats.contains(&i));
-        if !any_open {
-            return Some(buy_in_failed(
-                world,
-                event,
-                "TABLE_FULL",
-                "no seats available",
-            ));
-        }
-    } else if world.table.occupied_seats.contains(&event.seat) {
-        return Some(buy_in_failed(
-            world,
-            event,
-            "SEAT_OCCUPIED",
-            "seat already occupied",
-        ));
-    }
-    None
-}
-
-fn buy_in_failed(
-    world: &OrchestrationWorld,
-    event: &BuyInRequested,
-    code: &'static str,
-    message: &'static str,
-) -> Any {
-    let failed = BuyInFailed {
-        player_root: event.player_root.clone(),
-        table_root: event.table_root.clone(),
-        reservation_id: world.reservation_id.clone(),
-        failure: Some(OrchestrationFailure {
-            code: code.to_string(),
-            message: message.to_string(),
-            failed_at_phase: "VALIDATING".to_string(),
-            failed_at: Some(now()),
-        }),
-    };
-    examples_utils::pack_event(&failed, "ignored")
-}
-
 #[when("the BuyInOrchestrator handles a PlayerSeated event")]
 fn when_buy_in_pm_handles_seated(world: &mut OrchestrationWorld) {
-    let event = PlayerSeated {
+    let event = examples_proto::PlayerSeated {
         player_root: world.player_root.clone(),
         reservation_id: world.reservation_id.clone(),
         seat_position: 0,
         stack: 500,
         seated_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::BuyIn);
     let response = pm.on_player_seated(event, &state).expect("handler ok");
     world.record_response(response);
@@ -433,7 +572,7 @@ fn when_buy_in_pm_handles_rejected(world: &mut OrchestrationWorld) {
         reason: "Seat taken by another player".to_string(),
         rejected_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::BuyIn);
     let response = pm.on_seating_rejected(event, &state).expect("handler ok");
     world.record_response(response);
@@ -443,24 +582,7 @@ fn when_buy_in_pm_handles_rejected(world: &mut OrchestrationWorld) {
 fn when_registration_pm_handles(world: &mut OrchestrationWorld) {
     let any = world.trigger_event.as_ref().expect("no trigger").clone();
     let event: RegistrationRequested = unpack(&any).expect("decode RegistrationRequested");
-
-    if world.tournament.is_full || world.tournament.registration_closed {
-        let failed = RegistrationFailed {
-            player_root: event.player_root.clone(),
-            tournament_root: event.tournament_root.clone(),
-            reservation_id: world.reservation_id.clone(),
-            failure: Some(OrchestrationFailure {
-                code: "REGISTRATION_CLOSED".to_string(),
-                message: "registration not accepting players".to_string(),
-                failed_at_phase: "VALIDATING".to_string(),
-                failed_at: Some(now()),
-            }),
-        };
-        world.record_failure_event(examples_utils::pack_event(&failed, "ignored"));
-        return;
-    }
-
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::Registration);
     let response = pm
         .on_registration_requested(event, &state)
@@ -478,7 +600,7 @@ fn when_registration_pm_handles_enrolled(world: &mut OrchestrationWorld) {
         registration_number: 1,
         enrolled_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::Registration);
     let response = pm.on_player_enrolled(event, &state).expect("handler ok");
     world.record_response(response);
@@ -492,7 +614,7 @@ fn when_registration_pm_handles_rejected(world: &mut OrchestrationWorld) {
         reason: "Tournament full".to_string(),
         rejected_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::Registration);
     let response = pm
         .on_enrollment_rejected(event, &state)
@@ -504,31 +626,7 @@ fn when_registration_pm_handles_rejected(world: &mut OrchestrationWorld) {
 fn when_rebuy_pm_handles(world: &mut OrchestrationWorld) {
     let any = world.trigger_event.as_ref().expect("no trigger").clone();
     let event: RebuyRequested = unpack(&any).expect("decode RebuyRequested");
-
-    let rejection = if world.tournament.rebuy_window_closed {
-        Some(("TOURNAMENT_NOT_RUNNING", "rebuy window is closed"))
-    } else if !world.player_seated {
-        Some(("NOT_SEATED", "player not seated at any table"))
-    } else {
-        None
-    };
-    if let Some((code, message)) = rejection {
-        let failed = RebuyFailed {
-            player_root: event.player_root.clone(),
-            tournament_root: event.tournament_root.clone(),
-            reservation_id: world.reservation_id.clone(),
-            failure: Some(OrchestrationFailure {
-                code: code.to_string(),
-                message: message.to_string(),
-                failed_at_phase: "VALIDATING".to_string(),
-                failed_at: Some(now()),
-            }),
-        };
-        world.record_failure_event(examples_utils::pack_event(&failed, "ignored"));
-        return;
-    }
-
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::Rebuy);
     let response = pm.on_rebuy_requested(event, &state).expect("handler ok");
     world.record_response(response);
@@ -544,7 +642,7 @@ fn when_rebuy_pm_handles_processed(world: &mut OrchestrationWorld) {
         rebuy_count: 1,
         processed_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = ReservationPMState {
         seat: 2,
         ..pm_state_for(world, Kind::Rebuy)
@@ -563,7 +661,7 @@ fn when_rebuy_pm_handles_chips_added(world: &mut OrchestrationWorld) {
         new_stack: 5500,
         added_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::Rebuy);
     let response = pm.on_rebuy_chips_added(event, &state).expect("handler ok");
     world.record_response(response);
@@ -577,7 +675,7 @@ fn when_rebuy_pm_handles_denied(world: &mut OrchestrationWorld) {
         reason: "Rebuy limit reached".to_string(),
         denied_at: Some(angzarr_client::now()),
     };
-    let pm = ReservationPm::new();
+    let pm = world.pm();
     let state = pm_state_for(world, Kind::Rebuy);
     let response = pm.on_rebuy_denied(event, &state).expect("handler ok");
     world.record_response(response);
@@ -728,11 +826,18 @@ fn then_emits_rebuy_failed(world: &mut OrchestrationWorld, code: String) {
 
 #[then("the PM emits no commands")]
 fn then_emits_no_commands(world: &mut OrchestrationWorld) {
-    assert!(
-        world.emitted_commands.is_empty(),
-        "Expected no commands, got: {:?}",
-        world.emitted_commands
-    );
+    // The PM emits a Release* compensation command to reservation when
+    // pre-validation fails — that's the *only* allowed command. No
+    // player/table/tournament-side state changes.
+    for cmd in &world.emitted_commands {
+        assert!(
+            cmd.ends_with("ReleaseBuyIn")
+                || cmd.ends_with("ReleaseRebuyFee")
+                || cmd.ends_with("ReleaseRegistrationFee"),
+            "Expected only Release* compensation, got: {}",
+            cmd
+        );
+    }
 }
 
 // =============================================================================
