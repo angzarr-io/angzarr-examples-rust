@@ -279,8 +279,6 @@ deploy-apps-ci example_tag="latest" coordinator_version="":
       --set "applications.sagas[1].image.tag=${example_tag}" \
       --set "applications.processManagers[0].image.tag=${example_tag}" \
       --set "applications.processManagers[1].image.tag=${example_tag}" \
-      --set "applications.processManagers[2].image.tag=${example_tag}" \
-      --set "applications.processManagers[3].image.tag=${example_tag}" \
       --set "applications.projectors[0].image.tag=${example_tag}" \
       --namespace angzarr-test \
       --wait --timeout 5m
