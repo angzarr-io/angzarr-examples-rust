@@ -360,16 +360,31 @@ fn when_buy_in_pm_handles(world: &mut OrchestrationWorld) {
 fn pre_validate_buy_in(world: &OrchestrationWorld, event: &BuyInRequested) -> Option<Any> {
     let amount = event.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount < world.table.min_buy_in || amount > world.table.max_buy_in {
-        return Some(buy_in_failed(world, event, "INVALID_AMOUNT", "amount out of range"));
+        return Some(buy_in_failed(
+            world,
+            event,
+            "INVALID_AMOUNT",
+            "amount out of range",
+        ));
     }
     if event.seat == -1 {
-        let any_open = (0..world.table.max_players)
-            .any(|i| !world.table.occupied_seats.contains(&i));
+        let any_open =
+            (0..world.table.max_players).any(|i| !world.table.occupied_seats.contains(&i));
         if !any_open {
-            return Some(buy_in_failed(world, event, "TABLE_FULL", "no seats available"));
+            return Some(buy_in_failed(
+                world,
+                event,
+                "TABLE_FULL",
+                "no seats available",
+            ));
         }
     } else if world.table.occupied_seats.contains(&event.seat) {
-        return Some(buy_in_failed(world, event, "SEAT_OCCUPIED", "seat already occupied"));
+        return Some(buy_in_failed(
+            world,
+            event,
+            "SEAT_OCCUPIED",
+            "seat already occupied",
+        ));
     }
     None
 }

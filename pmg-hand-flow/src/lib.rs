@@ -22,10 +22,10 @@ use angzarr_client::proto::{
     Uuid as ProtoUuid,
 };
 use angzarr_client::{process_manager, type_url, CommandResult};
-use examples_utils::pack_event;
 use examples_proto::{
     CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PlayerInHand, PostBlind,
 };
+use examples_utils::pack_event;
 use prost::Message;
 use prost_types::Any;
 

@@ -43,11 +43,7 @@ pub fn handle_join_rejected(
         .unwrap_or_default();
 
     let key_hex = hex::encode(&key);
-    let reserved_amount = state
-        .table_reservations
-        .get(&key_hex)
-        .copied()
-        .unwrap_or(0);
+    let reserved_amount = state.table_reservations.get(&key_hex).copied().unwrap_or(0);
     let new_reserved = state.reserved_funds - reserved_amount;
     let new_available = state.bankroll - new_reserved;
 

@@ -2,8 +2,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::{CommandRejectedError, CommandResult};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 use examples_proto::{BettingPhase, CommunityCardsDealt, DealCommunityCards};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::game_rules;
 use crate::state::HandState;
@@ -24,9 +24,7 @@ fn guard(state: &HandState) -> CommandResult<()> {
 
     let rules = game_rules::get_rules(state.game_variant);
     if !rules.uses_community_cards() {
-        return Err(rejected(
-            "community cards not used in this variant",
-        ));
+        return Err(rejected("community cards not used in this variant"));
     }
     Ok(())
 }
@@ -40,11 +38,7 @@ fn validate(cmd: &DealCommunityCards, state: &HandState) -> CommandResult<Valida
         BettingPhase::Preflop => (BettingPhase::Flop, 3),
         BettingPhase::Flop => (BettingPhase::Turn, 1),
         BettingPhase::Turn => (BettingPhase::River, 1),
-        _ => {
-            return Err(rejected(
-                "Cannot deal more community cards",
-            ))
-        }
+        _ => return Err(rejected("Cannot deal more community cards")),
     };
 
     if cmd.count as usize != cards_to_deal {

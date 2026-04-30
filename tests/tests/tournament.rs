@@ -473,10 +473,7 @@ fn when_eliminate_player_with_hand(world: &mut TournamentWorld, label: String, h
 #[then(expr = "the result is a {word} event")]
 fn result_is_event(world: &mut TournamentWorld, type_name: String) {
     let event = world.get_last_event().expect("No event found");
-    let suffix = type_name
-        .rsplit('.')
-        .next()
-        .unwrap_or(type_name.as_str());
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     assert!(
         event.type_url.ends_with(suffix),
         "Expected event ending in {} but got {}",

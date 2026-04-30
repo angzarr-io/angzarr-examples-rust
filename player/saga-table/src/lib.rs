@@ -23,10 +23,7 @@ pub struct PlayerTableSaga;
 impl PlayerTableSaga {
     /// `player.PlayerSittingOut` → `table.PlayerSatOut` fact.
     #[handles(PlayerSittingOut)]
-    pub fn on_player_sitting_out(
-        &self,
-        event: PlayerSittingOut,
-    ) -> CommandResult<SagaResponse> {
+    pub fn on_player_sitting_out(&self, event: PlayerSittingOut) -> CommandResult<SagaResponse> {
         let fact = PlayerSatOut {
             // Player root not surfaced through the saga dispatch; the fact's
             // recipient is the table identified by `table_root`. Table aggregate
@@ -102,10 +99,7 @@ mod tests {
         assert_eq!(resp.events.len(), 1);
         let cover = resp.events[0].cover.as_ref().expect("cover");
         assert_eq!(cover.domain, "table");
-        assert_eq!(
-            cover.root.as_ref().expect("root").value,
-            vec![0xaa]
-        );
+        assert_eq!(cover.root.as_ref().expect("root").value, vec![0xaa]);
     }
 
     #[test]

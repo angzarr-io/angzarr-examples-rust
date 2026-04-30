@@ -5,7 +5,9 @@
 //! local lets the examples migrate at one site (this file) instead of
 //! at every handler.
 
-use angzarr_client::proto::{event_page as proto_event_page, page_header::SequenceType, EventPage, PageHeader};
+use angzarr_client::proto::{
+    event_page as proto_event_page, page_header::SequenceType, EventPage, PageHeader,
+};
 use angzarr_client::{now, type_url, CommandRejectedError};
 use prost::{Message, Name};
 use prost_types::Any;
@@ -44,7 +46,11 @@ pub fn event_page(seq: u32, event: Any) -> EventPage {
 /// proper error inventory exists for the examples, route everything
 /// through this shim with a generic code.
 pub fn rejected(message: &'static str) -> CommandRejectedError {
-    CommandRejectedError::precondition_failed("EXAMPLE_REJECTED", message, std::iter::empty::<(&str, &str)>())
+    CommandRejectedError::precondition_failed(
+        "EXAMPLE_REJECTED",
+        message,
+        std::iter::empty::<(&str, &str)>(),
+    )
 }
 
 /// INVALID_ARGUMENT rejection with the legacy single-message shape.
@@ -54,5 +60,9 @@ pub fn rejected(message: &'static str) -> CommandRejectedError {
 /// (positive amounts, non-empty fields, etc.); use [`rejected`] for
 /// state-machine guards.
 pub fn invalid_arg(message: &'static str) -> CommandRejectedError {
-    CommandRejectedError::invalid_argument("EXAMPLE_INVALID_ARGUMENT", message, std::iter::empty::<(&str, &str)>())
+    CommandRejectedError::invalid_argument(
+        "EXAMPLE_INVALID_ARGUMENT",
+        message,
+        std::iter::empty::<(&str, &str)>(),
+    )
 }

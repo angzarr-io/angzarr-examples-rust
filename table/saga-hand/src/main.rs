@@ -23,7 +23,5 @@ async fn main() {
     };
     // docs:end:event_router
 
-    run_saga_server(sr, 50011)
-        .await
-        .expect("Server failed");
+    run_saga_server(sr, 50011).await.expect("Server failed");
 }

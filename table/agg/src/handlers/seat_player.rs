@@ -2,8 +2,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{PlayerSeated, SeatPlayer, SeatingRejected};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TableState;
 

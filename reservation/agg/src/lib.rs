@@ -16,9 +16,7 @@ pub use state::{PendingBuyIn, PendingRebuy, PendingRegistration, ReservationStat
 use std::sync::Arc;
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{
-    command_handler, CommandResult, QueryClient,
-};
+use angzarr_client::{command_handler, CommandResult, QueryClient};
 use examples_proto::{
     BuyInConfirmed, BuyInRequested, BuyInReservationReleased, ConfirmBuyIn, ConfirmRebuyFee,
     ConfirmRegistrationFee, Currency, InitiateBuyIn, InitiateRebuy, InitiateTournamentRegistration,

@@ -5,8 +5,8 @@ use sha2::{Digest, Sha256};
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::game_rules::get_rules;
 use crate::state::HandState;

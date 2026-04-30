@@ -149,12 +149,13 @@ impl BettingRoundTester {
                 _ => None,
             };
 
-            if acted.contains(&current_seat) && all_bets_matched
+            if acted.contains(&current_seat)
+                && all_bets_matched
                 && (effective_last_aggressor.is_none()
                     || Some(current_seat) == effective_last_aggressor)
-                {
-                    break;
-                }
+            {
+                break;
+            }
 
             let (mut action, mut amount) = self.get_action(current_seat);
             let player_stack = self.players[&current_seat].stack;

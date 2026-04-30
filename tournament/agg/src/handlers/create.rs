@@ -6,8 +6,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{CreateTournament, TournamentCreated};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TournamentState;
 
@@ -35,9 +35,7 @@ fn validate(cmd: &CreateTournament) -> CommandResult<()> {
         return Err(rejected("min_players must be at least 2"));
     }
     if cmd.min_players > cmd.max_players {
-        return Err(rejected(
-            "min_players cannot exceed max_players",
-        ));
+        return Err(rejected("min_players cannot exceed max_players"));
     }
     Ok(())
 }

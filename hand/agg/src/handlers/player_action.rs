@@ -2,8 +2,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::{CommandRejectedError, CommandResult};
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{ActionTaken, ActionType, PlayerAction};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::{HandState, PlayerHandState};
 
@@ -72,9 +72,7 @@ fn validate<'a>(
         }
         ActionType::Bet => {
             if state.current_bet > 0 {
-                return Err(rejected(
-                    "Cannot bet, there is already a bet",
-                ));
+                return Err(rejected("Cannot bet, there is already a bet"));
             }
             if cmd.amount < state.min_raise {
                 return Err(CommandRejectedError::invalid_argument(

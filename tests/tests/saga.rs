@@ -763,7 +763,6 @@ fn then_each_command_is(world: &mut SagaWorld, type_name: String) {
     }
 }
 
-
 #[then(expr = "DepositFunds {int} has amount {int} for {string}")]
 fn then_deposit_index(world: &mut SagaWorld, idx: usize, amount: i64, player: String) {
     let cb = world

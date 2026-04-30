@@ -2,8 +2,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{CardsMucked, CardsRevealed, HandRanking, RevealCards};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::game_rules::get_rules;
 use crate::state::{HandState, PlayerHandState};

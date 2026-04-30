@@ -6,12 +6,12 @@
 //! exercises bankroll primitives.
 
 use agg_player::PlayerAggregate;
+use angzarr_client::full_type_url;
 use angzarr_client::proto::{
     business_response, command_page, event_page, CommandBook, CommandPage, ContextualCommand,
     Cover, EventBook, EventPage,
 };
 use angzarr_client::router::{Built, Router};
-use angzarr_client::full_type_url;
 use examples_proto::{
     Currency, DeductReservedFunds, DepositFunds, FundsDeposited, FundsReserved, PlayerRegistered,
     PlayerType, RegisterPlayer, ReleaseFunds, ReserveFunds,
@@ -75,7 +75,10 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
     }
 }
 
-fn dispatch(router: &angzarr_client::router::runtime::CommandHandlerRouter, cc: ContextualCommand) -> EventBook {
+fn dispatch(
+    router: &angzarr_client::router::runtime::CommandHandlerRouter,
+    cc: ContextualCommand,
+) -> EventBook {
     let resp = router.dispatch(cc).expect("dispatch ok");
     match resp.result {
         Some(business_response::Result::Events(book)) => book,

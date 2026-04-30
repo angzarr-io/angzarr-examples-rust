@@ -2,12 +2,12 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{
     AdvanceBlindLevel, BlindLevelAdvanced, CompleteTournament, EliminatePlayer, PauseTournament,
     PlayerEliminated, ResumeTournament, StartTournament, TournamentCompleted, TournamentPaused,
     TournamentResumed, TournamentStarted, TournamentStatus,
 };
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TournamentState;
 
@@ -81,9 +81,7 @@ pub fn handle_eliminate_player(
 
     let player_root_hex = hex::encode(&cmd.player_root);
     if !state.is_player_registered(&player_root_hex) {
-        return Err(rejected(
-            "Player is not registered in this tournament",
-        ));
+        return Err(rejected("Player is not registered in this tournament"));
     }
 
     let finish_position = state.players_remaining;
@@ -216,9 +214,7 @@ fn guard_complete(state: &TournamentState) -> CommandResult<()> {
     if state.status != TournamentStatus::TournamentRunning
         && state.status != TournamentStatus::TournamentPaused
     {
-        return Err(rejected(
-            "Tournament must be running or paused to complete",
-        ));
+        return Err(rejected("Tournament must be running or paused to complete"));
     }
     Ok(())
 }

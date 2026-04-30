@@ -2,8 +2,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 use examples_proto::{AddRebuyChips, RebuyChipsAdded};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::state::TableState;
 
@@ -26,9 +26,7 @@ fn validate(cmd: &AddRebuyChips, state: &TableState) -> CommandResult<i64> {
     // Find the player's seat
     let seat_opt = state.find_seat_by_player(&cmd.player_root);
     if seat_opt.is_none() {
-        return Err(rejected(
-            "Player is not seated at this table",
-        ));
+        return Err(rejected("Player is not seated at this table"));
     }
 
     let seat = seat_opt.unwrap();

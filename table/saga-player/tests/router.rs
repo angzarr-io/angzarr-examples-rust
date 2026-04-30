@@ -37,7 +37,10 @@ fn hand_ended_request() -> SagaHandleRequest {
     };
     SagaHandleRequest {
         source: Some(EventBook {
-            cover: Some(Cover { domain: "table".to_string(), ..Default::default() }),
+            cover: Some(Cover {
+                domain: "table".to_string(),
+                ..Default::default()
+            }),
             pages: vec![EventPage {
                 payload: Some(event_page::Payload::Event(any)),
                 ..Default::default()

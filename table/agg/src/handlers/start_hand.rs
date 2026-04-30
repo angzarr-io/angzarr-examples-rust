@@ -2,8 +2,8 @@
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{HandStarted, SeatSnapshot, StartHand};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TableState;
 
@@ -15,9 +15,7 @@ fn guard(state: &TableState) -> CommandResult<()> {
         return Err(rejected("Hand already in progress"));
     }
     if state.active_player_count() < 2 {
-        return Err(rejected(
-            "Not enough players to start hand",
-        ));
+        return Err(rejected("Not enough players to start hand"));
     }
     Ok(())
 }

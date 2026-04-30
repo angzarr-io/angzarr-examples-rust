@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
-use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{EndHand, HandEnded};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TableState;
 
