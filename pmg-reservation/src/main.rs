@@ -1,10 +1,10 @@
-//! Rebuy Process Manager — coordinates rebuy flows across Player ↔ Tournament ↔ Table.
+//! Reservation Process Manager — coordinates buy-in / rebuy / registration.
 
 use angzarr_client::router::{Built, Router};
 use angzarr_client::run_process_manager_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use pmg_rebuy::RebuyPm;
+use pmg_reservation::ReservationPm;
 
 #[tokio::main]
 async fn main() {
@@ -13,8 +13,8 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let router = Router::new("pmg-rebuy")
-        .with_handler(|| RebuyPm)
+    let router = Router::new("pmg-reservation")
+        .with_handler(ReservationPm::new)
         .build()
         .expect("failed to build pm router");
 
@@ -22,7 +22,7 @@ async fn main() {
         panic!("expected ProcessManager variant");
     };
 
-    run_process_manager_server("pmg-rebuy", 50394, pr)
+    run_process_manager_server(pr, 50390)
         .await
         .expect("Process manager failed");
 }

@@ -104,7 +104,7 @@ impl TableWorld {
 }
 
 fn pack_event_any<T: prost::Message + prost::Name>(event: &T) -> Any {
-    angzarr_client::pack_event(event, &T::full_name())
+    examples_utils::pack_event(event, &T::full_name())
 }
 
 // =============================================================================

@@ -20,11 +20,11 @@ impl TablePlayerSaga {
                 let player_root = hex::decode(player_hex).ok()?;
 
                 let release_funds = ReleaseFunds {
-                    table_root: event.hand_root.clone(),
+                    key: event.hand_root.clone(),
                 };
 
                 let command_any = Any {
-                    type_url: "type.googleapis.com/examples.ReleaseFunds".to_string(),
+                    type_url: angzarr_client::full_type_url::<ReleaseFunds>(),
                     value: release_funds.encode_to_vec(),
                 };
 
@@ -92,6 +92,6 @@ mod tests {
         let cmd_any = extract_command_any(book);
         assert!(cmd_any.type_url.ends_with("examples.ReleaseFunds"));
         let release = ReleaseFunds::decode(cmd_any.value.as_slice()).unwrap();
-        assert_eq!(release.table_root, vec![0xAA]);
+        assert_eq!(release.key, vec![0xAA]);
     }
 }

@@ -3,21 +3,23 @@ resolver = "2"
 exclude = ["angzarr-client-rust"]
 members = [
     "proto",
+    "examples-utils",
     "player/agg",
     "player/upc",
+    "player/saga-table",
+    "reservation/agg",
     "table/agg",
     "table/saga-hand",
     "table/saga-player",
     "hand/agg",
+    "hand/upc",
     "hand/saga-table",
     "hand/saga-player",
     "hand-flow-oo",
     "tournament/agg",
     "prj-output",
     "pmg-hand-flow",
-    "pmg-buy-in",
-    "pmg-registration",
-    "pmg-rebuy",
+    "pmg-reservation",
     "tests",
 ]
 
@@ -25,6 +27,7 @@ members = [
 # Imported via git submodule
 angzarr-client = { path = "angzarr-client-rust" }
 examples-proto = { path = "proto" }
+examples-utils = { path = "examples-utils" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 prost = "0.14"
 prost-types = "0.14"

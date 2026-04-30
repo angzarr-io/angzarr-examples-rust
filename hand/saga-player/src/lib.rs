@@ -26,7 +26,7 @@ impl HandPlayerSaga {
                     }),
                 };
                 let cmd_any = Any {
-                    type_url: "type.googleapis.com/examples.DepositFunds".to_string(),
+                    type_url: angzarr_client::full_type_url::<DepositFunds>(),
                     value: deposit.encode_to_vec(),
                 };
                 CommandBook {

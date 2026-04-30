@@ -106,7 +106,7 @@ fn reserve_funds_for_buyin(
     let root = world.player_root(name);
     let seq = world.players[name].sequence;
     let cmd = ReserveFunds {
-        table_root: table_root.to_vec(),
+        key: table_root.to_vec(),
         amount: Some(Currency {
             amount: buy_in,
             currency_code: "CHIPS".to_string(),

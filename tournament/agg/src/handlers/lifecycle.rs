@@ -1,11 +1,12 @@
 //! Tournament lifecycle command handlers.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::{CommandRejectedError, CommandResult};
+use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{
-    AdvanceBlindLevel, BlindLevelAdvanced, EliminatePlayer, PauseTournament, PlayerEliminated,
-    ResumeTournament, StartTournament, TournamentPaused, TournamentResumed, TournamentStarted,
-    TournamentStatus,
+    AdvanceBlindLevel, BlindLevelAdvanced, CompleteTournament, EliminatePlayer, PauseTournament,
+    PlayerEliminated, ResumeTournament, StartTournament, TournamentCompleted, TournamentPaused,
+    TournamentResumed, TournamentStarted, TournamentStatus,
 };
 
 use crate::state::TournamentState;
@@ -14,10 +15,10 @@ use crate::state::TournamentState;
 
 fn guard_advance(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if !state.is_running() {
-        return Err(CommandRejectedError::new("Tournament is not running"));
+        return Err(rejected("Tournament is not running"));
     }
     Ok(())
 }
@@ -41,7 +42,7 @@ pub fn handle_advance_blind_level(
             last_level.ante,
         )
     } else {
-        return Err(CommandRejectedError::new("No blind structure defined"));
+        return Err(rejected("No blind structure defined"));
     };
 
     let event = BlindLevelAdvanced {
@@ -63,10 +64,10 @@ pub fn handle_advance_blind_level(
 
 fn guard_eliminate(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if !state.is_running() {
-        return Err(CommandRejectedError::new("Tournament is not running"));
+        return Err(rejected("Tournament is not running"));
     }
     Ok(())
 }
@@ -80,7 +81,7 @@ pub fn handle_eliminate_player(
 
     let player_root_hex = hex::encode(&cmd.player_root);
     if !state.is_player_registered(&player_root_hex) {
-        return Err(CommandRejectedError::new(
+        return Err(rejected(
             "Player is not registered in this tournament",
         ));
     }
@@ -107,13 +108,13 @@ pub fn handle_eliminate_player(
 
 fn guard_pause(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if state.status == TournamentStatus::TournamentPaused {
-        return Err(CommandRejectedError::new("Tournament is already paused"));
+        return Err(rejected("Tournament is already paused"));
     }
     if !state.is_running() {
-        return Err(CommandRejectedError::new("Tournament is not running"));
+        return Err(rejected("Tournament is not running"));
     }
     Ok(())
 }
@@ -141,10 +142,10 @@ pub fn handle_pause_tournament(
 
 fn guard_resume(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if state.status != TournamentStatus::TournamentPaused {
-        return Err(CommandRejectedError::new("Tournament is not paused"));
+        return Err(rejected("Tournament is not paused"));
     }
     Ok(())
 }
@@ -171,13 +172,13 @@ pub fn handle_resume_tournament(
 
 fn guard_start(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if !state.is_registration_open() {
-        return Err(CommandRejectedError::new("Registration is not open"));
+        return Err(rejected("Registration is not open"));
     }
     if (state.registered_players.len() as i32) < state.min_players {
-        return Err(CommandRejectedError::new("Not enough players to start"));
+        return Err(rejected("Not enough players to start"));
     }
     Ok(())
 }
@@ -196,6 +197,46 @@ pub fn handle_start_tournament(
         started_at: Some(angzarr_client::now()),
     };
     let event_any = pack_event(&event, "examples.TournamentStarted");
+
+    Ok(EventBook {
+        pages: vec![event_page(seq, event_any)],
+        ..Default::default()
+    })
+}
+
+// --- CompleteTournament ---
+
+fn guard_complete(state: &TournamentState) -> CommandResult<()> {
+    if !state.exists() {
+        return Err(rejected("Tournament does not exist"));
+    }
+    if state.status == TournamentStatus::TournamentCompleted {
+        return Err(rejected("Tournament is already completed"));
+    }
+    if state.status != TournamentStatus::TournamentRunning
+        && state.status != TournamentStatus::TournamentPaused
+    {
+        return Err(rejected(
+            "Tournament must be running or paused to complete",
+        ));
+    }
+    Ok(())
+}
+
+pub fn handle_complete_tournament(
+    cmd: CompleteTournament,
+    state: &TournamentState,
+    seq: u32,
+) -> CommandResult<EventBook> {
+    guard_complete(state)?;
+
+    let event = TournamentCompleted {
+        winner_root: cmd.winner_root,
+        total_prize_pool: state.total_prize_pool,
+        results: vec![],
+        completed_at: Some(angzarr_client::now()),
+    };
+    let event_any = pack_event(&event, "examples.TournamentCompleted");
 
     Ok(EventBook {
         pages: vec![event_page(seq, event_any)],

@@ -22,7 +22,7 @@ async fn main() {
         panic!("expected CommandHandler variant");
     };
 
-    run_command_handler_server("table", 50002, ch)
+    run_command_handler_server(ch, 50002)
         .await
         .expect("Server failed");
 }

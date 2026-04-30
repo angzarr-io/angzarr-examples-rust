@@ -1,7 +1,8 @@
 //! PlayerAction command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::{CommandRejectedError, CommandResult};
+use examples_utils::{event_page, pack_event, rejected};
 use examples_proto::{ActionTaken, ActionType, PlayerAction};
 
 use crate::state::{HandState, PlayerHandState};
@@ -15,13 +16,13 @@ struct ValidatedAction {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand not dealt"));
+        return Err(rejected("Hand not dealt"));
     }
     if state.is_complete() {
-        return Err(CommandRejectedError::new("Hand already complete"));
+        return Err(rejected("Hand already complete"));
     }
     if state.status != "betting" {
-        return Err(CommandRejectedError::new("Not in betting phase"));
+        return Err(rejected("Not in betting phase"));
     }
     Ok(())
 }
@@ -31,18 +32,18 @@ fn validate<'a>(
     state: &'a HandState,
 ) -> CommandResult<(&'a PlayerHandState, ValidatedAction)> {
     if cmd.player_root.is_empty() {
-        return Err(CommandRejectedError::new("player_root is required"));
+        return Err(rejected("player_root is required"));
     }
 
     let player = state
         .get_player(&cmd.player_root)
-        .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
+        .ok_or_else(|| rejected("Player not in hand"))?;
 
     if player.has_folded {
-        return Err(CommandRejectedError::new("Player has folded"));
+        return Err(rejected("Player has folded"));
     }
     if player.is_all_in {
-        return Err(CommandRejectedError::new("Player is all-in"));
+        return Err(rejected("Player is all-in"));
     }
 
     let action = ActionType::try_from(cmd.action).unwrap_or_default();
@@ -57,49 +58,51 @@ fn validate<'a>(
         }
         ActionType::Check => {
             if amount_to_call > 0 {
-                return Err(CommandRejectedError::new("Cannot check, must call or fold"));
+                return Err(rejected("Cannot check, must call or fold"));
             }
             chips_put_in = 0;
             event_amount = 0;
         }
         ActionType::Call => {
             if amount_to_call <= 0 {
-                return Err(CommandRejectedError::new("Nothing to call"));
+                return Err(rejected("Nothing to call"));
             }
             chips_put_in = amount_to_call.min(player.stack);
             event_amount = chips_put_in;
         }
         ActionType::Bet => {
             if state.current_bet > 0 {
-                return Err(CommandRejectedError::new(
+                return Err(rejected(
                     "Cannot bet, there is already a bet",
                 ));
             }
             if cmd.amount < state.min_raise {
-                return Err(CommandRejectedError::invalid_argument(format!(
-                    "Bet must be at least {}",
-                    state.min_raise
-                )));
+                return Err(CommandRejectedError::invalid_argument(
+                    "BET_BELOW_MIN_RAISE",
+                    "Bet must be at least the minimum raise",
+                    [("min_raise", state.min_raise.to_string())],
+                ));
             }
             if cmd.amount > player.stack {
-                return Err(CommandRejectedError::new("Bet exceeds stack"));
+                return Err(rejected("Bet exceeds stack"));
             }
             chips_put_in = cmd.amount;
             event_amount = chips_put_in;
         }
         ActionType::Raise => {
             if state.current_bet <= 0 {
-                return Err(CommandRejectedError::new("Cannot raise, there is no bet"));
+                return Err(rejected("Cannot raise, there is no bet"));
             }
             if cmd.amount > player.bet_this_round + player.stack {
-                return Err(CommandRejectedError::new("Raise exceeds stack"));
+                return Err(rejected("Raise exceeds stack"));
             }
             let raise_amount = cmd.amount - state.current_bet;
             if raise_amount < state.min_raise {
-                return Err(CommandRejectedError::invalid_argument(format!(
-                    "Raise must be at least {} over current bet",
-                    state.min_raise
-                )));
+                return Err(CommandRejectedError::invalid_argument(
+                    "RAISE_BELOW_MIN_RAISE",
+                    "Raise must be at least the minimum raise over current bet",
+                    [("min_raise", state.min_raise.to_string())],
+                ));
             }
             let to_put_in = cmd.amount - player.bet_this_round;
             chips_put_in = to_put_in.min(player.stack);
@@ -110,7 +113,7 @@ fn validate<'a>(
             event_amount = chips_put_in;
         }
         _ => {
-            return Err(CommandRejectedError::new("Invalid action type"));
+            return Err(rejected("Invalid action type"));
         }
     }
 

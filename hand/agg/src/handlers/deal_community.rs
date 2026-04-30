@@ -1,7 +1,8 @@
 //! DealCommunityCards command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::{CommandRejectedError, CommandResult};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 use examples_proto::{BettingPhase, CommunityCardsDealt, DealCommunityCards};
 
 use crate::game_rules;
@@ -15,15 +16,15 @@ struct ValidatedDeal {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand not dealt"));
+        return Err(rejected("Hand not dealt"));
     }
     if state.is_complete() {
-        return Err(CommandRejectedError::new("Hand already complete"));
+        return Err(rejected("Hand already complete"));
     }
 
     let rules = game_rules::get_rules(state.game_variant);
     if !rules.uses_community_cards() {
-        return Err(CommandRejectedError::new(
+        return Err(rejected(
             "community cards not used in this variant",
         ));
     }
@@ -32,9 +33,7 @@ fn guard(state: &HandState) -> CommandResult<()> {
 
 fn validate(cmd: &DealCommunityCards, state: &HandState) -> CommandResult<ValidatedDeal> {
     if cmd.count < 1 {
-        return Err(CommandRejectedError::invalid_argument(
-            "count must be at least 1",
-        ));
+        return Err(invalid_arg("count must be at least 1"));
     }
 
     let (new_phase, cards_to_deal) = match state.current_phase {
@@ -42,21 +41,25 @@ fn validate(cmd: &DealCommunityCards, state: &HandState) -> CommandResult<Valida
         BettingPhase::Flop => (BettingPhase::Turn, 1),
         BettingPhase::Turn => (BettingPhase::River, 1),
         _ => {
-            return Err(CommandRejectedError::new(
+            return Err(rejected(
                 "Cannot deal more community cards",
             ))
         }
     };
 
     if cmd.count as usize != cards_to_deal {
-        return Err(CommandRejectedError::new(format!(
-            "Invalid card count for phase: Expected {}, got {}",
-            cards_to_deal, cmd.count
-        )));
+        return Err(CommandRejectedError::precondition_failed(
+            "INVALID_COMMUNITY_CARD_COUNT",
+            "Expected card count for phase",
+            [
+                ("expected", cards_to_deal.to_string()),
+                ("got", cmd.count.to_string()),
+            ],
+        ));
     }
 
     if state.remaining_deck.len() < cards_to_deal {
-        return Err(CommandRejectedError::new("Not enough cards in deck"));
+        return Err(rejected("Not enough cards in deck"));
     }
 
     Ok(ValidatedDeal {

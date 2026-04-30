@@ -33,7 +33,7 @@ impl HandTableSaga {
         let hand_root = Vec::new();
         let end_hand = EndHand { hand_root, results };
         let command_any = Any {
-            type_url: "type.googleapis.com/examples.EndHand".to_string(),
+            type_url: angzarr_client::full_type_url::<EndHand>(),
             value: end_hand.encode_to_vec(),
         };
 

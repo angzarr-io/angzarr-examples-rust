@@ -23,7 +23,7 @@ async fn main() {
     };
     // docs:end:event_router
 
-    run_saga_server("saga-table-hand", 50011, sr)
+    run_saga_server(sr, 50011)
         .await
         .expect("Server failed");
 }

@@ -21,7 +21,8 @@ use angzarr_client::proto::{
     Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse,
     Uuid as ProtoUuid,
 };
-use angzarr_client::{pack_event, process_manager, type_url, CommandResult};
+use angzarr_client::{process_manager, type_url, CommandResult, handles, applies, rejected, state_factory};
+use examples_utils::{pack_event, rejected as rejected_fn};
 use examples_proto::{
     CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PlayerInHand, PostBlind,
 };
@@ -112,7 +113,7 @@ impl HandFlowPm {
 
         Ok(ProcessManagerHandleResponse {
             commands: vec![cmd],
-            process_events: Some(single_event_book(pm_event)),
+            process_events: vec![single_event_book(pm_event)],
             facts: vec![],
         })
     }
@@ -141,7 +142,7 @@ impl HandFlowPm {
 
         Ok(ProcessManagerHandleResponse {
             commands: vec![cmd],
-            process_events: Some(single_event_book(pm_event)),
+            process_events: vec![single_event_book(pm_event)],
             facts: vec![],
         })
     }
@@ -171,7 +172,7 @@ impl HandFlowPm {
 
         Ok(ProcessManagerHandleResponse {
             commands: vec![cmd],
-            process_events: Some(single_event_book(pm_event)),
+            process_events: vec![single_event_book(pm_event)],
             facts: vec![],
         })
     }
@@ -304,7 +305,11 @@ mod tests {
             .on_hand_started(event.clone(), &HandFlowState::default())
             .unwrap();
 
-        let pm_book = resp.process_events.expect("process_events");
+        let pm_book = resp
+            .process_events
+            .into_iter()
+            .next()
+            .expect("process_events");
         let any = first_event_any(&pm_book);
         assert!(any.type_url.ends_with("examples.HandStarted"));
         let decoded = HandStarted::decode(any.value.as_slice()).unwrap();

@@ -1,0 +1,13 @@
+[package]
+name = "saga-player-table"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+examples-utils = { workspace = true }
+examples-proto.workspace = true
+angzarr-client.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+hex.workspace = true
+uuid.workspace = true
