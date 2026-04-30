@@ -9,13 +9,21 @@ ROOT := `git rev-parse --show-toplevel`
 default:
     @just --list
 
-# Export proto definitions from angzarr-project submodule
+# Export proto definitions from angzarr-project submodule.
+#
+# `examples-proto/examples/*.proto` carries a flat layout the rust build.rs
+# expects. The canonical protos declare `package angzarr_client.proto.examples`,
+# so buf export lands them at `_proto_export/angzarr_client/proto/examples/`.
+# Copy from there and rewrite the deep `angzarr_client/proto/examples/X.proto`
+# imports to the flat `examples/X.proto` form so protoc can resolve them
+# against the flat include root.
 proto-gen:
     buf export angzarr-project/proto -o _proto_export
     rm -rf angzarr-proto examples-proto
     cp -r _proto_export angzarr-proto
     mkdir -p examples-proto/examples
-    cp _proto_export/examples/*.proto examples-proto/examples/
+    cp _proto_export/angzarr_client/proto/examples/*.proto examples-proto/examples/
+    sed -i 's|angzarr_client/proto/examples/|examples/|g' examples-proto/examples/*.proto
     rm -rf _proto_export
 
 # Build all workspace crates
