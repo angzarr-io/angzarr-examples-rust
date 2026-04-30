@@ -10,20 +10,13 @@
 #   done
 
 ARG RUST_VERSION=1.87
-# Cache-busting arg for proto updates - change to invalidate buf export cache
-# Use BSR label (without 'v' prefix) from angzarr-examples-proto releases
-ARG PROTO_VERSION=0.1.2
 
 # ============================================================================
 # Proto generation stage - runs build.rs to generate proto code
 # ============================================================================
 FROM docker.io/library/rust:${RUST_VERSION}-alpine AS proto-gen
 
-RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig curl
-
-# Install buf for proto export
-RUN curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf && \
-    chmod +x /usr/local/bin/buf
+RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig
 
 RUN rustup target add x86_64-unknown-linux-musl
 
@@ -33,11 +26,16 @@ ENV OPENSSL_DIR=/usr
 
 WORKDIR /app
 
-# Export example protos from buf registry
-# Use explicit version label for cache control
-ARG PROTO_VERSION
+# Stage example protos from the angzarr-project submodule. Mirrors what
+# `justfile.container::proto-gen` does on the host: the canonical files live
+# at `angzarr_client/proto/examples/X.proto` (matching `package
+# angzarr_client.proto.examples`), but the rust build.rs include root is
+# flat (`examples/X.proto`). Copy + rewrite the imports.
 ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
-RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-proto && \
+COPY angzarr-project/ ./angzarr-project/
+RUN mkdir -p /app/examples-proto/examples && \
+    cp angzarr-project/proto/angzarr_client/proto/examples/*.proto /app/examples-proto/examples/ && \
+    sed -i 's|angzarr_client/proto/examples/|examples/|g' /app/examples-proto/examples/*.proto && \
     ls -la /app/examples-proto/examples/
 
 # Copy what's needed for proto generation
@@ -106,11 +104,7 @@ RUN apk add --no-cache \
     protoc \
     openssl-dev \
     openssl-libs-static \
-    pkgconfig \
-    curl
-
-RUN curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf && \
-    chmod +x /usr/local/bin/buf
+    pkgconfig
 
 RUN rustup target add x86_64-unknown-linux-musl
 
@@ -120,10 +114,13 @@ ENV OPENSSL_DIR=/usr
 
 WORKDIR /app
 
-# Export example protos using explicit version for cache control
-ARG PROTO_VERSION
+# Stage example protos from the angzarr-project submodule (same approach
+# as the proto-gen stage).
 ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
-RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-proto && \
+COPY angzarr-project/ ./angzarr-project/
+RUN mkdir -p /app/examples-proto/examples && \
+    cp angzarr-project/proto/angzarr_client/proto/examples/*.proto /app/examples-proto/examples/ && \
+    sed -i 's|angzarr_client/proto/examples/|examples/|g' /app/examples-proto/examples/*.proto && \
     ls -la /app/examples-proto/examples/
 
 # Copy pre-generated proto files
@@ -170,6 +167,7 @@ RUN mkdir -p examples-utils/src \
              hand-flow-oo tournament/agg \
              pmg-hand-flow pmg-reservation prj-output; do \
       echo "fn main() {}" > $d/src/main.rs; \
+      : > $d/src/lib.rs; \
     done && \
     : > player/saga-table/src/lib.rs && \
     for t in player table hand orchestration saga process_manager projector betting_round game_rules raise_tracking tournament poker_game_unit acceptance; do echo "fn main() {}" > tests/tests/$t.rs; done
