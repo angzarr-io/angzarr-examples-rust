@@ -4,7 +4,7 @@
 //! from the Python reference (`examples-python/main/pmg-hand-flow`): the PM
 //! is intentionally minimal — three event handlers drive the happy-path
 //! choreography while the heavier round-by-round state machine lives in
-//! the hand aggregate itself.
+//! the [`state_machine`] module (port of `hand-flow/hand_process.py`).
 //!
 //! Flow:
 //!   table.HandStarted  → hand.DealCards         (PM, phase = DEALING)
@@ -14,6 +14,13 @@
 //! The PM re-emits each triggering event as its own process event so that
 //! the Tier 5 runtime can replay them through `#[applies]` methods to
 //! rebuild PM state across restarts.
+
+pub mod state_machine;
+
+pub use state_machine::{
+    Action as SmAction, BettingPhase as SmBettingPhase, BlindKind, Command as SmCommand,
+    HandProcess, Phase as SmPhase, PlayerState as SmPlayer,
+};
 
 use angzarr_client::proto::command_page::Payload as CommandPayload;
 use angzarr_client::proto::{

@@ -1,19 +1,16 @@
 //! Process Manager BDD tests.
 //!
-//! The HandFlow PM scenarios (EU-0400 .. EU-0420) describe a rich state
-//! machine that the production `HandFlowPm` does not implement; they are
-//! driven against an in-memory simulator that mirrors the feature's
-//! expectations and keeps the BDD contract live.
+//! The HandFlow PM scenarios (EU-0400 .. EU-0420) dispatch through the
+//! production state machine in `pmg_hand_flow::state_machine` — `HandProcess`
+//! is a real production type and the When steps call its methods (`on_hand_started`,
+//! `handle_event`, `end_betting_round`, `apply_action`, `timeout`, etc.).
 //!
 //! The reservation-PM scenarios (EU-0421 .. EU-0441) dispatch through the
-//! unified `ReservationPm` (replaces the former `pmg-buy-in`,
-//! `pmg-rebuy`, `pmg-registration`). The TournamentStateHelper scenarios
-//! exercise a tournament-state replay helper used in pre-validation; we
-//! keep a local rebuild of the same shape since the helper is not
-//! exposed by the reservation PM crate.
+//! unified `ReservationPm` (replaces the former `pmg-buy-in`, `pmg-rebuy`,
+//! `pmg-registration`). The TournamentStateHelper scenarios exercise the
+//! production `pmg_reservation::TournamentStateHelper` rebuild helper used
+//! in cross-aggregate pre-validation.
 #![allow(clippy::large_enum_variant)]
-
-use std::collections::HashMap;
 
 use angzarr_client::proto::{
     command_page::Payload as CommandPayload, event_page::Payload as EventPayload,
@@ -28,84 +25,53 @@ use examples_proto::{
     ReleaseBuyIn, ReleaseRebuyFee, ReleaseRegistrationFee, SeatingRejected, TournamentCreated,
     TournamentEnrollmentRejected, TournamentPlayerEnrolled, TournamentStarted, TournamentStatus,
 };
+use pmg_hand_flow::state_machine::{
+    Action as SmAction, BettingPhase as SmBettingPhase, BlindKind, Command as SmCommand,
+    HandProcess, Phase as SmPhase, PlayerState,
+};
 use pmg_reservation::{Kind, ReservationPMState, ReservationPm};
 use poker_tests::currency;
 use prost::Message;
 use prost_types::Any;
 
 // =============================================================================
-// HandFlowPM in-memory simulator
+// HandFlowPM dispatch helpers
 // =============================================================================
 //
-// Mirrors the Python HandFlow simulator used by the BDD suite — the rust
-// production `HandFlowPm` only stamps phase transitions; the rich
-// dealer-position + betting-round logic exercised by the feature lives
-// here in test-only code.
+// `HandProcess` and `PlayerState` are imported from
+// `pmg_hand_flow::state_machine` — the real production types. The When
+// steps call `process.on_hand_started`, `process.handle_event`,
+// `process.end_betting_round`, etc. directly.
 
-#[derive(Debug, Clone)]
-struct PMPlayer {
-    #[allow(dead_code)]
-    position: i32,
-    stack: i64,
-    player_root: String,
-    bet_this_round: i64,
-    has_acted: bool,
-    has_folded: bool,
-    is_all_in: bool,
-}
-
-#[derive(Debug, Default)]
-struct HandProcess {
-    phase: String,
-    betting_phase: String,
-    game_variant: String,
-    dealer_position: i32,
-    small_blind: i64,
-    big_blind: i64,
-    pot_total: i64,
-    current_bet: i64,
-    action_on: i32,
-    players: HashMap<i32, PMPlayer>,
-    small_blind_posted: bool,
-    big_blind_posted: bool,
+fn cmd_label(cmd: &SmCommand) -> String {
+    match cmd {
+        SmCommand::PostBlind { kind } => match kind {
+            BlindKind::Small => "PostBlind:small".to_string(),
+            BlindKind::Big => "PostBlind:big".to_string(),
+        },
+        SmCommand::DealCommunityCards { count } => format!("DealCommunityCards:{}", count),
+        SmCommand::AwardPot => "AwardPot".to_string(),
+        SmCommand::PlayerAction { action } => format!(
+            "PlayerAction:{}",
+            match action {
+                SmAction::Fold => "FOLD",
+                SmAction::Check => "CHECK",
+                SmAction::Call => "CALL",
+                SmAction::Bet => "BET",
+                SmAction::Raise => "RAISE",
+                SmAction::AllIn => "ALL_IN",
+            }
+        ),
+        SmCommand::TimeoutCancel => "timeout:cancel".to_string(),
+    }
 }
 
 // =============================================================================
-// Tournament state helper (used by the rebuild-validation scenarios)
+// Tournament state replay — uses production `pmg_reservation::TournamentStateHelper`
 // =============================================================================
-
-#[derive(Debug, Default)]
-struct TournamentStateHelper {
-    name: String,
-    max_players: i32,
-    buy_in: i64,
-    starting_stack: i64,
-    registered: Vec<Vec<u8>>,
-    status: TournamentStatus,
-    registration_open: bool,
-    created: bool,
-}
-
-impl TournamentStateHelper {
-    fn apply_created(&mut self, ev: TournamentCreated) {
-        self.name = ev.name;
-        self.max_players = ev.max_players;
-        self.buy_in = ev.buy_in;
-        self.starting_stack = ev.starting_stack;
-        self.status = TournamentStatus::TournamentRegistrationOpen;
-        self.registration_open = true;
-        self.created = true;
-    }
-
-    fn apply_player_enrolled(&mut self, ev: TournamentPlayerEnrolled) {
-        self.registered.push(ev.player_root);
-    }
-
-    fn apply_started(&mut self, _ev: TournamentStarted) {
-        self.status = TournamentStatus::TournamentRunning;
-        self.registration_open = false;
-    }
-}
+//
+// The rebuild scenarios (EU-0434..0437) feed events into the production
+// rebuild helper used by `ReservationPm` for cross-aggregate pre-validation.
 
 // =============================================================================
 // Test world
@@ -132,8 +98,8 @@ pub struct PMWorld {
     enrollment_rejected_event: Option<TournamentEnrollmentRejected>,
     pm_response: Option<ProcessManagerHandleResponse>,
 
-    // Tournament state replay
-    tournament_state: TournamentStateHelper,
+    // Tournament state replay — production helper from pmg_reservation.
+    tournament_state: pmg_reservation::TournamentStateHelper,
     tournament_events: Vec<Any>,
 
     // HandFlow live-PM
@@ -148,46 +114,25 @@ impl PMWorld {
 
     fn init_default_players(process: &mut HandProcess) {
         for i in 0..2 {
-            process.players.insert(
-                i,
-                PMPlayer {
-                    position: i,
-                    stack: 500,
-                    player_root: format!("player-{}", i + 1),
-                    bet_this_round: 0,
-                    has_acted: false,
-                    has_folded: false,
-                    is_all_in: false,
-                },
-            );
+            process
+                .players
+                .insert(i, PlayerState::new(i, format!("player-{}", i + 1), 500));
+        }
+    }
+
+    fn flush_emitted(&mut self) {
+        self.emitted_commands.clear();
+        if let Some(p) = self.process.as_ref() {
+            for c in &p.emitted {
+                self.emitted_commands.push(cmd_label(c));
+            }
         }
     }
 
     fn end_betting_round(&mut self) {
         let process = self.process.as_mut().unwrap();
-        self.emitted_commands.clear();
-
-        if process.game_variant == "FIVE_CARD_DRAW" && process.betting_phase == "PREFLOP" {
-            process.phase = "DRAW".to_string();
-            return;
-        }
-        match process.betting_phase.as_str() {
-            "PREFLOP" => {
-                self.emitted_commands
-                    .push("DealCommunityCards:3".to_string());
-                process.phase = "DEALING_COMMUNITY".to_string();
-            }
-            "FLOP" | "TURN" => {
-                self.emitted_commands
-                    .push("DealCommunityCards:1".to_string());
-                process.phase = "DEALING_COMMUNITY".to_string();
-            }
-            "RIVER" | "DRAW" => {
-                process.phase = "SHOWDOWN".to_string();
-                self.emitted_commands.push("AwardPot".to_string());
-            }
-            _ => {}
-        }
+        process.end_betting_round();
+        self.flush_emitted();
     }
 }
 
@@ -257,11 +202,9 @@ fn given_hand_flow_pm(world: &mut PMWorld) {
 
 #[given("a HandStarted event with:")]
 fn given_hand_started_event(world: &mut PMWorld, step: &cucumber::gherkin::Step) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        betting_phase: "PREFLOP".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process.betting_phase = Some(SmBettingPhase::Preflop);
     if let Some(table) = &step.table {
         if let Some(row) = table.rows.get(1) {
             if row.len() >= 5 {
@@ -278,11 +221,9 @@ fn given_hand_started_event(world: &mut PMWorld, step: &cucumber::gherkin::Step)
 
 #[given(expr = "an active hand process in phase {word}")]
 fn given_active_process_in_phase(world: &mut PMWorld, phase: String) {
-    let mut process = HandProcess {
-        phase,
-        betting_phase: "PREFLOP".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::parse(&phase).unwrap_or(SmPhase::Betting);
+    process.betting_phase = Some(SmBettingPhase::Preflop);
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -290,11 +231,9 @@ fn given_active_process_in_phase(world: &mut PMWorld, phase: String) {
 
 #[given(expr = "an active hand process with betting_phase {word}")]
 fn given_process_with_betting_phase(world: &mut PMWorld, phase: String) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        betting_phase: phase,
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process.betting_phase = SmBettingPhase::parse(&phase);
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -302,23 +241,12 @@ fn given_process_with_betting_phase(world: &mut PMWorld, phase: String) {
 
 #[given(expr = "an active hand process with {int} players")]
 fn given_process_with_players(world: &mut PMWorld, count: i32) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
     for i in 0..count {
-        process.players.insert(
-            i,
-            PMPlayer {
-                position: i,
-                stack: 500,
-                player_root: format!("player-{}", i + 1),
-                bet_this_round: 0,
-                has_acted: false,
-                has_folded: false,
-                is_all_in: false,
-            },
-        );
+        process
+            .players
+            .insert(i, PlayerState::new(i, format!("player-{}", i + 1), 500));
     }
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -326,11 +254,9 @@ fn given_process_with_players(world: &mut PMWorld, count: i32) {
 
 #[given(expr = "an active hand process with game_variant {word}")]
 fn given_process_with_variant(world: &mut PMWorld, variant: String) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        game_variant: variant,
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process.game_variant = variant;
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -338,10 +264,8 @@ fn given_process_with_variant(world: &mut PMWorld, variant: String) {
 
 #[given("an active hand process")]
 fn given_active_process(world: &mut PMWorld) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -349,34 +273,14 @@ fn given_active_process(world: &mut PMWorld) {
 
 #[given(expr = "an active hand process with player {string} at stack {int}")]
 fn given_process_with_player_stack(world: &mut PMWorld, player_id: String, stack: i64) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        ..Default::default()
-    };
-    process.players.insert(
-        0,
-        PMPlayer {
-            position: 0,
-            stack,
-            player_root: player_id,
-            bet_this_round: 0,
-            has_acted: false,
-            has_folded: false,
-            is_all_in: false,
-        },
-    );
-    process.players.insert(
-        1,
-        PMPlayer {
-            position: 1,
-            stack: 500,
-            player_root: "player-2".to_string(),
-            bet_this_round: 0,
-            has_acted: false,
-            has_folded: false,
-            is_all_in: false,
-        },
-    );
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process
+        .players
+        .insert(0, PlayerState::new(0, player_id, stack));
+    process
+        .players
+        .insert(1, PlayerState::new(1, "player-2".to_string(), 500));
     world.process = Some(process);
     world.emitted_commands.clear();
 }
@@ -390,18 +294,9 @@ fn given_active_players(world: &mut PMWorld, step: &cucumber::gherkin::Step) {
             if row.len() >= 3 && !row[0].is_empty() {
                 let position: i32 = row[1].parse().unwrap_or(0);
                 let stack: i64 = row[2].parse().unwrap_or(0);
-                process.players.insert(
-                    position,
-                    PMPlayer {
-                        position,
-                        stack,
-                        player_root: row[0].clone(),
-                        bet_this_round: 0,
-                        has_acted: false,
-                        has_folded: false,
-                        is_all_in: false,
-                    },
-                );
+                process
+                    .players
+                    .insert(position, PlayerState::new(position, row[0].clone(), stack));
             }
         }
     }
@@ -437,29 +332,8 @@ fn given_action_on(world: &mut PMWorld, pos: i32) {
 fn given_action_at_position(world: &mut PMWorld, pos: i32, action: String) {
     world.last_action = action.clone();
     let process = world.process.as_mut().unwrap();
-    if let Some(p) = process.players.get_mut(&pos) {
-        p.has_acted = true;
-    }
-    match action.as_str() {
-        "RAISE" => {
-            for (k, p) in process.players.iter_mut() {
-                if *k != pos {
-                    p.has_acted = false;
-                }
-            }
-        }
-        "FOLD" => {
-            if let Some(p) = process.players.get_mut(&pos) {
-                p.has_folded = true;
-            }
-        }
-        "ALL_IN" => {
-            if let Some(p) = process.players.get_mut(&pos) {
-                p.is_all_in = true;
-            }
-        }
-        _ => {}
-    }
+    let action_enum = SmAction::parse(&action).expect("known action");
+    process.apply_action(pos, action_enum);
 }
 
 #[given(expr = "players at positions {int}, {int}, {int} have all acted")]
@@ -469,15 +343,7 @@ fn given_players_all_acted(world: &mut PMWorld, p1: i32, p2: i32, p3: i32) {
         process
             .players
             .entry(pos)
-            .or_insert(PMPlayer {
-                position: pos,
-                stack: 500,
-                player_root: format!("player-{}", pos + 1),
-                bet_this_round: 0,
-                has_acted: false,
-                has_folded: false,
-                is_all_in: false,
-            })
+            .or_insert_with(|| PlayerState::new(pos, format!("player-{}", pos + 1), 500))
             .has_acted = true;
     }
 }
@@ -558,7 +424,7 @@ fn given_action_player_bet(world: &mut PMWorld, amount: i64) {
 
 #[given(expr = "betting_phase {word}")]
 fn given_betting_phase(world: &mut PMWorld, phase: String) {
-    world.process.as_mut().unwrap().betting_phase = phase;
+    world.process.as_mut().unwrap().betting_phase = SmBettingPhase::parse(&phase);
 }
 
 #[given("all players have completed their draws")]
@@ -583,17 +449,19 @@ fn given_action_for_player(world: &mut PMWorld, player_id: String, amount: i64) 
 }
 
 #[given("a PotAwarded event")]
-fn given_pot_awarded(_world: &mut PMWorld) {}
+fn given_pot_awarded(world: &mut PMWorld) {
+    // The When step's generic `handle_event` already exits SHOWDOWN →
+    // COMPLETE when phase==Showdown. EU-0420 sets phase to SHOWDOWN
+    // upstream, so no extra prep here. The Given still serves as a
+    // cucumber anchor for the trigger event.
+    world.last_action = "POT_AWARDED".to_string();
+}
 
 #[given(expr = "a CommunityCardsDealt event for {word}")]
 fn given_community_dealt(world: &mut PMWorld, phase: String) {
-    let process = world.process.as_mut().unwrap();
-    for p in process.players.values_mut() {
-        p.bet_this_round = 0;
-        p.has_acted = false;
-    }
-    process.current_bet = 0;
-    process.betting_phase = phase;
+    // Tag the pending event; the When step routes through
+    // `apply_community_cards_dealt` instead of generic `handle_event`.
+    world.last_action = format!("COMMUNITY:{}", phase);
 }
 
 // =============================================================================
@@ -602,96 +470,31 @@ fn given_community_dealt(world: &mut PMWorld, phase: String) {
 
 #[when("the process manager starts the hand")]
 fn when_pm_starts(world: &mut PMWorld) {
-    world.emitted_commands.clear();
     let process = world.process.as_mut().unwrap();
     if process.players.is_empty() {
         PMWorld::init_default_players(process);
     }
-    process.phase = "DEALING".to_string();
+    let players: Vec<PlayerState> = process.players.values().cloned().collect();
+    let dealer = process.dealer_position;
+    let sb = process.small_blind;
+    let bb = process.big_blind;
+    let variant = process.game_variant.clone();
+    process.on_hand_started(1, &variant, dealer, sb, bb, &players);
+    world.flush_emitted();
 }
 
 #[when("the process manager handles the event")]
 fn when_pm_handles(world: &mut PMWorld) {
-    world.emitted_commands.clear();
-    let process = world.process.as_mut().unwrap();
-
-    match process.phase.as_str() {
-        "DEALING" => {
-            process.phase = "POSTING_BLINDS".to_string();
-            world.emitted_commands.push("PostBlind:small".to_string());
-        }
-        "POSTING_BLINDS" => {
-            if process.small_blind_posted && !process.big_blind_posted {
-                world.emitted_commands.push("PostBlind:big".to_string());
-                process.big_blind_posted = true;
-            } else {
-                process.phase = "BETTING".to_string();
-                process.action_on =
-                    (process.dealer_position + 2) % process.players.len().max(1) as i32;
-            }
-        }
-        "BETTING" => {
-            let n = process.players.len() as i32;
-            if n == 0 {
-                return;
-            }
-            let mut next = (process.action_on + 1) % n;
-            for _ in 0..n {
-                if let Some(p) = process.players.get(&next) {
-                    if !p.has_folded && !p.is_all_in {
-                        break;
-                    }
-                }
-                next = (next + 1) % n;
-            }
-            process.action_on = next;
-
-            let active = process.players.values().filter(|p| !p.has_folded).count();
-            if active <= 1 {
-                process.phase = "COMPLETE".to_string();
-                world.emitted_commands.push("AwardPot".to_string());
-                return;
-            }
-
-            let all_acted = process
-                .players
-                .values()
-                .filter(|p| !p.has_folded && !p.is_all_in)
-                .all(|p| p.has_acted);
-            if all_acted {
-                let variant = process.game_variant.clone();
-                let phase = process.betting_phase.clone();
-                if variant == "FIVE_CARD_DRAW" && phase == "PREFLOP" {
-                    process.phase = "DRAW".to_string();
-                } else {
-                    match phase.as_str() {
-                        "PREFLOP" => {
-                            process.phase = "DEALING_COMMUNITY".to_string();
-                            world
-                                .emitted_commands
-                                .push("DealCommunityCards:3".to_string());
-                        }
-                        "FLOP" | "TURN" => {
-                            process.phase = "DEALING_COMMUNITY".to_string();
-                            world
-                                .emitted_commands
-                                .push("DealCommunityCards:1".to_string());
-                        }
-                        "RIVER" | "DRAW" => {
-                            process.phase = "SHOWDOWN".to_string();
-                            world.emitted_commands.push("AwardPot".to_string());
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        "SHOWDOWN" => {
-            process.phase = "COMPLETE".to_string();
-            world.emitted_commands.push("timeout:cancel".to_string());
-        }
-        _ => {}
+    if let Some(phase) = world.last_action.strip_prefix("COMMUNITY:") {
+        let bp = SmBettingPhase::parse(phase).expect("known betting phase");
+        let process = world.process.as_mut().unwrap();
+        process.apply_community_cards_dealt(bp);
+        world.flush_emitted();
+        return;
     }
+    let process = world.process.as_mut().unwrap();
+    process.handle_event();
+    world.flush_emitted();
 }
 
 #[when("the process manager ends the betting round")]
@@ -701,27 +504,16 @@ fn when_pm_ends_round(world: &mut PMWorld) {
 
 #[when("the action times out")]
 fn when_timeout(world: &mut PMWorld) {
-    world.emitted_commands.clear();
-    let process = world.process.as_ref().unwrap();
-    if process.current_bet > 0 {
-        if let Some(p) = process.players.get(&process.action_on) {
-            if p.bet_this_round < process.current_bet {
-                world.emitted_commands.push("PlayerAction:FOLD".to_string());
-                return;
-            }
-        }
-    }
-    world
-        .emitted_commands
-        .push("PlayerAction:CHECK".to_string());
+    let process = world.process.as_mut().unwrap();
+    process.timeout();
+    world.flush_emitted();
 }
 
 #[when("the process manager handles the last draw")]
 fn when_last_draw(world: &mut PMWorld) {
-    world.emitted_commands.clear();
     let process = world.process.as_mut().unwrap();
-    process.phase = "BETTING".to_string();
-    process.betting_phase = "DRAW".to_string();
+    process.handle_last_draw();
+    world.flush_emitted();
 }
 
 #[when("all events are processed")]
@@ -734,7 +526,7 @@ fn when_all_processed(_world: &mut PMWorld) {}
 #[then(expr = "a HandProcess is created with phase {word}")]
 fn then_process_created(world: &mut PMWorld, phase: String) {
     let p = world.process.as_ref().expect("No process");
-    assert_eq!(p.phase, phase);
+    assert_eq!(p.phase.as_str(), phase);
 }
 
 #[then(expr = "the process has {int} players")]
@@ -749,7 +541,7 @@ fn then_dealer_position(world: &mut PMWorld, pos: i32) {
 
 #[then(expr = "the process transitions to phase {word}")]
 fn then_phase_is(world: &mut PMWorld, phase: String) {
-    assert_eq!(world.process.as_ref().unwrap().phase, phase);
+    assert_eq!(world.process.as_ref().unwrap().phase.as_str(), phase);
 }
 
 #[then("a PostBlind command is sent for small blind")]
@@ -789,7 +581,7 @@ fn then_players_reset(world: &mut PMWorld, p1: i32, p2: i32) {
 
 #[then("the betting round ends")]
 fn then_betting_ends(world: &mut PMWorld) {
-    assert_ne!(world.process.as_ref().unwrap().phase, "BETTING");
+    assert_ne!(world.process.as_ref().unwrap().phase, SmPhase::Betting);
 }
 
 #[then("the process advances to next phase")]
@@ -896,12 +688,19 @@ fn then_player_stack(world: &mut PMWorld, player_id: String, amount: i64) {
 
 #[then("any pending timeout is cancelled")]
 fn then_timeout_cancelled(world: &mut PMWorld) {
-    assert_eq!(world.process.as_ref().unwrap().phase, "COMPLETE");
+    assert_eq!(world.process.as_ref().unwrap().phase, SmPhase::Complete);
 }
 
 #[then(expr = "betting_phase is set to {word}")]
 fn then_betting_phase(world: &mut PMWorld, phase: String) {
-    assert_eq!(world.process.as_ref().unwrap().betting_phase, phase);
+    let actual = world
+        .process
+        .as_ref()
+        .unwrap()
+        .betting_phase
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_default();
+    assert_eq!(actual, phase);
 }
 
 // =============================================================================
@@ -1718,22 +1517,36 @@ fn then_end_hand_preserves_hand_root(world: &mut PMWorld) {
 // Tournament state replay — exercises the helper used in PM pre-validation
 // =============================================================================
 
-fn apply_tournament_any(state: &mut TournamentStateHelper, any: &Any) {
-    if any.type_url.ends_with("TournamentCreated") {
-        let ev = TournamentCreated::decode(any.value.as_slice()).unwrap();
-        state.apply_created(ev);
-    } else if any.type_url.ends_with("TournamentPlayerEnrolled") {
-        let ev = TournamentPlayerEnrolled::decode(any.value.as_slice()).unwrap();
-        state.apply_player_enrolled(ev);
-    } else if any.type_url.ends_with("TournamentStarted") {
-        let ev = TournamentStarted::decode(any.value.as_slice()).unwrap();
-        state.apply_started(ev);
-    }
+fn rebuild_tournament(events: &[Any]) -> pmg_reservation::TournamentStateHelper {
+    use angzarr_client::proto::{
+        event_page::Payload as EventPayload, page_header::SequenceType, EventBook, EventPage,
+        PageHeader,
+    };
+    let pages: Vec<EventPage> = events
+        .iter()
+        .cloned()
+        .map(|any| EventPage {
+            header: Some(PageHeader {
+                sequence_type: Some(SequenceType::Sequence(0)),
+            }),
+            created_at: None,
+            no_commit: false,
+            cascade_id: None,
+            payload: Some(EventPayload::Event(any)),
+        })
+        .collect();
+    let book = EventBook {
+        cover: None,
+        pages,
+        snapshot: None,
+        next_sequence: 0,
+    };
+    pmg_reservation::tournament_state_from_event_book(&book)
 }
 
 #[given("an empty tournament state helper")]
 fn given_empty_tournament_state(world: &mut PMWorld) {
-    world.tournament_state = TournamentStateHelper::default();
+    world.tournament_state = pmg_reservation::TournamentStateHelper::default();
     world.tournament_events.clear();
 }
 
@@ -1748,7 +1561,7 @@ fn given_tournament_event_book_created(
     starting_stack: i64,
 ) {
     world.tournament_events.clear();
-    world.tournament_state = TournamentStateHelper::default();
+    world.tournament_state = pmg_reservation::TournamentStateHelper::default();
     let ev = TournamentCreated {
         name,
         game_variant: examples_proto::GameVariant::TexasHoldem as i32,
@@ -1770,7 +1583,7 @@ fn given_tournament_event_book_created(
 #[given("a tournament event book with:")]
 fn given_tournament_event_book_table(world: &mut PMWorld, step: &cucumber::gherkin::Step) {
     world.tournament_events.clear();
-    world.tournament_state = TournamentStateHelper::default();
+    world.tournament_state = pmg_reservation::TournamentStateHelper::default();
     let table = step.table.as_ref().expect("data table");
     let headers: Vec<String> = table.rows[0].clone();
     let idx = |name: &str| headers.iter().position(|h| h == name);
@@ -1840,12 +1653,7 @@ fn given_tournament_event_book_table(world: &mut PMWorld, step: &cucumber::gherk
 
 #[when("I rebuild the tournament state from the event book")]
 fn when_rebuild_tournament(world: &mut PMWorld) {
-    world.tournament_state = TournamentStateHelper::default();
-    let events = std::mem::take(&mut world.tournament_events);
-    for any in &events {
-        apply_tournament_any(&mut world.tournament_state, any);
-    }
-    world.tournament_events = events;
+    world.tournament_state = rebuild_tournament(&world.tournament_events);
 }
 
 #[when(expr = "I apply a TournamentCreated event with name {string} and max_players {int}")]
@@ -1863,7 +1671,10 @@ fn when_apply_tournament_created(world: &mut PMWorld, name: String, max_players:
         blind_structure: vec![],
         created_at: None,
     };
-    world.tournament_state.apply_created(ev);
+    world
+        .tournament_events
+        .push(pack_any(&ev, "examples.TournamentCreated"));
+    world.tournament_state = rebuild_tournament(&world.tournament_events);
 }
 
 #[when(expr = "I apply a TournamentPlayerEnrolled event for player_root {string}")]
@@ -1876,7 +1687,10 @@ fn when_apply_player_enrolled(world: &mut PMWorld, player_root: String) {
         registration_number: 1,
         enrolled_at: None,
     };
-    world.tournament_state.apply_player_enrolled(ev);
+    world
+        .tournament_events
+        .push(pack_any(&ev, "examples.TournamentPlayerEnrolled"));
+    world.tournament_state = rebuild_tournament(&world.tournament_events);
 }
 
 #[then(expr = "the tournament state has registration_open {word}")]
@@ -1901,18 +1715,19 @@ fn then_tournament_starting_stack(world: &mut PMWorld, n: i64) {
 }
 
 #[then(expr = "the tournament state has registered_count {int}")]
-fn then_tournament_registered_count(world: &mut PMWorld, n: usize) {
-    assert_eq!(world.tournament_state.registered.len(), n);
+fn then_tournament_registered_count(world: &mut PMWorld, n: i32) {
+    assert_eq!(world.tournament_state.registered_count, n);
 }
 
 #[then(expr = "the tournament state has registered player {string}")]
 fn then_tournament_has_registered_player(world: &mut PMWorld, player: String) {
-    let bytes = player.into_bytes();
-    assert!(world
-        .tournament_state
-        .registered
-        .iter()
-        .any(|p| p == &bytes));
+    let hex_str = hex::encode(player.as_bytes());
+    assert!(
+        world.tournament_state.registered_players.contains(&hex_str),
+        "player {} not in registered set {:?}",
+        player,
+        world.tournament_state.registered_players
+    );
 }
 
 #[then(expr = "the tournament state status is {word}")]

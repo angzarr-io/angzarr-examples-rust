@@ -15,11 +15,24 @@
 use std::collections::HashMap;
 
 use angzarr_client::proto::{event_page::Payload as EventPayload, EventBook};
-use angzarr_client::{type_name_from_url, unpack};
+use angzarr_client::type_name_from_url;
 use examples_proto::{
     PlayerJoined, PlayerLeft, PlayerSeated, RegistrationClosed, RegistrationOpened, TableCreated,
     TournamentCreated, TournamentPlayerEnrolled, TournamentStarted, TournamentStatus,
 };
+use prost::Message;
+use prost_types::Any;
+
+/// Decode an `Any` payload by short name match, ignoring the package prefix.
+///
+/// The proto package can drift between source generations
+/// (`examples.X` vs `angzarr_client.proto.examples.X`) without changing the
+/// wire format. We match on the short name (last `.`-segment) and decode by
+/// the message type's wire bytes — equivalent to python's
+/// `event.Unpack(MyMsg())` which doesn't enforce the prefix.
+fn decode_any<T: Message + Default>(any: &Any) -> Result<T, prost::DecodeError> {
+    T::decode(any.value.as_slice())
+}
 
 /// Synchronous cross-aggregate query interface.
 ///
@@ -93,7 +106,7 @@ pub fn table_state_from_event_book(book: &EventBook) -> TableStateHelper {
         let short = name.rsplit('.').next().unwrap_or(name);
         match short {
             "TableCreated" => {
-                if let Ok(e) = unpack::<TableCreated>(any) {
+                if let Ok(e) = decode_any::<TableCreated>(any) {
                     state.table_id = format!("table_{}", e.table_name);
                     state.table_name = e.table_name;
                     state.min_buy_in = e.min_buy_in;
@@ -102,17 +115,17 @@ pub fn table_state_from_event_book(book: &EventBook) -> TableStateHelper {
                 }
             }
             "PlayerJoined" => {
-                if let Ok(e) = unpack::<PlayerJoined>(any) {
+                if let Ok(e) = decode_any::<PlayerJoined>(any) {
                     state.seats.insert(e.seat_position, e.player_root);
                 }
             }
             "PlayerSeated" => {
-                if let Ok(e) = unpack::<PlayerSeated>(any) {
+                if let Ok(e) = decode_any::<PlayerSeated>(any) {
                     state.seats.insert(e.seat_position, e.player_root);
                 }
             }
             "PlayerLeft" => {
-                if let Ok(e) = unpack::<PlayerLeft>(any) {
+                if let Ok(e) = decode_any::<PlayerLeft>(any) {
                     state.seats.remove(&e.seat_position);
                 }
             }
@@ -133,7 +146,7 @@ pub fn tournament_state_from_event_book(book: &EventBook) -> TournamentStateHelp
         let short = name.rsplit('.').next().unwrap_or(name);
         match short {
             "TournamentCreated" => {
-                if let Ok(e) = unpack::<TournamentCreated>(any) {
+                if let Ok(e) = decode_any::<TournamentCreated>(any) {
                     state.status = TournamentStatus::TournamentCreated;
                     state.max_players = e.max_players;
                     state.buy_in = e.buy_in;
@@ -147,24 +160,24 @@ pub fn tournament_state_from_event_book(book: &EventBook) -> TournamentStateHelp
                 }
             }
             "RegistrationOpened" => {
-                if let Ok(_e) = unpack::<RegistrationOpened>(any) {
+                if let Ok(_e) = decode_any::<RegistrationOpened>(any) {
                     state.status = TournamentStatus::TournamentRegistrationOpen;
                     state.registration_open = true;
                 }
             }
             "RegistrationClosed" => {
-                if let Ok(_e) = unpack::<RegistrationClosed>(any) {
+                if let Ok(_e) = decode_any::<RegistrationClosed>(any) {
                     state.registration_open = false;
                 }
             }
             "TournamentStarted" => {
-                if let Ok(_e) = unpack::<TournamentStarted>(any) {
+                if let Ok(_e) = decode_any::<TournamentStarted>(any) {
                     state.status = TournamentStatus::TournamentRunning;
                     state.registration_open = false;
                 }
             }
             "TournamentPlayerEnrolled" => {
-                if let Ok(e) = unpack::<TournamentPlayerEnrolled>(any) {
+                if let Ok(e) = decode_any::<TournamentPlayerEnrolled>(any) {
                     state.registered_players.insert(hex::encode(&e.player_root));
                     state.registered_count = state.registered_players.len() as i32;
                 }
