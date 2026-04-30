@@ -95,16 +95,18 @@ jobs:
           - agg-player
           - agg-table
           - agg-hand
+          - agg-tournament
+          - agg-reservation
           - saga-table-hand
           - saga-table-player
           - saga-hand-table
           - saga-hand-player
           - pmg-hand-flow
-          - pmg-buy-in
-          - pmg-registration
-          - pmg-rebuy
+          - pmg-reservation
           - prj-output
           - upc-player
+          - upc-hand
+          - hand-flow-oo
     steps:
       - uses: actions/checkout@v4
         with:
@@ -253,16 +255,18 @@ jobs:
             "agg-player": "${PREFIX}-agg-player:${TAG}",
             "agg-table": "${PREFIX}-agg-table:${TAG}",
             "agg-hand": "${PREFIX}-agg-hand:${TAG}",
+            "agg-tournament": "${PREFIX}-agg-tournament:${TAG}",
+            "agg-reservation": "${PREFIX}-agg-reservation:${TAG}",
             "saga-table-hand": "${PREFIX}-saga-table-hand:${TAG}",
             "saga-table-player": "${PREFIX}-saga-table-player:${TAG}",
             "saga-hand-table": "${PREFIX}-saga-hand-table:${TAG}",
             "saga-hand-player": "${PREFIX}-saga-hand-player:${TAG}",
             "pmg-hand-flow": "${PREFIX}-pmg-hand-flow:${TAG}",
-            "pmg-buy-in": "${PREFIX}-pmg-buy-in:${TAG}",
-            "pmg-registration": "${PREFIX}-pmg-registration:${TAG}",
-            "pmg-rebuy": "${PREFIX}-pmg-rebuy:${TAG}",
+            "pmg-reservation": "${PREFIX}-pmg-reservation:${TAG}",
             "prj-output": "${PREFIX}-prj-output:${TAG}",
-            "upc-player": "${PREFIX}-upc-player:${TAG}"
+            "upc-player": "${PREFIX}-upc-player:${TAG}",
+            "upc-hand": "${PREFIX}-upc-hand:${TAG}",
+            "hand-flow-oo": "${PREFIX}-hand-flow-oo:${TAG}"
           }
           EOF
           )
