@@ -5,6 +5,7 @@ use angzarr_client::{CommandRejectedError, CommandResult};
 use examples_proto::{ActionTaken, ActionType, PlayerAction};
 use examples_utils::{event_page, pack_event, rejected};
 
+use crate::raise_tracking::min_raise_to;
 use crate::state::{HandState, PlayerHandState};
 
 /// Validated action result containing computed values.
@@ -94,8 +95,8 @@ fn validate<'a>(
             if cmd.amount > player.bet_this_round + player.stack {
                 return Err(rejected("Raise exceeds stack"));
             }
-            let raise_amount = cmd.amount - state.current_bet;
-            if raise_amount < state.min_raise {
+            let min_target = min_raise_to(state.current_bet, state.min_raise);
+            if cmd.amount < min_target {
                 return Err(CommandRejectedError::invalid_argument(
                     "RAISE_BELOW_MIN_RAISE",
                     "Raise must be at least the minimum raise over current bet",

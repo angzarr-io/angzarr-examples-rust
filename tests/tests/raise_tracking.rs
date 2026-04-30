@@ -1,8 +1,11 @@
 //! Raise-tracking arithmetic BDD tests.
 //!
-//! Pure math — no handlers, no state machine. Each step reads/writes integer
-//! fields on the World and computes `min_raise_to = current_bet + last_raise_increment`.
+//! Dispatches through `agg_hand::raise_tracking` helpers — the same module
+//! used by `hand/agg/src/handlers/player_action.rs` to validate raises. The
+//! World is a thin holder of the inputs; every When/Then step calls into
+//! the production functions, no shadow `recompute()`.
 
+use agg_hand::raise_tracking::{all_in_to, min_raise_to, next_last_raise_increment};
 use cucumber::{given, then, when, World};
 
 #[derive(Debug, Default, World)]
@@ -13,64 +16,72 @@ pub struct RaiseWorld {
     all_in_to: i64,
 }
 
-impl RaiseWorld {
-    fn recompute(&mut self) {
-        self.min_raise_to = self.current_bet + self.last_raise_increment;
-    }
-}
-
 #[given(expr = "current_bet is {int} and last_raise_increment is {int}")]
 fn given_state(world: &mut RaiseWorld, bet: i64, inc: i64) {
     world.current_bet = bet;
     world.last_raise_increment = inc;
+    world.min_raise_to = min_raise_to(bet, inc);
 }
 
 #[when("I compute the min_raise_to")]
 fn when_compute_min_raise(world: &mut RaiseWorld) {
-    world.recompute();
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
 #[when(expr = "a player raises to {int}")]
 fn when_raise_to(world: &mut RaiseWorld, amt: i64) {
-    let increment = amt - world.current_bet;
-    if increment > world.last_raise_increment {
-        world.last_raise_increment = increment;
-    }
+    world.last_raise_increment =
+        next_last_raise_increment(world.current_bet, world.last_raise_increment, amt);
     world.current_bet = amt;
-    world.recompute();
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
 #[when(expr = "a player calls {int}")]
 fn when_call(world: &mut RaiseWorld, _amt: i64) {
-    world.recompute();
+    // A call neither moves current_bet nor last_raise_increment.
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
 #[when(expr = "a below-increment raise of increment {int} is applied")]
 fn when_below_increment_raise(world: &mut RaiseWorld, inc: i64) {
-    if inc > world.last_raise_increment {
-        world.last_raise_increment = inc;
-    }
-    world.recompute();
+    // Server uses max(); a below-increment raise (also rejected at the
+    // handler) never shrinks the tracked increment. Drive that semantic
+    // through the same helper.
+    let synthetic_target = world.current_bet + inc;
+    world.last_raise_increment = next_last_raise_increment(
+        world.current_bet,
+        world.last_raise_increment,
+        synthetic_target,
+    );
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
 #[when(expr = "a player bets {int} on a new round")]
 fn when_bet_new_round(world: &mut RaiseWorld, amt: i64) {
-    let increment = amt - world.current_bet;
-    if increment > world.last_raise_increment {
-        world.last_raise_increment = increment;
-    }
+    // Across rounds current_bet resets to 0 but last_raise_increment
+    // persists. The same max() helper handles the grow-or-hold decision.
+    world.last_raise_increment =
+        next_last_raise_increment(world.current_bet, world.last_raise_increment, amt);
     world.current_bet = amt;
-    world.recompute();
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
 #[when(expr = "a player goes all-in to {int}")]
 fn when_all_in_to(world: &mut RaiseWorld, amt: i64) {
-    world.all_in_to = amt;
-    world.recompute();
+    // The feature passes the absolute target; that's `all_in_to(stack,
+    // committed)`. We reverse-engineer one decomposition (stack=amt,
+    // committed=0) so the production helper is on the path.
+    world.all_in_to = all_in_to(amt, 0);
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
 #[then(expr = "min_raise_to is {int}")]
 fn then_min_raise_to(world: &mut RaiseWorld, expected: i64) {
+    assert_eq!(
+        world.min_raise_to,
+        min_raise_to(world.current_bet, world.last_raise_increment),
+        "World state out of sync with helper"
+    );
     assert_eq!(
         world.min_raise_to, expected,
         "Expected min_raise_to={}, got {}",
@@ -98,12 +109,12 @@ fn then_current_bet(world: &mut RaiseWorld, expected: i64) {
 
 #[then("the all-in amount is less than min_raise_to")]
 fn then_all_in_less_than_min_raise(world: &mut RaiseWorld) {
-    let min_raise_to = world.current_bet + world.last_raise_increment;
+    let mr = min_raise_to(world.current_bet, world.last_raise_increment);
     assert!(
-        world.all_in_to < min_raise_to,
+        world.all_in_to < mr,
         "all-in {} is not less than min_raise_to {}",
         world.all_in_to,
-        min_raise_to
+        mr
     );
 }
 
