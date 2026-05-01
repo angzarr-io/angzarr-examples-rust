@@ -57,6 +57,9 @@ pub struct HandWorld {
     winner: String,
     showdown_hole_cards: HashMap<String, Vec<Card>>,
     showdown_community_cards: Vec<Card>,
+
+    // Pre-action hole-card snapshots, keyed by label.
+    card_snapshots: HashMap<String, Vec<Card>>,
 }
 
 impl HandWorld {
@@ -1091,6 +1094,53 @@ fn then_player_hole_cards(world: &mut HandWorld, player_id: String, expected: us
     assert_eq!(
         hex::encode(&draw.player_root),
         hex::encode(world.player_root(&player_id))
+    );
+}
+
+#[given(expr = "I capture player {string} hole cards as {string}")]
+fn given_capture_hole_cards(world: &mut HandWorld, player_id: String, label: String) {
+    let state = world.rebuild_state();
+    let player_root = world.player_root(&player_id);
+    let player = state
+        .get_player(&player_root)
+        .unwrap_or_else(|| panic!("Player {} not found in aggregate", player_id));
+    world.card_snapshots.insert(label, player.hole_cards.clone());
+}
+
+#[then(
+    expr = "player {string} hole card at index {int} matches {string} index {int}"
+)]
+fn then_hole_card_matches_snapshot(
+    world: &mut HandWorld,
+    player_id: String,
+    idx: usize,
+    label: String,
+    src_idx: usize,
+) {
+    let state = world.rebuild_state();
+    let player_root = world.player_root(&player_id);
+    let player = state
+        .get_player(&player_root)
+        .unwrap_or_else(|| panic!("Player {} not found in aggregate", player_id));
+    let snapshot = world
+        .card_snapshots
+        .get(&label)
+        .unwrap_or_else(|| panic!("No snapshot captured under {:?}", label));
+    assert!(
+        idx < player.hole_cards.len(),
+        "Index {} out of range for current hand",
+        idx
+    );
+    assert!(
+        src_idx < snapshot.len(),
+        "Index {} out of range for snapshot {:?}",
+        src_idx,
+        label
+    );
+    assert_eq!(
+        player.hole_cards[idx], snapshot[src_idx],
+        "Player {} hole card at index {} ({:?}) does not match {:?} index {} ({:?})",
+        player_id, idx, player.hole_cards[idx], label, src_idx, snapshot[src_idx]
     );
 }
 

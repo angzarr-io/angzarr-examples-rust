@@ -31,7 +31,11 @@ impl TableHandSaga {
             dealer_position: event.dealer_position,
             small_blind: event.small_blind,
             big_blind: event.big_blind,
-            deck_seed: vec![],
+            // Propagate hand_root as deck_seed so the shuffle is reproducible
+            // across runs — required for acceptance tests asserting specific
+            // cards. hand_root = sha256(table_id, hand_n) is deterministic
+            // per-hand.
+            deck_seed: event.hand_root.clone(),
         };
 
         let command_any = Any {
@@ -81,11 +85,12 @@ mod tests {
     }
 
     #[test]
-    fn command_has_no_deck_seed() {
+    fn command_propagates_hand_root_as_deck_seed() {
         let saga = TableHandSaga;
+        let hand_root = vec![0x55];
         let response = saga
             .on_hand_started(HandStarted {
-                hand_root: vec![0x55],
+                hand_root: hand_root.clone(),
                 hand_number: 8,
                 dealer_position: 0,
                 small_blind_position: 1,
@@ -100,9 +105,9 @@ mod tests {
 
         let cmd_any = extract_command_any(&response.commands[0]);
         let deal = DealCards::decode(cmd_any.value.as_slice()).unwrap();
-        assert!(
-            deal.deck_seed.is_empty(),
-            "deck_seed should be empty for non-deterministic runs"
+        assert_eq!(
+            deal.deck_seed, hand_root,
+            "deck_seed must equal hand_root for deterministic shuffles"
         );
     }
 }

@@ -428,6 +428,21 @@ fn then_hand_number(world: &mut SagaWorld, num: i64) {
     assert_eq!(dc.hand_number, num);
 }
 
+#[then("the command has deck_seed equal to the hand_root")]
+fn then_deck_seed_matches_hand_root(world: &mut SagaWorld) {
+    let cmd_any = world.first_command_any().expect("no command payload");
+    let dc: DealCards = unpack(&cmd_any).expect("decode DealCards");
+    let expected = match &world.trigger {
+        Some(Trigger::HandStarted(ev)) => ev.hand_root.clone(),
+        _ => panic!("deck_seed assertion requires a HandStarted trigger"),
+    };
+    assert_eq!(
+        dc.deck_seed, expected,
+        "Expected deck_seed=hand_root ({:?}), got {:?}",
+        expected, dc.deck_seed
+    );
+}
+
 #[then("the saga emits an EndHand command to table domain")]
 fn then_end_hand(world: &mut SagaWorld) {
     assert!(!world.result_commands.is_empty());
