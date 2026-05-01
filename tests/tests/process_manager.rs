@@ -1,97 +1,81 @@
-//! Process Manager (HandFlowPM) BDD tests.
+//! Process Manager BDD tests.
 //!
-//! The Tier 5 `HandFlowPm` is currently a stub that persists phase transitions
-//! via sagas; the rich state-machine behavior described in the feature file
-//! (phases, betting rounds, auto-folds, draw game phases) is not implemented
-//! in the production crate. These scenarios are therefore driven against an
-//! in-memory state-machine simulator that mirrors the feature's expectations
-//! and keeps the BDD contract live. When `HandFlowPm` grows real state, each
-//! step can be swapped over to call it directly.
-
-use cucumber::{given, then, when, World, WriterExt};
-use std::collections::HashMap;
+//! The HandFlow PM scenarios (EU-0400 .. EU-0420) dispatch through the
+//! production state machine in `pmg_hand_flow::state_machine` — `HandProcess`
+//! is a real production type and the When steps call its methods (`on_hand_started`,
+//! `handle_event`, `end_betting_round`, `apply_action`, `timeout`, etc.).
+//!
+//! The reservation-PM scenarios (EU-0421 .. EU-0441) dispatch through the
+//! unified `ReservationPm` (replaces the former `pmg-buy-in`, `pmg-rebuy`,
+//! `pmg-registration`). The TournamentStateHelper scenarios exercise the
+//! production `pmg_reservation::TournamentStateHelper` rebuild helper used
+//! in cross-aggregate pre-validation.
+#![allow(clippy::large_enum_variant)]
 
 use angzarr_client::proto::{
     command_page::Payload as CommandPayload, event_page::Payload as EventPayload,
     ProcessManagerHandleResponse,
 };
+use cucumber::{given, then, when, World};
 use examples_proto::{
     AddRebuyChips, BuyInCompleted, BuyInFailed, BuyInInitiated, BuyInRequested, ConfirmBuyIn,
-    ConfirmRebuyFee, ConfirmRegistrationFee, Currency, EndHand, EnrollPlayer, GameVariant,
-    HandComplete, PlayerSeated, PotWinner, ProcessRebuy, RebuyChipsAdded, RebuyCompleted,
-    RebuyDenied, RebuyFailed, RebuyInitiated, RebuyProcessed, RebuyRequested,
-    RegistrationInitiated, RegistrationRequested, ReleaseBuyIn, ReleaseRebuyFee,
-    ReleaseRegistrationFee, SeatingRejected, TournamentCreated, TournamentEnrollmentRejected,
-    TournamentPlayerEnrolled, TournamentStarted, TournamentStatus,
+    ConfirmRebuyFee, ConfirmRegistrationFee, EnrollPlayer, GameVariant, HandComplete, PlayerSeated,
+    PotWinner, ProcessRebuy, RebuyChipsAdded, RebuyCompleted, RebuyDenied, RebuyFailed,
+    RebuyInitiated, RebuyProcessed, RebuyRequested, RegistrationInitiated, RegistrationRequested,
+    ReleaseBuyIn, ReleaseRebuyFee, ReleaseRegistrationFee, SeatingRejected, TournamentCreated,
+    TournamentEnrollmentRejected, TournamentPlayerEnrolled, TournamentStarted, TournamentStatus,
 };
-use pmg_buy_in::handler as buyin_handler;
-use pmg_buy_in::BuyInState;
-use pmg_rebuy::handler as rebuy_handler;
-use pmg_rebuy::RebuyState;
-use pmg_registration::handler as registration_handler;
+use pmg_hand_flow::state_machine::{
+    Action as SmAction, BettingPhase as SmBettingPhase, BlindKind, Command as SmCommand,
+    HandProcess, Phase as SmPhase, PlayerState,
+};
+use pmg_reservation::{Kind, ReservationPMState, ReservationPm};
+use poker_tests::currency;
 use prost::Message;
 use prost_types::Any;
 
-#[derive(Debug, Clone)]
-struct PMPlayer {
-    #[allow(dead_code)]
-    position: i32,
-    stack: i64,
-    player_root: String,
-    bet_this_round: i64,
-    has_acted: bool,
-    has_folded: bool,
-    is_all_in: bool,
-}
+// =============================================================================
+// HandFlowPM dispatch helpers
+// =============================================================================
+//
+// `HandProcess` and `PlayerState` are imported from
+// `pmg_hand_flow::state_machine` — the real production types. The When
+// steps call `process.on_hand_started`, `process.handle_event`,
+// `process.end_betting_round`, etc. directly.
 
-#[derive(Debug, Default)]
-struct HandProcess {
-    phase: String,
-    betting_phase: String,
-    game_variant: String,
-    dealer_position: i32,
-    small_blind: i64,
-    big_blind: i64,
-    pot_total: i64,
-    current_bet: i64,
-    action_on: i32,
-    players: HashMap<i32, PMPlayer>,
-    small_blind_posted: bool,
-    big_blind_posted: bool,
-}
-
-#[derive(Debug, Default)]
-struct TournamentStateHelper {
-    name: String,
-    max_players: i32,
-    buy_in: i64,
-    starting_stack: i64,
-    registered: Vec<Vec<u8>>,
-    status: TournamentStatus,
-    registration_open: bool,
-    created: bool,
-}
-
-impl TournamentStateHelper {
-    fn apply_created(&mut self, ev: TournamentCreated) {
-        self.name = ev.name;
-        self.max_players = ev.max_players;
-        self.buy_in = ev.buy_in;
-        self.starting_stack = ev.starting_stack;
-        self.status = TournamentStatus::TournamentRegistrationOpen;
-        self.registration_open = true;
-        self.created = true;
-    }
-
-    fn apply_player_enrolled(&mut self, ev: TournamentPlayerEnrolled) {
-        self.registered.push(ev.player_root);
-    }
-
-    fn apply_started(&mut self, _ev: TournamentStarted) {
-        self.status = TournamentStatus::TournamentRunning;
-        self.registration_open = false;
+fn cmd_label(cmd: &SmCommand) -> String {
+    match cmd {
+        SmCommand::PostBlind { kind } => match kind {
+            BlindKind::Small => "PostBlind:small".to_string(),
+            BlindKind::Big => "PostBlind:big".to_string(),
+        },
+        SmCommand::DealCommunityCards { count } => format!("DealCommunityCards:{}", count),
+        SmCommand::AwardPot => "AwardPot".to_string(),
+        SmCommand::PlayerAction { action } => format!(
+            "PlayerAction:{}",
+            match action {
+                SmAction::Fold => "FOLD",
+                SmAction::Check => "CHECK",
+                SmAction::Call => "CALL",
+                SmAction::Bet => "BET",
+                SmAction::Raise => "RAISE",
+                SmAction::AllIn => "ALL_IN",
+            }
+        ),
+        SmCommand::TimeoutCancel => "timeout:cancel".to_string(),
     }
 }
+
+// =============================================================================
+// Tournament state replay — uses production `pmg_reservation::TournamentStateHelper`
+// =============================================================================
+//
+// The rebuild scenarios (EU-0434..0437) feed events into the production
+// rebuild helper used by `ReservationPm` for cross-aggregate pre-validation.
+
+// =============================================================================
+// Test world
+// =============================================================================
 
 #[derive(Debug, Default, World)]
 #[world(init = Self::new)]
@@ -99,9 +83,9 @@ pub struct PMWorld {
     process: Option<HandProcess>,
     emitted_commands: Vec<String>,
     last_action: String,
-    buyin_state: BuyInState,
-    rebuy_state: RebuyState,
-    registration_player_root: Vec<u8>,
+
+    // ReservationPM fields
+    pm_state: ReservationPMState,
     buyin_event: Option<BuyInRequested>,
     player_seated_event: Option<PlayerSeated>,
     seating_rejected_event: Option<SeatingRejected>,
@@ -113,8 +97,12 @@ pub struct PMWorld {
     player_enrolled_event: Option<TournamentPlayerEnrolled>,
     enrollment_rejected_event: Option<TournamentEnrollmentRejected>,
     pm_response: Option<ProcessManagerHandleResponse>,
-    tournament_state: TournamentStateHelper,
+
+    // Tournament state replay — production helper from pmg_reservation.
+    tournament_state: pmg_reservation::TournamentStateHelper,
     tournament_events: Vec<Any>,
+
+    // HandFlow live-PM
     handflow_state: Option<pmg_hand_flow::HandFlowState>,
     handflow_hand_root: Vec<u8>,
 }
@@ -126,52 +114,85 @@ impl PMWorld {
 
     fn init_default_players(process: &mut HandProcess) {
         for i in 0..2 {
-            process.players.insert(
-                i,
-                PMPlayer {
-                    position: i,
-                    stack: 500,
-                    player_root: format!("player-{}", i + 1),
-                    bet_this_round: 0,
-                    has_acted: false,
-                    has_folded: false,
-                    is_all_in: false,
-                },
-            );
+            process
+                .players
+                .insert(i, PlayerState::new(i, format!("player-{}", i + 1), 500));
+        }
+    }
+
+    fn flush_emitted(&mut self) {
+        self.emitted_commands.clear();
+        if let Some(p) = self.process.as_ref() {
+            for c in &p.emitted {
+                self.emitted_commands.push(cmd_label(c));
+            }
         }
     }
 
     fn end_betting_round(&mut self) {
         let process = self.process.as_mut().unwrap();
-        self.emitted_commands.clear();
-
-        if process.game_variant == "FIVE_CARD_DRAW" && process.betting_phase == "PREFLOP" {
-            process.phase = "DRAW".to_string();
-        } else {
-            match process.betting_phase.as_str() {
-                "PREFLOP" => {
-                    self.emitted_commands
-                        .push("DealCommunityCards:3".to_string());
-                    process.phase = "DEALING_COMMUNITY".to_string();
-                }
-                "FLOP" | "TURN" => {
-                    self.emitted_commands
-                        .push("DealCommunityCards:1".to_string());
-                    process.phase = "DEALING_COMMUNITY".to_string();
-                }
-                "RIVER" | "DRAW" => {
-                    process.phase = "SHOWDOWN".to_string();
-                    self.emitted_commands.push("AwardPot".to_string());
-                }
-                _ => {}
-            }
-        }
+        process.end_betting_round();
+        self.flush_emitted();
     }
 }
 
-// =========================================================================
-// Given steps
-// =========================================================================
+fn first_command_any(resp: &ProcessManagerHandleResponse) -> &Any {
+    let page = resp.commands[0].pages.first().expect("command page");
+    match page.payload.as_ref().expect("payload") {
+        CommandPayload::Command(a) => a,
+        _ => panic!("expected Command payload"),
+    }
+}
+
+/// Find the first command in `resp` whose payload type ends with `suffix`.
+/// PM responses for Initiate flows emit two commands (player + table or
+/// player + tournament); the BDD scenarios assert against whichever one
+/// matches the named type.
+fn find_command_by_suffix<'a>(
+    resp: &'a ProcessManagerHandleResponse,
+    suffix: &str,
+) -> Option<(&'a str, &'a Any)> {
+    for cb in &resp.commands {
+        let domain = cb.cover.as_ref().map(|c| c.domain.as_str()).unwrap_or("");
+        for page in &cb.pages {
+            if let Some(CommandPayload::Command(any)) = &page.payload {
+                if any.type_url.ends_with(suffix) {
+                    return Some((domain, any));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Like `first_command_any` but locates the command by type-URL suffix —
+/// used when a PM response carries multiple commands and the assertion
+/// names a specific one.
+fn command_any_by_suffix<'a>(resp: &'a ProcessManagerHandleResponse, suffix: &str) -> &'a Any {
+    find_command_by_suffix(resp, suffix)
+        .unwrap_or_else(|| panic!("no command with type ending in {} in response", suffix))
+        .1
+}
+
+fn first_process_event_any(resp: &ProcessManagerHandleResponse) -> Any {
+    let book = resp.process_events.first().expect("process_events");
+    let page = book.pages.first().expect("event page");
+    match page.payload.as_ref().expect("payload") {
+        EventPayload::Event(a) => a.clone(),
+        _ => panic!("expected Event payload"),
+    }
+}
+
+fn pack_any<M: Message>(msg: &M, type_name: &str) -> Any {
+    Any {
+        type_url: format!("type.googleapis.com/{}", type_name),
+        value: msg.encode_to_vec(),
+    }
+}
+
+// =============================================================================
+// HandFlowPM Given steps
+// =============================================================================
 
 #[given("a HandFlowPM")]
 fn given_hand_flow_pm(world: &mut PMWorld) {
@@ -181,15 +202,11 @@ fn given_hand_flow_pm(world: &mut PMWorld) {
 
 #[given("a HandStarted event with:")]
 fn given_hand_started_event(world: &mut PMWorld, step: &cucumber::gherkin::Step) {
-    // Parse the row to populate the HandProcess defaults.
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        betting_phase: "PREFLOP".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process.betting_phase = Some(SmBettingPhase::Preflop);
     if let Some(table) = &step.table {
         if let Some(row) = table.rows.get(1) {
-            // columns: hand_number | game_variant | dealer_position | small_blind | big_blind
             if row.len() >= 5 {
                 process.game_variant = row[1].clone();
                 process.dealer_position = row[2].parse().unwrap_or(0);
@@ -204,11 +221,9 @@ fn given_hand_started_event(world: &mut PMWorld, step: &cucumber::gherkin::Step)
 
 #[given(expr = "an active hand process in phase {word}")]
 fn given_active_process_in_phase(world: &mut PMWorld, phase: String) {
-    let mut process = HandProcess {
-        phase,
-        betting_phase: "PREFLOP".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::parse(&phase).unwrap_or(SmPhase::Betting);
+    process.betting_phase = Some(SmBettingPhase::Preflop);
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -216,11 +231,9 @@ fn given_active_process_in_phase(world: &mut PMWorld, phase: String) {
 
 #[given(expr = "an active hand process with betting_phase {word}")]
 fn given_process_with_betting_phase(world: &mut PMWorld, phase: String) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        betting_phase: phase,
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process.betting_phase = SmBettingPhase::parse(&phase);
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -228,23 +241,12 @@ fn given_process_with_betting_phase(world: &mut PMWorld, phase: String) {
 
 #[given(expr = "an active hand process with {int} players")]
 fn given_process_with_players(world: &mut PMWorld, count: i32) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
     for i in 0..count {
-        process.players.insert(
-            i,
-            PMPlayer {
-                position: i,
-                stack: 500,
-                player_root: format!("player-{}", i + 1),
-                bet_this_round: 0,
-                has_acted: false,
-                has_folded: false,
-                is_all_in: false,
-            },
-        );
+        process
+            .players
+            .insert(i, PlayerState::new(i, format!("player-{}", i + 1), 500));
     }
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -252,11 +254,9 @@ fn given_process_with_players(world: &mut PMWorld, count: i32) {
 
 #[given(expr = "an active hand process with game_variant {word}")]
 fn given_process_with_variant(world: &mut PMWorld, variant: String) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        game_variant: variant,
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process.game_variant = variant;
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -264,10 +264,8 @@ fn given_process_with_variant(world: &mut PMWorld, variant: String) {
 
 #[given("an active hand process")]
 fn given_active_process(world: &mut PMWorld) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        ..Default::default()
-    };
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
     PMWorld::init_default_players(&mut process);
     world.process = Some(process);
     world.emitted_commands.clear();
@@ -275,34 +273,14 @@ fn given_active_process(world: &mut PMWorld) {
 
 #[given(expr = "an active hand process with player {string} at stack {int}")]
 fn given_process_with_player_stack(world: &mut PMWorld, player_id: String, stack: i64) {
-    let mut process = HandProcess {
-        phase: "BETTING".to_string(),
-        ..Default::default()
-    };
-    process.players.insert(
-        0,
-        PMPlayer {
-            position: 0,
-            stack,
-            player_root: player_id,
-            bet_this_round: 0,
-            has_acted: false,
-            has_folded: false,
-            is_all_in: false,
-        },
-    );
-    process.players.insert(
-        1,
-        PMPlayer {
-            position: 1,
-            stack: 500,
-            player_root: "player-2".to_string(),
-            bet_this_round: 0,
-            has_acted: false,
-            has_folded: false,
-            is_all_in: false,
-        },
-    );
+    let mut process = HandProcess::new();
+    process.phase = SmPhase::Betting;
+    process
+        .players
+        .insert(0, PlayerState::new(0, player_id, stack));
+    process
+        .players
+        .insert(1, PlayerState::new(1, "player-2".to_string(), 500));
     world.process = Some(process);
     world.emitted_commands.clear();
 }
@@ -316,18 +294,9 @@ fn given_active_players(world: &mut PMWorld, step: &cucumber::gherkin::Step) {
             if row.len() >= 3 && !row[0].is_empty() {
                 let position: i32 = row[1].parse().unwrap_or(0);
                 let stack: i64 = row[2].parse().unwrap_or(0);
-                process.players.insert(
-                    position,
-                    PMPlayer {
-                        position,
-                        stack,
-                        player_root: row[0].clone(),
-                        bet_this_round: 0,
-                        has_acted: false,
-                        has_folded: false,
-                        is_all_in: false,
-                    },
-                );
+                process
+                    .players
+                    .insert(position, PlayerState::new(position, row[0].clone(), stack));
             }
         }
     }
@@ -363,24 +332,8 @@ fn given_action_on(world: &mut PMWorld, pos: i32) {
 fn given_action_at_position(world: &mut PMWorld, pos: i32, action: String) {
     world.last_action = action.clone();
     let process = world.process.as_mut().unwrap();
-    if let Some(p) = process.players.get_mut(&pos) {
-        p.has_acted = true;
-    }
-    if action == "RAISE" {
-        for (k, p) in process.players.iter_mut() {
-            if *k != pos {
-                p.has_acted = false;
-            }
-        }
-    } else if action == "FOLD" {
-        if let Some(p) = process.players.get_mut(&pos) {
-            p.has_folded = true;
-        }
-    } else if action == "ALL_IN" {
-        if let Some(p) = process.players.get_mut(&pos) {
-            p.is_all_in = true;
-        }
-    }
+    let action_enum = SmAction::parse(&action).expect("known action");
+    process.apply_action(pos, action_enum);
 }
 
 #[given(expr = "players at positions {int}, {int}, {int} have all acted")]
@@ -390,15 +343,7 @@ fn given_players_all_acted(world: &mut PMWorld, p1: i32, p2: i32, p3: i32) {
         process
             .players
             .entry(pos)
-            .or_insert(PMPlayer {
-                position: pos,
-                stack: 500,
-                player_root: format!("player-{}", pos + 1),
-                bet_this_round: 0,
-                has_acted: false,
-                has_folded: false,
-                is_all_in: false,
-            })
+            .or_insert_with(|| PlayerState::new(pos, format!("player-{}", pos + 1), 500))
             .has_acted = true;
     }
 }
@@ -430,20 +375,24 @@ fn given_last_player_acts(world: &mut PMWorld) {
 fn given_action_event(world: &mut PMWorld, action: String) {
     world.last_action = action.clone();
     let process = world.process.as_mut().unwrap();
-    if action == "FOLD" {
-        for p in process.players.values_mut() {
-            if !p.has_folded {
-                p.has_folded = true;
-                break;
+    match action.as_str() {
+        "FOLD" => {
+            for p in process.players.values_mut() {
+                if !p.has_folded {
+                    p.has_folded = true;
+                    break;
+                }
             }
         }
-    } else if action == "ALL_IN" {
-        for p in process.players.values_mut() {
-            if !p.is_all_in && !p.has_folded {
-                p.is_all_in = true;
-                break;
+        "ALL_IN" => {
+            for p in process.players.values_mut() {
+                if !p.is_all_in && !p.has_folded {
+                    p.is_all_in = true;
+                    break;
+                }
             }
         }
+        _ => {}
     }
 }
 
@@ -475,7 +424,7 @@ fn given_action_player_bet(world: &mut PMWorld, amount: i64) {
 
 #[given(expr = "betting_phase {word}")]
 fn given_betting_phase(world: &mut PMWorld, phase: String) {
-    world.process.as_mut().unwrap().betting_phase = phase;
+    world.process.as_mut().unwrap().betting_phase = SmBettingPhase::parse(&phase);
 }
 
 #[given("all players have completed their draws")]
@@ -500,117 +449,52 @@ fn given_action_for_player(world: &mut PMWorld, player_id: String, amount: i64) 
 }
 
 #[given("a PotAwarded event")]
-fn given_pot_awarded(_world: &mut PMWorld) {}
+fn given_pot_awarded(world: &mut PMWorld) {
+    // The When step's generic `handle_event` already exits SHOWDOWN →
+    // COMPLETE when phase==Showdown. EU-0420 sets phase to SHOWDOWN
+    // upstream, so no extra prep here. The Given still serves as a
+    // cucumber anchor for the trigger event.
+    world.last_action = "POT_AWARDED".to_string();
+}
 
 #[given(expr = "a CommunityCardsDealt event for {word}")]
 fn given_community_dealt(world: &mut PMWorld, phase: String) {
-    let process = world.process.as_mut().unwrap();
-    for p in process.players.values_mut() {
-        p.bet_this_round = 0;
-        p.has_acted = false;
-    }
-    process.current_bet = 0;
-    process.betting_phase = phase;
+    // Tag the pending event; the When step routes through
+    // `apply_community_cards_dealt` instead of generic `handle_event`.
+    world.last_action = format!("COMMUNITY:{}", phase);
 }
 
-// =========================================================================
-// When steps
-// =========================================================================
+// =============================================================================
+// HandFlowPM When steps
+// =============================================================================
 
 #[when("the process manager starts the hand")]
 fn when_pm_starts(world: &mut PMWorld) {
-    world.emitted_commands.clear();
-    // Seed default players if none exist so downstream assertions can reference
-    // active_players counts.
     let process = world.process.as_mut().unwrap();
     if process.players.is_empty() {
         PMWorld::init_default_players(process);
     }
-    process.phase = "DEALING".to_string();
+    let players: Vec<PlayerState> = process.players.values().cloned().collect();
+    let dealer = process.dealer_position;
+    let sb = process.small_blind;
+    let bb = process.big_blind;
+    let variant = process.game_variant.clone();
+    process.on_hand_started(1, &variant, dealer, sb, bb, &players);
+    world.flush_emitted();
 }
 
 #[when("the process manager handles the event")]
 fn when_pm_handles(world: &mut PMWorld) {
-    world.emitted_commands.clear();
-    let process = world.process.as_mut().unwrap();
-
-    match process.phase.as_str() {
-        "DEALING" => {
-            process.phase = "POSTING_BLINDS".to_string();
-            world.emitted_commands.push("PostBlind:small".to_string());
-        }
-        "POSTING_BLINDS" => {
-            if process.small_blind_posted && !process.big_blind_posted {
-                world.emitted_commands.push("PostBlind:big".to_string());
-                process.big_blind_posted = true;
-            } else {
-                process.phase = "BETTING".to_string();
-                process.action_on =
-                    (process.dealer_position + 2) % process.players.len().max(1) as i32;
-            }
-        }
-        "BETTING" => {
-            let n = process.players.len() as i32;
-            if n == 0 {
-                return;
-            }
-            let mut next = (process.action_on + 1) % n;
-            for _ in 0..n {
-                if let Some(p) = process.players.get(&next) {
-                    if !p.has_folded && !p.is_all_in {
-                        break;
-                    }
-                }
-                next = (next + 1) % n;
-            }
-            process.action_on = next;
-
-            let active = process.players.values().filter(|p| !p.has_folded).count();
-            if active <= 1 {
-                process.phase = "COMPLETE".to_string();
-                world.emitted_commands.push("AwardPot".to_string());
-                return;
-            }
-
-            let all_acted = process
-                .players
-                .values()
-                .filter(|p| !p.has_folded && !p.is_all_in)
-                .all(|p| p.has_acted);
-            if all_acted {
-                let variant = process.game_variant.clone();
-                let phase = process.betting_phase.clone();
-                if variant == "FIVE_CARD_DRAW" && phase == "PREFLOP" {
-                    process.phase = "DRAW".to_string();
-                } else {
-                    match phase.as_str() {
-                        "PREFLOP" => {
-                            process.phase = "DEALING_COMMUNITY".to_string();
-                            world
-                                .emitted_commands
-                                .push("DealCommunityCards:3".to_string());
-                        }
-                        "FLOP" | "TURN" => {
-                            process.phase = "DEALING_COMMUNITY".to_string();
-                            world
-                                .emitted_commands
-                                .push("DealCommunityCards:1".to_string());
-                        }
-                        "RIVER" | "DRAW" => {
-                            process.phase = "SHOWDOWN".to_string();
-                            world.emitted_commands.push("AwardPot".to_string());
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        "SHOWDOWN" => {
-            process.phase = "COMPLETE".to_string();
-            world.emitted_commands.push("timeout:cancel".to_string());
-        }
-        _ => {}
+    if let Some(phase) = world.last_action.strip_prefix("COMMUNITY:") {
+        let bp = SmBettingPhase::parse(phase).expect("known betting phase");
+        let process = world.process.as_mut().unwrap();
+        process.apply_community_cards_dealt(bp);
+        world.flush_emitted();
+        return;
     }
+    let process = world.process.as_mut().unwrap();
+    process.handle_event();
+    world.flush_emitted();
 }
 
 #[when("the process manager ends the betting round")]
@@ -620,40 +504,29 @@ fn when_pm_ends_round(world: &mut PMWorld) {
 
 #[when("the action times out")]
 fn when_timeout(world: &mut PMWorld) {
-    world.emitted_commands.clear();
-    let process = world.process.as_ref().unwrap();
-    if process.current_bet > 0 {
-        if let Some(p) = process.players.get(&process.action_on) {
-            if p.bet_this_round < process.current_bet {
-                world.emitted_commands.push("PlayerAction:FOLD".to_string());
-                return;
-            }
-        }
-    }
-    world
-        .emitted_commands
-        .push("PlayerAction:CHECK".to_string());
+    let process = world.process.as_mut().unwrap();
+    process.timeout();
+    world.flush_emitted();
 }
 
 #[when("the process manager handles the last draw")]
 fn when_last_draw(world: &mut PMWorld) {
-    world.emitted_commands.clear();
     let process = world.process.as_mut().unwrap();
-    process.phase = "BETTING".to_string();
-    process.betting_phase = "DRAW".to_string();
+    process.handle_last_draw();
+    world.flush_emitted();
 }
 
 #[when("all events are processed")]
 fn when_all_processed(_world: &mut PMWorld) {}
 
-// =========================================================================
-// Then steps
-// =========================================================================
+// =============================================================================
+// HandFlowPM Then steps
+// =============================================================================
 
 #[then(expr = "a HandProcess is created with phase {word}")]
 fn then_process_created(world: &mut PMWorld, phase: String) {
     let p = world.process.as_ref().expect("No process");
-    assert_eq!(p.phase, phase);
+    assert_eq!(p.phase.as_str(), phase);
 }
 
 #[then(expr = "the process has {int} players")]
@@ -668,7 +541,7 @@ fn then_dealer_position(world: &mut PMWorld, pos: i32) {
 
 #[then(expr = "the process transitions to phase {word}")]
 fn then_phase_is(world: &mut PMWorld, phase: String) {
-    assert_eq!(world.process.as_ref().unwrap().phase, phase);
+    assert_eq!(world.process.as_ref().unwrap().phase.as_str(), phase);
 }
 
 #[then("a PostBlind command is sent for small blind")]
@@ -708,7 +581,7 @@ fn then_players_reset(world: &mut PMWorld, p1: i32, p2: i32) {
 
 #[then("the betting round ends")]
 fn then_betting_ends(world: &mut PMWorld) {
-    assert_ne!(world.process.as_ref().unwrap().phase, "BETTING");
+    assert_ne!(world.process.as_ref().unwrap().phase, SmPhase::Betting);
 }
 
 #[then("the process advances to next phase")]
@@ -718,7 +591,7 @@ fn then_advances(_world: &mut PMWorld) {}
 fn then_deal_community(world: &mut PMWorld, count: i32) {
     let expected = format!("DealCommunityCards:{}", count);
     assert!(
-        world.emitted_commands.iter().any(|c| *c == expected),
+        world.emitted_commands.contains(&expected),
         "Expected {}, got {:?}",
         expected,
         world.emitted_commands
@@ -766,7 +639,7 @@ fn then_excluded(world: &mut PMWorld) {
 #[then(expr = "the process manager sends PlayerAction with {word}")]
 fn then_auto_action(world: &mut PMWorld, action: String) {
     let expected = format!("PlayerAction:{}", action);
-    assert!(world.emitted_commands.iter().any(|c| *c == expected));
+    assert!(world.emitted_commands.contains(&expected));
 }
 
 #[then(expr = "all players have bet_this_round reset to {int}")]
@@ -815,56 +688,36 @@ fn then_player_stack(world: &mut PMWorld, player_id: String, amount: i64) {
 
 #[then("any pending timeout is cancelled")]
 fn then_timeout_cancelled(world: &mut PMWorld) {
-    assert_eq!(world.process.as_ref().unwrap().phase, "COMPLETE");
+    assert_eq!(world.process.as_ref().unwrap().phase, SmPhase::Complete);
 }
 
 #[then(expr = "betting_phase is set to {word}")]
 fn then_betting_phase(world: &mut PMWorld, phase: String) {
-    assert_eq!(world.process.as_ref().unwrap().betting_phase, phase);
-}
-
-// =========================================================================
-// BuyInPM / RebuyPM / RegistrationPM / TournamentStateHelper step defs
-// =========================================================================
-
-fn first_command_any(resp: &ProcessManagerHandleResponse) -> &Any {
-    let page = resp.commands[0].pages.first().expect("command page");
-    match page.payload.as_ref().expect("payload") {
-        CommandPayload::Command(a) => a,
-        _ => panic!("expected Command payload"),
-    }
-}
-
-fn first_command_domain(resp: &ProcessManagerHandleResponse) -> &str {
-    resp.commands[0]
-        .cover
+    let actual = world
+        .process
         .as_ref()
-        .expect("cover")
-        .domain
-        .as_str()
+        .unwrap()
+        .betting_phase
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_default();
+    assert_eq!(actual, phase);
 }
 
-fn first_process_event_any(resp: &ProcessManagerHandleResponse) -> Any {
-    let book = resp.process_events.as_ref().expect("process_events");
-    let page = book.pages.first().expect("event page");
-    match page.payload.as_ref().expect("payload") {
-        EventPayload::Event(a) => a.clone(),
-        _ => panic!("expected Event payload"),
-    }
-}
-
-// ---------- BuyInPM givens ----------
+// =============================================================================
+// ReservationPM Given steps
+// =============================================================================
 
 #[given("a BuyInPM")]
 fn given_buy_in_pm(world: &mut PMWorld) {
-    world.buyin_state = BuyInState::default();
+    world.pm_state = ReservationPMState::default();
 }
 
 #[given(expr = "a BuyInPM with player_root {string}")]
 fn given_buy_in_pm_with_player(world: &mut PMWorld, player_root: String) {
-    world.buyin_state = BuyInState {
+    world.pm_state = ReservationPMState {
+        kind: Kind::BuyIn,
         player_root: player_root.into_bytes(),
-        ..BuyInState::default()
+        ..ReservationPMState::default()
     };
 }
 
@@ -880,12 +733,10 @@ fn given_buy_in_requested(
 ) {
     world.buyin_event = Some(BuyInRequested {
         reservation_id: reservation_id.into_bytes(),
+        player_root: world.pm_state.player_root.clone(),
         table_root: table_root.into_bytes(),
         seat,
-        amount: Some(Currency {
-            amount,
-            currency_code: "USD".to_string(),
-        }),
+        amount: Some(currency(amount)),
         requested_at: None,
     });
 }
@@ -927,213 +778,48 @@ fn given_seating_rejected(
     });
 }
 
+// `destinations with sequences X=N, Y=M` is a runtime-coordinator detail
+// that doesn't affect the handler's pure response synthesis. We accept
+// any tail with a `{}` placeholder — the suite never asserts on these.
 #[given(expr = "destinations with sequences {}")]
 fn given_destinations(_world: &mut PMWorld, _spec: String) {}
 
-// ---------- BuyInPM whens ----------
-
-#[when("the BuyInPM handles buy_in_requested")]
-fn when_buyin_handles_request(world: &mut PMWorld) {
-    let ev = world.buyin_event.take().expect("buyin event set");
-    world.pm_response = Some(buyin_handler::handle_buy_in_requested(ev).expect("handler ok"));
-}
-
-#[when("the BuyInPM handles player_seated")]
-fn when_buyin_handles_seated(world: &mut PMWorld) {
-    let ev = world.player_seated_event.take().expect("seated event set");
-    world.pm_response = Some(buyin_handler::handle_player_seated(ev).expect("handler ok"));
-}
-
-#[when("the BuyInPM handles seating_rejected")]
-fn when_buyin_handles_rejected(world: &mut PMWorld) {
-    let ev = world
-        .seating_rejected_event
-        .take()
-        .expect("rejected event set");
-    world.pm_response = Some(buyin_handler::handle_seating_rejected(ev).expect("handler ok"));
-}
-
-// ---------- PM thens (shared across PMs) ----------
-
-#[then(expr = "a SeatPlayer command is sent to the {string} domain")]
-fn then_seat_player_command(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().expect("response");
-    assert_eq!(first_command_domain(resp), domain);
-    let any = first_command_any(resp);
-    assert!(any.type_url.ends_with("examples.SeatPlayer"));
-}
-
-#[then(expr = "the SeatPlayer command has player_root {string}")]
-fn then_seat_player_root(world: &mut PMWorld, _root: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    // Handler leaves player_root empty by design; we only assert decode succeeds.
-    examples_proto::SeatPlayer::decode(any.value.as_slice()).expect("decode");
-}
-
-#[then(expr = "the SeatPlayer command has seat {int}")]
-fn then_seat_player_seat(world: &mut PMWorld, seat: i32) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.seat, seat);
-}
-
-#[then(expr = "the SeatPlayer command has amount {int}")]
-fn then_seat_player_amount(world: &mut PMWorld, amount: i64) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.amount, amount);
-}
-
-#[then(expr = "the SeatPlayer command has reservation_id {string}")]
-fn then_seat_player_reservation(world: &mut PMWorld, reservation_id: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
-}
-
-#[then(expr = "the process event is a {} event")]
-fn then_process_event_type(world: &mut PMWorld, type_name: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_process_event_any(resp);
-    assert!(
-        any.type_url.ends_with(&type_name),
-        "expected type ending with {}, got {}",
-        type_name,
-        any.type_url
-    );
-}
-
-#[then(expr = "the BuyInInitiated event has player_root {string}")]
-fn then_buyin_initiated_player(world: &mut PMWorld, _player: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    BuyInInitiated::decode(any.value.as_slice()).unwrap();
-}
-
-#[then(expr = "the BuyInInitiated event has table_root {string}")]
-fn then_buyin_initiated_table(world: &mut PMWorld, table: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = BuyInInitiated::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.table_root, table.into_bytes());
-}
-
-#[then(expr = "the BuyInInitiated event phase is {word}")]
-fn then_buyin_initiated_phase(world: &mut PMWorld, phase: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = BuyInInitiated::decode(any.value.as_slice()).unwrap();
-    let expected = match phase.as_str() {
-        "BUY_IN_SEATING" => examples_proto::BuyInPhase::BuyInSeating,
-        "BUY_IN_CONFIRMING" => examples_proto::BuyInPhase::BuyInConfirming,
-        other => panic!("unexpected phase {}", other),
-    };
-    assert_eq!(ev.phase(), expected);
-}
-
-#[then(expr = "a ConfirmBuyIn command is sent to the {string} domain")]
-fn then_confirm_buyin(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    let any = first_command_any(resp);
-    assert!(any.type_url.ends_with("examples.ConfirmBuyIn"));
-}
-
-#[then(expr = "the ConfirmBuyIn command has reservation_id {string}")]
-fn then_confirm_buyin_reservation(world: &mut PMWorld, reservation_id: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    let cmd = ConfirmBuyIn::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
-}
-
-#[then(expr = "the BuyInCompleted event has player_root {string}")]
-fn then_buyin_completed_player(world: &mut PMWorld, player: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = BuyInCompleted::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.player_root, player.into_bytes());
-}
-
-#[then(expr = "the BuyInCompleted event has seat {int}")]
-fn then_buyin_completed_seat(world: &mut PMWorld, seat: i32) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = BuyInCompleted::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.seat, seat);
-}
-
-#[then(expr = "a ReleaseBuyIn command is sent to the {string} domain")]
-fn then_release_buyin(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    let any = first_command_any(resp);
-    assert!(any.type_url.ends_with("examples.ReleaseBuyIn"));
-}
-
-#[then(expr = "the ReleaseBuyIn command has reservation_id {string}")]
-fn then_release_buyin_reservation(world: &mut PMWorld, reservation_id: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    let cmd = ReleaseBuyIn::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
-}
-
-#[then(expr = "the ReleaseBuyIn command has reason {string}")]
-fn then_release_buyin_reason(world: &mut PMWorld, reason: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    let any = first_command_any(resp);
-    let cmd = ReleaseBuyIn::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reason, reason);
-}
-
-#[then(expr = "the BuyInFailed event has player_root {string}")]
-fn then_buyin_failed_player(world: &mut PMWorld, player: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = BuyInFailed::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.player_root, player.into_bytes());
-}
-
-#[then(expr = "the BuyInFailed event failure code is {string}")]
-fn then_buyin_failed_code(world: &mut PMWorld, code: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = BuyInFailed::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.failure.unwrap().code, code);
-}
-
-// ---------- RebuyPM givens ----------
-
 #[given(expr = "a RebuyPM with player_root {string}")]
 fn given_rebuy_pm_player(world: &mut PMWorld, player_root: String) {
-    world.rebuy_state = RebuyState {
+    world.pm_state = ReservationPMState {
+        kind: Kind::Rebuy,
         player_root: player_root.into_bytes(),
-        ..RebuyState::default()
+        ..ReservationPMState::default()
     };
 }
 
 #[given(expr = "a RebuyPM with table_root {string} and seat {int}")]
 fn given_rebuy_pm_table_seat(world: &mut PMWorld, table_root: String, seat: i32) {
-    world.rebuy_state = RebuyState {
+    world.pm_state = ReservationPMState {
+        kind: Kind::Rebuy,
         table_root: table_root.into_bytes(),
         seat,
-        ..RebuyState::default()
+        ..ReservationPMState::default()
     };
 }
 
 #[given(expr = "a RebuyPM with tournament_root {string}")]
 fn given_rebuy_pm_tournament(world: &mut PMWorld, tournament_root: String) {
-    world.rebuy_state = RebuyState {
+    world.pm_state = ReservationPMState {
+        kind: Kind::Rebuy,
         tournament_root: tournament_root.into_bytes(),
-        ..RebuyState::default()
+        ..ReservationPMState::default()
     };
 }
 
 #[given(expr = "a RebuyPM with tournament_root {string}, table_root {string}, fee {int}")]
 fn given_rebuy_pm_full(world: &mut PMWorld, tournament_root: String, table_root: String, fee: i64) {
-    world.rebuy_state = RebuyState {
+    world.pm_state = ReservationPMState {
+        kind: Kind::Rebuy,
         tournament_root: tournament_root.into_bytes(),
         table_root: table_root.into_bytes(),
         fee,
-        ..RebuyState::default()
+        ..ReservationPMState::default()
     };
 }
 
@@ -1150,13 +836,11 @@ fn given_rebuy_requested(
 ) {
     world.rebuy_requested_event = Some(RebuyRequested {
         reservation_id: reservation_id.into_bytes(),
+        player_root: world.pm_state.player_root.clone(),
         tournament_root: tournament_root.into_bytes(),
         table_root: table_root.into_bytes(),
         seat,
-        fee: Some(Currency {
-            amount: fee,
-            currency_code: "USD".to_string(),
-        }),
+        fee: Some(currency(fee)),
         requested_at: None,
     });
 }
@@ -1219,201 +903,32 @@ fn given_rebuy_chips_added(
     });
 }
 
-// ---------- RebuyPM whens ----------
-
-#[when("the RebuyPM handles rebuy_requested")]
-fn when_rebuy_handles_request(world: &mut PMWorld) {
-    let ev = world.rebuy_requested_event.take().unwrap();
-    world.pm_response = Some(rebuy_handler::handle_rebuy_requested(ev).expect("ok"));
-}
-
-#[when("the RebuyPM handles rebuy_processed")]
-fn when_rebuy_handles_processed(world: &mut PMWorld) {
-    let ev = world.rebuy_processed_event.take().unwrap();
-    world.pm_response =
-        Some(rebuy_handler::handle_rebuy_processed(ev, &world.rebuy_state).expect("ok"));
-}
-
-#[when("the RebuyPM handles rebuy_denied")]
-fn when_rebuy_handles_denied(world: &mut PMWorld) {
-    let ev = world.rebuy_denied_event.take().unwrap();
-    world.pm_response = Some(rebuy_handler::handle_rebuy_denied(ev).expect("ok"));
-}
-
-#[when("the RebuyPM handles chips_added")]
-fn when_rebuy_handles_chips_added(world: &mut PMWorld) {
-    let ev = world.rebuy_chips_added_event.take().unwrap();
-    world.pm_response = Some(rebuy_handler::handle_chips_added(ev).expect("ok"));
-}
-
-// ---------- RebuyPM thens ----------
-
-#[then(expr = "a ProcessRebuy command is sent to the {string} domain")]
-fn then_process_rebuy_cmd(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.ProcessRebuy"));
-}
-
-#[then(expr = "the ProcessRebuy command has player_root {string}")]
-fn then_process_rebuy_player(world: &mut PMWorld, _player: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    ProcessRebuy::decode(any.value.as_slice()).unwrap();
-}
-
-#[then(expr = "the ProcessRebuy command has reservation_id {string}")]
-fn then_process_rebuy_reservation(world: &mut PMWorld, reservation_id: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = ProcessRebuy::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
-}
-
-#[then(expr = "the RebuyInitiated event has player_root {string}")]
-fn then_rebuy_initiated_player(world: &mut PMWorld, _player: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    RebuyInitiated::decode(any.value.as_slice()).unwrap();
-}
-
-#[then(expr = "the RebuyInitiated event has tournament_root {string}")]
-fn then_rebuy_initiated_tournament(world: &mut PMWorld, tournament: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = RebuyInitiated::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.tournament_root, tournament.into_bytes());
-}
-
-#[then(expr = "the RebuyInitiated event phase is {word}")]
-fn then_rebuy_initiated_phase(world: &mut PMWorld, phase: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = RebuyInitiated::decode(any.value.as_slice()).unwrap();
-    let expected = match phase.as_str() {
-        "REBUY_APPROVING" => examples_proto::RebuyPhase::RebuyApproving,
-        "REBUY_ADDING_CHIPS" => examples_proto::RebuyPhase::RebuyAddingChips,
-        other => panic!("phase {}", other),
-    };
-    assert_eq!(ev.phase(), expected);
-}
-
-#[then(expr = "an AddRebuyChips command is sent to the {string} domain")]
-fn then_add_rebuy_chips(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.AddRebuyChips"));
-}
-
-#[then(expr = "the AddRebuyChips command has player_root {string}")]
-fn then_add_rebuy_chips_player(world: &mut PMWorld, player: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.player_root, player.into_bytes());
-}
-
-#[then(expr = "the AddRebuyChips command has reservation_id {string}")]
-fn then_add_rebuy_chips_reservation(world: &mut PMWorld, reservation: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation.into_bytes());
-}
-
-#[then(expr = "the AddRebuyChips command has seat {int}")]
-fn then_add_rebuy_chips_seat(world: &mut PMWorld, seat: i32) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.seat, seat);
-}
-
-#[then(expr = "the AddRebuyChips command has amount {int}")]
-fn then_add_rebuy_chips_amount(world: &mut PMWorld, amount: i64) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.amount, amount);
-}
-
-#[then(expr = "a ReleaseRebuyFee command is sent to the {string} domain")]
-fn then_release_rebuy_fee(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.ReleaseRebuyFee"));
-}
-
-#[then(expr = "the ReleaseRebuyFee command has reservation_id {string}")]
-fn then_release_rebuy_fee_reservation(world: &mut PMWorld, reservation: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = ReleaseRebuyFee::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation.into_bytes());
-}
-
-#[then(expr = "the ReleaseRebuyFee command has reason {string}")]
-fn then_release_rebuy_fee_reason(world: &mut PMWorld, reason: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = ReleaseRebuyFee::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reason, reason);
-}
-
-#[then(expr = "the RebuyFailed event has player_root {string}")]
-fn then_rebuy_failed_player(world: &mut PMWorld, player: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = RebuyFailed::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.player_root, player.into_bytes());
-}
-
-#[then(expr = "the RebuyFailed event failure code is {string}")]
-fn then_rebuy_failed_code(world: &mut PMWorld, code: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = RebuyFailed::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.failure.unwrap().code, code);
-}
-
-#[then(expr = "a ConfirmRebuyFee command is sent to the {string} domain")]
-fn then_confirm_rebuy_fee(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.ConfirmRebuyFee"));
-}
-
-#[then(expr = "the ConfirmRebuyFee command has reservation_id {string}")]
-fn then_confirm_rebuy_fee_reservation(world: &mut PMWorld, reservation: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = ConfirmRebuyFee::decode(any.value.as_slice()).unwrap();
-    assert_eq!(cmd.reservation_id, reservation.into_bytes());
-}
-
-#[then(expr = "the RebuyCompleted event has player_root {string}")]
-fn then_rebuy_completed_player(world: &mut PMWorld, player: String) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = RebuyCompleted::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.player_root, player.into_bytes());
-}
-
-#[then(expr = "the RebuyCompleted event has chips_added {int}")]
-fn then_rebuy_completed_chips(world: &mut PMWorld, chips: i64) {
-    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
-    let ev = RebuyCompleted::decode(any.value.as_slice()).unwrap();
-    assert_eq!(ev.chips_added, chips);
-}
-
-// ---------- RegistrationPM givens ----------
-
 #[given(expr = "a RegistrationPM with player_root {string}")]
 fn given_registration_pm_player(world: &mut PMWorld, player_root: String) {
-    world.registration_player_root = player_root.into_bytes();
+    world.pm_state = ReservationPMState {
+        kind: Kind::Registration,
+        player_root: player_root.into_bytes(),
+        ..ReservationPMState::default()
+    };
 }
 
 #[given(expr = "a RegistrationPM with tournament_root {string} and fee {int}")]
-fn given_registration_pm_tournament_fee(world: &mut PMWorld, _tournament: String, _fee: i64) {
-    world.registration_player_root.clear();
+fn given_registration_pm_tournament_fee(world: &mut PMWorld, tournament_root: String, fee: i64) {
+    world.pm_state = ReservationPMState {
+        kind: Kind::Registration,
+        tournament_root: tournament_root.into_bytes(),
+        fee,
+        ..ReservationPMState::default()
+    };
 }
 
 #[given(expr = "a RegistrationPM with tournament_root {string}")]
-fn given_registration_pm_tournament(world: &mut PMWorld, _tournament: String) {
-    world.registration_player_root.clear();
+fn given_registration_pm_tournament(world: &mut PMWorld, tournament_root: String) {
+    world.pm_state = ReservationPMState {
+        kind: Kind::Registration,
+        tournament_root: tournament_root.into_bytes(),
+        ..ReservationPMState::default()
+    };
 }
 
 #[given(
@@ -1427,11 +942,9 @@ fn given_registration_requested(
 ) {
     world.registration_requested_event = Some(RegistrationRequested {
         reservation_id: reservation_id.into_bytes(),
+        player_root: world.pm_state.player_root.clone(),
         tournament_root: tournament_root.into_bytes(),
-        fee: Some(Currency {
-            amount: fee,
-            currency_code: "USD".to_string(),
-        }),
+        fee: Some(currency(fee)),
         requested_at: None,
     });
 }
@@ -1446,6 +959,7 @@ fn given_registration_requested_no_fee(
 ) {
     world.registration_requested_event = Some(RegistrationRequested {
         reservation_id: reservation_id.into_bytes(),
+        player_root: world.pm_state.player_root.clone(),
         tournament_root: tournament_root.into_bytes(),
         fee: None,
         requested_at: None,
@@ -1489,57 +1003,413 @@ fn given_enrollment_rejected(
     });
 }
 
-// ---------- RegistrationPM whens ----------
+// =============================================================================
+// ReservationPM When steps
+// =============================================================================
+
+#[when("the BuyInPM handles buy_in_requested")]
+fn when_buyin_handles_request(world: &mut PMWorld) {
+    let ev = world.buyin_event.take().expect("buyin event set");
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_buy_in_requested(ev, &world.pm_state).expect("ok"));
+}
+
+#[when("the BuyInPM handles player_seated")]
+fn when_buyin_handles_seated(world: &mut PMWorld) {
+    let ev = world.player_seated_event.take().expect("seated event set");
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_player_seated(ev, &world.pm_state).expect("ok"));
+}
+
+#[when("the BuyInPM handles seating_rejected")]
+fn when_buyin_handles_rejected(world: &mut PMWorld) {
+    let ev = world
+        .seating_rejected_event
+        .take()
+        .expect("rejected event set");
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_seating_rejected(ev, &world.pm_state).expect("ok"));
+}
+
+#[when("the RebuyPM handles rebuy_requested")]
+fn when_rebuy_handles_request(world: &mut PMWorld) {
+    let ev = world.rebuy_requested_event.take().unwrap();
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_rebuy_requested(ev, &world.pm_state).expect("ok"));
+}
+
+#[when("the RebuyPM handles rebuy_processed")]
+fn when_rebuy_handles_processed(world: &mut PMWorld) {
+    let ev = world.rebuy_processed_event.take().unwrap();
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_rebuy_processed(ev, &world.pm_state).expect("ok"));
+}
+
+#[when("the RebuyPM handles rebuy_denied")]
+fn when_rebuy_handles_denied(world: &mut PMWorld) {
+    let ev = world.rebuy_denied_event.take().unwrap();
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_rebuy_denied(ev, &world.pm_state).expect("ok"));
+}
+
+#[when("the RebuyPM handles rebuy_chips_added")]
+fn when_rebuy_handles_chips_added(world: &mut PMWorld) {
+    let ev = world.rebuy_chips_added_event.take().unwrap();
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_rebuy_chips_added(ev, &world.pm_state).expect("ok"));
+}
 
 #[when("the RegistrationPM handles registration_requested")]
 fn when_registration_handles_request(world: &mut PMWorld) {
     let ev = world.registration_requested_event.take().unwrap();
-    world.pm_response = Some(registration_handler::handle_registration_requested(ev).expect("ok"));
+    let pm = ReservationPm::new();
+    world.pm_response = Some(
+        pm.on_registration_requested(ev, &world.pm_state)
+            .expect("ok"),
+    );
 }
 
 #[when("the RegistrationPM handles player_enrolled")]
 fn when_registration_handles_enrolled(world: &mut PMWorld) {
     let ev = world.player_enrolled_event.take().unwrap();
-    world.pm_response = Some(registration_handler::handle_player_enrolled(ev).expect("ok"));
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_player_enrolled(ev, &world.pm_state).expect("ok"));
 }
 
 #[when("the RegistrationPM handles enrollment_rejected")]
 fn when_registration_handles_rejected(world: &mut PMWorld) {
     let ev = world.enrollment_rejected_event.take().unwrap();
-    world.pm_response = Some(registration_handler::handle_enrollment_rejected(ev).expect("ok"));
+    let pm = ReservationPm::new();
+    world.pm_response = Some(pm.on_enrollment_rejected(ev, &world.pm_state).expect("ok"));
 }
 
-// ---------- RegistrationPM thens ----------
+// =============================================================================
+// ReservationPM Then steps — generic command/event dispatch
+// =============================================================================
+
+fn assert_command_target(resp: &ProcessManagerHandleResponse, domain: &str, type_suffix: &str) {
+    let (found_domain, _any) = find_command_by_suffix(resp, type_suffix).unwrap_or_else(|| {
+        panic!(
+            "no command of type *{} in response (commands: {:?})",
+            type_suffix,
+            resp.commands
+                .iter()
+                .filter_map(|c| c.cover.as_ref().map(|cv| cv.domain.clone()))
+                .collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(
+        found_domain, domain,
+        "Expected {} command on `{}` domain, got `{}`",
+        type_suffix, domain, found_domain
+    );
+}
+
+#[then(expr = "a SeatPlayer command is sent to the {string} domain")]
+fn then_seat_player_command(world: &mut PMWorld, domain: String) {
+    assert_command_target(world.pm_response.as_ref().unwrap(), &domain, "SeatPlayer");
+}
+
+#[then(expr = "the SeatPlayer command has player_root {string}")]
+fn then_seat_player_root(world: &mut PMWorld, root: String) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "SeatPlayer");
+    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).expect("decode");
+    assert_eq!(cmd.player_root, root.into_bytes());
+}
+
+#[then(expr = "the SeatPlayer command has seat {int}")]
+fn then_seat_player_seat(world: &mut PMWorld, seat: i32) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "SeatPlayer");
+    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.seat, seat);
+}
+
+#[then(expr = "the SeatPlayer command has amount {int}")]
+fn then_seat_player_amount(world: &mut PMWorld, amount: i64) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "SeatPlayer");
+    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.amount, amount);
+}
+
+#[then(expr = "the SeatPlayer command has reservation_id {string}")]
+fn then_seat_player_reservation(world: &mut PMWorld, reservation_id: String) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "SeatPlayer");
+    let cmd = examples_proto::SeatPlayer::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
+}
+
+#[then(expr = "the process event is a {} event")]
+fn then_process_event_type(world: &mut PMWorld, type_name: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
+    assert!(
+        any.type_url.ends_with(suffix),
+        "expected type ending with {}, got {}",
+        type_name,
+        any.type_url
+    );
+}
+
+#[then(expr = "the BuyInInitiated event has player_root {string}")]
+fn then_buyin_initiated_player(world: &mut PMWorld, player: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInInitiated::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.player_root, player.into_bytes());
+}
+
+#[then(expr = "the BuyInInitiated event has table_root {string}")]
+fn then_buyin_initiated_table(world: &mut PMWorld, table: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInInitiated::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.table_root, table.into_bytes());
+}
+
+#[then(expr = "the BuyInInitiated event phase is {word}")]
+fn then_buyin_initiated_phase(world: &mut PMWorld, phase: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInInitiated::decode(any.value.as_slice()).unwrap();
+    let expected = match phase.as_str() {
+        "BUY_IN_SEATING" => examples_proto::BuyInPhase::BuyInSeating,
+        "BUY_IN_CONFIRMING" => examples_proto::BuyInPhase::BuyInConfirming,
+        other => panic!("unexpected phase {}", other),
+    };
+    assert_eq!(ev.phase(), expected);
+}
+
+#[then(expr = "a ConfirmBuyIn command is sent to the {string} domain")]
+fn then_confirm_buyin(world: &mut PMWorld, domain: String) {
+    assert_command_target(world.pm_response.as_ref().unwrap(), &domain, "ConfirmBuyIn");
+}
+
+#[then(expr = "the ConfirmBuyIn command has reservation_id {string}")]
+fn then_confirm_buyin_reservation(world: &mut PMWorld, reservation_id: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = ConfirmBuyIn::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
+}
+
+#[then(expr = "the BuyInCompleted event has player_root {string}")]
+fn then_buyin_completed_player(world: &mut PMWorld, player: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInCompleted::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.player_root, player.into_bytes());
+}
+
+#[then(expr = "the BuyInCompleted event has seat {int}")]
+fn then_buyin_completed_seat(world: &mut PMWorld, seat: i32) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInCompleted::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.seat, seat);
+}
+
+#[then(expr = "a ReleaseBuyIn command is sent to the {string} domain")]
+fn then_release_buyin(world: &mut PMWorld, domain: String) {
+    assert_command_target(world.pm_response.as_ref().unwrap(), &domain, "ReleaseBuyIn");
+}
+
+#[then(expr = "the ReleaseBuyIn command has reservation_id {string}")]
+fn then_release_buyin_reservation(world: &mut PMWorld, reservation_id: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = ReleaseBuyIn::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
+}
+
+#[then(expr = "the ReleaseBuyIn command has reason {string}")]
+fn then_release_buyin_reason(world: &mut PMWorld, reason: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = ReleaseBuyIn::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reason, reason);
+}
+
+#[then(expr = "the BuyInFailed event has player_root {string}")]
+fn then_buyin_failed_player(world: &mut PMWorld, player: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInFailed::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.player_root, player.into_bytes());
+}
+
+#[then(expr = "the BuyInFailed event failure code is {string}")]
+fn then_buyin_failed_code(world: &mut PMWorld, code: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = BuyInFailed::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.failure.unwrap().code, code);
+}
+
+#[then(expr = "a ProcessRebuy command is sent to the {string} domain")]
+fn then_process_rebuy_cmd(world: &mut PMWorld, domain: String) {
+    assert_command_target(world.pm_response.as_ref().unwrap(), &domain, "ProcessRebuy");
+}
+
+#[then(expr = "the ProcessRebuy command has player_root {string}")]
+fn then_process_rebuy_player(world: &mut PMWorld, player: String) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "ProcessRebuy");
+    let cmd = ProcessRebuy::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.player_root, player.into_bytes());
+}
+
+#[then(expr = "the ProcessRebuy command has reservation_id {string}")]
+fn then_process_rebuy_reservation(world: &mut PMWorld, reservation_id: String) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "ProcessRebuy");
+    let cmd = ProcessRebuy::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation_id.into_bytes());
+}
+
+#[then(expr = "the RebuyInitiated event has player_root {string}")]
+fn then_rebuy_initiated_player(world: &mut PMWorld, player: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyInitiated::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.player_root, player.into_bytes());
+}
+
+#[then(expr = "the RebuyInitiated event has tournament_root {string}")]
+fn then_rebuy_initiated_tournament(world: &mut PMWorld, tournament: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyInitiated::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.tournament_root, tournament.into_bytes());
+}
+
+#[then(expr = "the RebuyInitiated event phase is {word}")]
+fn then_rebuy_initiated_phase(world: &mut PMWorld, phase: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyInitiated::decode(any.value.as_slice()).unwrap();
+    let expected = match phase.as_str() {
+        "REBUY_APPROVING" => examples_proto::RebuyPhase::RebuyApproving,
+        "REBUY_ADDING_CHIPS" => examples_proto::RebuyPhase::RebuyAddingChips,
+        other => panic!("phase {}", other),
+    };
+    assert_eq!(ev.phase(), expected);
+}
+
+#[then(expr = "an AddRebuyChips command is sent to the {string} domain")]
+fn then_add_rebuy_chips(world: &mut PMWorld, domain: String) {
+    assert_command_target(
+        world.pm_response.as_ref().unwrap(),
+        &domain,
+        "AddRebuyChips",
+    );
+}
+
+#[then(expr = "the AddRebuyChips command has player_root {string}")]
+fn then_add_rebuy_chips_player(world: &mut PMWorld, player: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.player_root, player.into_bytes());
+}
+
+#[then(expr = "the AddRebuyChips command has reservation_id {string}")]
+fn then_add_rebuy_chips_reservation(world: &mut PMWorld, reservation: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation.into_bytes());
+}
+
+#[then(expr = "the AddRebuyChips command has seat {int}")]
+fn then_add_rebuy_chips_seat(world: &mut PMWorld, seat: i32) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.seat, seat);
+}
+
+#[then(expr = "the AddRebuyChips command has amount {int}")]
+fn then_add_rebuy_chips_amount(world: &mut PMWorld, amount: i64) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = AddRebuyChips::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.amount, amount);
+}
+
+#[then(expr = "a ReleaseRebuyFee command is sent to the {string} domain")]
+fn then_release_rebuy_fee(world: &mut PMWorld, domain: String) {
+    assert_command_target(
+        world.pm_response.as_ref().unwrap(),
+        &domain,
+        "ReleaseRebuyFee",
+    );
+}
+
+#[then(expr = "the ReleaseRebuyFee command has reservation_id {string}")]
+fn then_release_rebuy_fee_reservation(world: &mut PMWorld, reservation: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = ReleaseRebuyFee::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation.into_bytes());
+}
+
+#[then(expr = "the ReleaseRebuyFee command has reason {string}")]
+fn then_release_rebuy_fee_reason(world: &mut PMWorld, reason: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = ReleaseRebuyFee::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reason, reason);
+}
+
+#[then(expr = "the RebuyFailed event has player_root {string}")]
+fn then_rebuy_failed_player(world: &mut PMWorld, player: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyFailed::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.player_root, player.into_bytes());
+}
+
+#[then(expr = "the RebuyFailed event failure code is {string}")]
+fn then_rebuy_failed_code(world: &mut PMWorld, code: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyFailed::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.failure.unwrap().code, code);
+}
+
+#[then(expr = "a ConfirmRebuyFee command is sent to the {string} domain")]
+fn then_confirm_rebuy_fee(world: &mut PMWorld, domain: String) {
+    assert_command_target(
+        world.pm_response.as_ref().unwrap(),
+        &domain,
+        "ConfirmRebuyFee",
+    );
+}
+
+#[then(expr = "the ConfirmRebuyFee command has reservation_id {string}")]
+fn then_confirm_rebuy_fee_reservation(world: &mut PMWorld, reservation: String) {
+    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let cmd = ConfirmRebuyFee::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.reservation_id, reservation.into_bytes());
+}
+
+#[then(expr = "the RebuyCompleted event has player_root {string}")]
+fn then_rebuy_completed_player(world: &mut PMWorld, player: String) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyCompleted::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.player_root, player.into_bytes());
+}
+
+#[then(expr = "the RebuyCompleted event has chips_added {int}")]
+fn then_rebuy_completed_chips(world: &mut PMWorld, chips: i64) {
+    let any = first_process_event_any(world.pm_response.as_ref().unwrap());
+    let ev = RebuyCompleted::decode(any.value.as_slice()).unwrap();
+    assert_eq!(ev.chips_added, chips);
+}
 
 #[then(expr = "an EnrollPlayer command is sent to the {string} domain")]
 fn then_enroll_player_cmd(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.EnrollPlayer"));
+    assert_command_target(world.pm_response.as_ref().unwrap(), &domain, "EnrollPlayer");
 }
 
 #[then(expr = "the EnrollPlayer command has player_root {string}")]
-fn then_enroll_player_root(world: &mut PMWorld, _player: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
-    EnrollPlayer::decode(any.value.as_slice()).unwrap();
+fn then_enroll_player_root(world: &mut PMWorld, player: String) {
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "EnrollPlayer");
+    let cmd = EnrollPlayer::decode(any.value.as_slice()).unwrap();
+    assert_eq!(cmd.player_root, player.into_bytes());
 }
 
 #[then(expr = "the EnrollPlayer command has reservation_id {string}")]
 fn then_enroll_player_reservation(world: &mut PMWorld, reservation: String) {
-    let any = first_command_any(world.pm_response.as_ref().unwrap());
+    let any = command_any_by_suffix(world.pm_response.as_ref().unwrap(), "EnrollPlayer");
     let cmd = EnrollPlayer::decode(any.value.as_slice()).unwrap();
     assert_eq!(cmd.reservation_id, reservation.into_bytes());
 }
 
 #[then(expr = "a ConfirmRegistrationFee command is sent to the {string} domain")]
 fn then_confirm_registration_fee(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.ConfirmRegistrationFee"));
+    assert_command_target(
+        world.pm_response.as_ref().unwrap(),
+        &domain,
+        "ConfirmRegistrationFee",
+    );
 }
 
 #[then(expr = "the ConfirmRegistrationFee command has reservation_id {string}")]
@@ -1551,11 +1421,11 @@ fn then_confirm_registration_fee_reservation(world: &mut PMWorld, reservation: S
 
 #[then(expr = "a ReleaseRegistrationFee command is sent to the {string} domain")]
 fn then_release_registration_fee(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.ReleaseRegistrationFee"));
+    assert_command_target(
+        world.pm_response.as_ref().unwrap(),
+        &domain,
+        "ReleaseRegistrationFee",
+    );
 }
 
 #[then(expr = "the ReleaseRegistrationFee command has reservation_id {string}")]
@@ -1579,7 +1449,9 @@ fn then_registration_initiated_fee_amount(world: &mut PMWorld, amount: i64) {
     assert_eq!(ev.fee.as_ref().expect("fee populated").amount, amount);
 }
 
-// ---------- HandFlowPM ----------
+// =============================================================================
+// HandFlowPM (live PM) — HandComplete -> EndHand
+// =============================================================================
 
 #[given("a HandFlowPM with a started hand")]
 fn given_handflowpm_started_hand(world: &mut PMWorld) {
@@ -1624,52 +1496,57 @@ fn when_handflowpm_hand_complete(world: &mut PMWorld, _n: usize, amount: i64) {
 
 #[then(expr = "an EndHand command is sent to the {string} domain")]
 fn then_end_hand_command_domain(world: &mut PMWorld, domain: String) {
-    let resp = world.pm_response.as_ref().unwrap();
-    assert_eq!(first_command_domain(resp), domain);
-    assert!(first_command_any(resp)
-        .type_url
-        .ends_with("examples.EndHand"));
+    assert_command_target(world.pm_response.as_ref().unwrap(), &domain, "EndHand");
 }
 
 #[then(expr = "the EndHand command has {int} result")]
 fn then_end_hand_result_count(world: &mut PMWorld, count: usize) {
     let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = EndHand::decode(any.value.as_slice()).unwrap();
+    let cmd = examples_proto::EndHand::decode(any.value.as_slice()).unwrap();
     assert_eq!(cmd.results.len(), count);
 }
 
 #[then("the EndHand command preserves the original hand_root")]
 fn then_end_hand_preserves_hand_root(world: &mut PMWorld) {
     let any = first_command_any(world.pm_response.as_ref().unwrap());
-    let cmd = EndHand::decode(any.value.as_slice()).unwrap();
+    let cmd = examples_proto::EndHand::decode(any.value.as_slice()).unwrap();
     assert_eq!(cmd.hand_root, world.handflow_hand_root);
 }
 
-// ---------- Tournament state helper ----------
+// =============================================================================
+// Tournament state replay — exercises the helper used in PM pre-validation
+// =============================================================================
 
-fn pack_any<M: Message>(msg: &M, type_name: &str) -> Any {
-    Any {
-        type_url: format!("type.googleapis.com/{}", type_name),
-        value: msg.encode_to_vec(),
-    }
-}
-
-fn apply_tournament_any(state: &mut TournamentStateHelper, any: &Any) {
-    if any.type_url.ends_with("TournamentCreated") {
-        let ev = TournamentCreated::decode(any.value.as_slice()).unwrap();
-        state.apply_created(ev);
-    } else if any.type_url.ends_with("TournamentPlayerEnrolled") {
-        let ev = TournamentPlayerEnrolled::decode(any.value.as_slice()).unwrap();
-        state.apply_player_enrolled(ev);
-    } else if any.type_url.ends_with("TournamentStarted") {
-        let ev = TournamentStarted::decode(any.value.as_slice()).unwrap();
-        state.apply_started(ev);
-    }
+fn rebuild_tournament(events: &[Any]) -> pmg_reservation::TournamentStateHelper {
+    use angzarr_client::proto::{
+        event_page::Payload as EventPayload, page_header::SequenceType, EventBook, EventPage,
+        PageHeader,
+    };
+    let pages: Vec<EventPage> = events
+        .iter()
+        .cloned()
+        .map(|any| EventPage {
+            header: Some(PageHeader {
+                sequence_type: Some(SequenceType::Sequence(0)),
+            }),
+            created_at: None,
+            no_commit: false,
+            cascade_id: None,
+            payload: Some(EventPayload::Event(any)),
+        })
+        .collect();
+    let book = EventBook {
+        cover: None,
+        pages,
+        snapshot: None,
+        next_sequence: 0,
+    };
+    pmg_reservation::tournament_state_from_event_book(&book)
 }
 
 #[given("an empty tournament state helper")]
 fn given_empty_tournament_state(world: &mut PMWorld) {
-    world.tournament_state = TournamentStateHelper::default();
+    world.tournament_state = pmg_reservation::TournamentStateHelper::default();
     world.tournament_events.clear();
 }
 
@@ -1684,7 +1561,7 @@ fn given_tournament_event_book_created(
     starting_stack: i64,
 ) {
     world.tournament_events.clear();
-    world.tournament_state = TournamentStateHelper::default();
+    world.tournament_state = pmg_reservation::TournamentStateHelper::default();
     let ev = TournamentCreated {
         name,
         game_variant: examples_proto::GameVariant::TexasHoldem as i32,
@@ -1706,7 +1583,7 @@ fn given_tournament_event_book_created(
 #[given("a tournament event book with:")]
 fn given_tournament_event_book_table(world: &mut PMWorld, step: &cucumber::gherkin::Step) {
     world.tournament_events.clear();
-    world.tournament_state = TournamentStateHelper::default();
+    world.tournament_state = pmg_reservation::TournamentStateHelper::default();
     let table = step.table.as_ref().expect("data table");
     let headers: Vec<String> = table.rows[0].clone();
     let idx = |name: &str| headers.iter().position(|h| h == name);
@@ -1776,11 +1653,7 @@ fn given_tournament_event_book_table(world: &mut PMWorld, step: &cucumber::gherk
 
 #[when("I rebuild the tournament state from the event book")]
 fn when_rebuild_tournament(world: &mut PMWorld) {
-    world.tournament_state = TournamentStateHelper::default();
-    let events = world.tournament_events.clone();
-    for any in &events {
-        apply_tournament_any(&mut world.tournament_state, any);
-    }
+    world.tournament_state = rebuild_tournament(&world.tournament_events);
 }
 
 #[when(expr = "I apply a TournamentCreated event with name {string} and max_players {int}")]
@@ -1798,7 +1671,10 @@ fn when_apply_tournament_created(world: &mut PMWorld, name: String, max_players:
         blind_structure: vec![],
         created_at: None,
     };
-    world.tournament_state.apply_created(ev);
+    world
+        .tournament_events
+        .push(pack_any(&ev, "examples.TournamentCreated"));
+    world.tournament_state = rebuild_tournament(&world.tournament_events);
 }
 
 #[when(expr = "I apply a TournamentPlayerEnrolled event for player_root {string}")]
@@ -1811,7 +1687,10 @@ fn when_apply_player_enrolled(world: &mut PMWorld, player_root: String) {
         registration_number: 1,
         enrolled_at: None,
     };
-    world.tournament_state.apply_player_enrolled(ev);
+    world
+        .tournament_events
+        .push(pack_any(&ev, "examples.TournamentPlayerEnrolled"));
+    world.tournament_state = rebuild_tournament(&world.tournament_events);
 }
 
 #[then(expr = "the tournament state has registration_open {word}")]
@@ -1836,18 +1715,19 @@ fn then_tournament_starting_stack(world: &mut PMWorld, n: i64) {
 }
 
 #[then(expr = "the tournament state has registered_count {int}")]
-fn then_tournament_registered_count(world: &mut PMWorld, n: usize) {
-    assert_eq!(world.tournament_state.registered.len(), n);
+fn then_tournament_registered_count(world: &mut PMWorld, n: i32) {
+    assert_eq!(world.tournament_state.registered_count, n);
 }
 
 #[then(expr = "the tournament state has registered player {string}")]
 fn then_tournament_has_registered_player(world: &mut PMWorld, player: String) {
-    let bytes = player.into_bytes();
-    assert!(world
-        .tournament_state
-        .registered
-        .iter()
-        .any(|p| p == &bytes));
+    let hex_str = hex::encode(player.as_bytes());
+    assert!(
+        world.tournament_state.registered_players.contains(&hex_str),
+        "player {} not in registered set {:?}",
+        player,
+        world.tournament_state.registered_players
+    );
 }
 
 #[then(expr = "the tournament state status is {word}")]
@@ -1863,12 +1743,5 @@ fn then_tournament_status(world: &mut PMWorld, status: String) {
 
 #[tokio::main]
 async fn main() {
-    PMWorld::cucumber()
-        .with_writer(
-            cucumber::writer::Basic::stdout()
-                .summarized()
-                .assert_normalized(),
-        )
-        .run("features/example/unit/process_manager.feature")
-        .await;
+    PMWorld::run("features/example/unit/process_manager.feature").await;
 }

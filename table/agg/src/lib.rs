@@ -6,7 +6,7 @@ pub mod state;
 pub use state::{SeatState, TableState};
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{aggregate, CommandResult};
+use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
     AddRebuyChips, ChipsAdded, CreateTable, EndHand, HandEnded, HandStarted, JoinTable, LeaveTable,
     PlayerJoined, PlayerLeft, PlayerSatIn, PlayerSatOut, PlayerSeated, RebuyChipsAdded, SeatPlayer,
@@ -21,7 +21,7 @@ use crate::state::{
 
 pub struct TableAggregate;
 
-#[aggregate(domain = "table", state = TableState)]
+#[command_handler(domain = "table", state = TableState)]
 impl TableAggregate {
     // --- Command handlers ---
 
@@ -332,7 +332,7 @@ mod applier_tests {
         state.status = "in_hand".into();
         state.current_hand_root = vec![9];
         let mut changes = std::collections::HashMap::new();
-        changes.insert(hex::encode(&[1u8]), 50i64);
+        changes.insert(hex::encode([1u8]), 50i64);
         TableAggregate::apply_hand_ended(
             &mut state,
             HandEnded {

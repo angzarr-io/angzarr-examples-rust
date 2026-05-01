@@ -22,7 +22,7 @@ async fn main() {
         panic!("expected ProcessManager variant");
     };
 
-    run_process_manager_server("pmg-hand-flow", 50391, pr)
+    run_process_manager_server(pr, 50391)
         .await
         .expect("Process manager failed");
 }

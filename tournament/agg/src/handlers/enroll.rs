@@ -1,14 +1,15 @@
 //! EnrollPlayer command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{EnrollPlayer, TournamentEnrollmentRejected, TournamentPlayerEnrolled};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TournamentState;
 
 fn guard(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     Ok(())
 }

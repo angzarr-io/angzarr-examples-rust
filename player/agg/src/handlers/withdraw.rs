@@ -1,14 +1,15 @@
 //! WithdrawFunds command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Currency, FundsWithdrawn, WithdrawFunds};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::state::PlayerState;
 
 fn withdraw_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Player does not exist"));
+        return Err(rejected("Player does not exist"));
     }
     Ok(())
 }
@@ -16,12 +17,10 @@ fn withdraw_funds_guard(state: &PlayerState) -> CommandResult<()> {
 fn withdraw_funds_validate(cmd: &WithdrawFunds, state: &PlayerState) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(CommandRejectedError::invalid_argument(
-            "amount must be positive",
-        ));
+        return Err(invalid_arg("amount must be positive"));
     }
     if amount > state.available_balance() {
-        return Err(CommandRejectedError::new("insufficient available balance"));
+        return Err(rejected("insufficient available balance"));
     }
     Ok(amount)
 }

@@ -1,22 +1,21 @@
 //! StartHand command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{HandStarted, SeatSnapshot, StartHand};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Table does not exist"));
+        return Err(rejected("Table does not exist"));
     }
     if state.status == "in_hand" {
-        return Err(CommandRejectedError::new("Hand already in progress"));
+        return Err(rejected("Hand already in progress"));
     }
     if state.active_player_count() < 2 {
-        return Err(CommandRejectedError::new(
-            "Not enough players to start hand",
-        ));
+        return Err(rejected("Not enough players to start hand"));
     }
     Ok(())
 }

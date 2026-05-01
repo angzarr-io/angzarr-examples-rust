@@ -6,7 +6,7 @@ use examples_proto::{
     BlindLevel, BlindLevelAdvanced, GameVariant, PlayerEliminated, RebuyConfig, RebuyDenied,
     RebuyProcessed, RegistrationClosed, RegistrationOpened, TournamentCompleted, TournamentCreated,
     TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled, TournamentResumed,
-    TournamentStatus,
+    TournamentStarted, TournamentStatus,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -164,6 +164,10 @@ pub fn apply_resumed(state: &mut TournamentState, _event: TournamentResumed) {
 
 pub fn apply_completed(state: &mut TournamentState, _event: TournamentCompleted) {
     state.status = TournamentStatus::TournamentCompleted;
+}
+
+pub fn apply_started(state: &mut TournamentState, _event: TournamentStarted) {
+    state.status = TournamentStatus::TournamentRunning;
 }
 
 #[cfg(test)]

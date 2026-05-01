@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use angzarr_client::proto::command_page::Payload as CommandPayload;
-use angzarr_client::proto::{event_page, EventBook, EventPage, ProcessManagerHandleRequest};
+use angzarr_client::proto::{event_page, Cover, EventBook, EventPage, ProcessManagerHandleRequest};
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::{
@@ -32,13 +32,21 @@ fn pack<M: Message + prost::Name>(msg: &M) -> Any {
     }
 }
 
-fn pm_request(trigger: Any) -> ProcessManagerHandleRequest {
-    pm_request_with_state(trigger, EventBook::default())
+fn pm_request(source_domain: &str, trigger: Any) -> ProcessManagerHandleRequest {
+    pm_request_with_state(source_domain, trigger, EventBook::default())
 }
 
-fn pm_request_with_state(trigger: Any, process_state: EventBook) -> ProcessManagerHandleRequest {
+fn pm_request_with_state(
+    source_domain: &str,
+    trigger: Any,
+    process_state: EventBook,
+) -> ProcessManagerHandleRequest {
     ProcessManagerHandleRequest {
         trigger: Some(EventBook {
+            cover: Some(Cover {
+                domain: source_domain.to_string(),
+                ..Default::default()
+            }),
             pages: vec![EventPage {
                 payload: Some(event_page::Payload::Event(trigger)),
                 ..Default::default()
@@ -128,7 +136,7 @@ fn router_builds_as_process_manager() {
 fn dispatch_hand_started_emits_deal_cards_to_hand() {
     let router = build();
     let resp = router
-        .dispatch(pm_request(pack(&hand_started_event())))
+        .dispatch(pm_request("table", pack(&hand_started_event())))
         .expect("dispatch ok");
     assert_eq!(resp.commands.len(), 1);
     let cmd = &resp.commands[0];
@@ -162,7 +170,7 @@ fn dispatch_cards_dealt_emits_post_blind_for_small_blind_player() {
         remaining_deck: vec![],
     };
     let resp = build()
-        .dispatch(pm_request_with_state(pack(&cards), prior))
+        .dispatch(pm_request_with_state("hand", pack(&cards), prior))
         .expect("dispatch ok");
     assert_eq!(resp.commands.len(), 1);
     let cmd = &resp.commands[0];
@@ -197,7 +205,7 @@ fn dispatch_hand_complete_emits_end_hand_to_table() {
         completed_at: None,
     };
     let resp = build()
-        .dispatch(pm_request_with_state(pack(&complete), prior))
+        .dispatch(pm_request_with_state("hand", pack(&complete), prior))
         .expect("dispatch ok");
     assert_eq!(resp.commands.len(), 1);
     let cmd = &resp.commands[0];

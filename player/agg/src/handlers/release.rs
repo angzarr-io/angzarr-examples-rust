@@ -1,29 +1,28 @@
 //! ReleaseFunds command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Currency, FundsReleased, ReleaseFunds};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::PlayerState;
 
 fn release_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Player does not exist"));
+        return Err(rejected("Player does not exist"));
     }
     Ok(())
 }
 
 fn release_funds_validate(cmd: &ReleaseFunds, state: &PlayerState) -> CommandResult<i64> {
-    if cmd.table_root.is_empty() {
-        return Err(CommandRejectedError::new("table_root is required"));
+    if cmd.key.is_empty() {
+        return Err(rejected("table_root is required"));
     }
 
-    let table_key = hex::encode(&cmd.table_root);
-    match state.table_reservations.get(&table_key) {
-        Some(&amount) => Ok(amount),
-        None => Err(CommandRejectedError::new(
-            "No funds reserved for this table",
-        )),
+    let key_hex = hex::encode(&cmd.key);
+    match state.table_reservations.get(&key_hex) {
+        Some(&amount) if amount > 0 => Ok(amount),
+        _ => Err(rejected("No funds reserved for this table")),
     }
 }
 
@@ -36,7 +35,7 @@ fn release_funds_compute(cmd: &ReleaseFunds, state: &PlayerState, reserved: i64)
             amount: reserved,
             currency_code: "CHIPS".to_string(),
         }),
-        table_root: cmd.table_root.clone(),
+        key: cmd.key.clone(),
         new_available_balance: Some(Currency {
             amount: new_available,
             currency_code: "CHIPS".to_string(),

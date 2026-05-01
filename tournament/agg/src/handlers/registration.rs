@@ -1,8 +1,9 @@
 //! Registration command handlers.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{CloseRegistration, OpenRegistration, RegistrationClosed, RegistrationOpened};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TournamentState;
 
@@ -10,13 +11,13 @@ use crate::state::TournamentState;
 
 fn guard_open(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if state.is_registration_open() {
-        return Err(CommandRejectedError::new("Registration is already open"));
+        return Err(rejected("Registration is already open"));
     }
     if state.is_running() {
-        return Err(CommandRejectedError::new(
+        return Err(rejected(
             "Cannot open registration for a running tournament",
         ));
     }
@@ -45,10 +46,10 @@ pub fn handle_open_registration(
 
 fn guard_close(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Tournament does not exist"));
+        return Err(rejected("Tournament does not exist"));
     }
     if !state.is_registration_open() {
-        return Err(CommandRejectedError::new("Registration is not open"));
+        return Err(rejected("Registration is not open"));
     }
     Ok(())
 }

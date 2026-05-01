@@ -21,7 +21,5 @@ async fn main() {
         panic!("expected Saga variant");
     };
 
-    run_saga_server("saga-hand-player", 50014, sr)
-        .await
-        .expect("Server failed");
+    run_saga_server(sr, 50014).await.expect("Server failed");
 }

@@ -1,3 +1,6 @@
+// See `world.rs` for the rationale on the file-level dead-code allow.
+#![allow(dead_code)]
+
 //! CommandClient abstraction mirroring examples-python/main/tests/command_client.py.
 //!
 //! - InProcessClient: calls handler functions directly, maintains an in-memory
@@ -27,13 +30,11 @@ use agg_player::state::PlayerState;
 use agg_table::state::TableState;
 
 use examples_proto::{
-    ActionTaken, BettingRoundComplete, BlindPosted, BuyInConfirmed, BuyInRequested,
-    BuyInReservationReleased, CardsDealt, ChipsAdded, CommunityCardsDealt, DrawCompleted,
-    FundsDeposited, FundsReleased, FundsReserved, FundsTransferred, FundsWithdrawn, HandComplete,
-    HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerRegistered, PlayerSatIn, PlayerSatOut,
-    PlayerSeated, PotAwarded, RebuyChipsAdded, RebuyFeeConfirmed, RebuyFeeReleased, RebuyRequested,
-    RegistrationFeeConfirmed, RegistrationFeeReleased, RegistrationRequested, SeatingRejected,
-    ShowdownStarted, TableCreated,
+    ActionTaken, BettingRoundComplete, BlindPosted, CardsDealt, ChipsAdded, CommunityCardsDealt,
+    DrawCompleted, FundsDeducted, FundsDeposited, FundsReleased, FundsReserved, FundsTransferred,
+    FundsWithdrawn, HandComplete, HandEnded, HandStarted, PlayerJoined, PlayerLeft,
+    PlayerRegistered, PlayerSatIn, PlayerSatOut, PlayerSeated, PotAwarded, RebuyChipsAdded,
+    SeatingRejected, ShowdownStarted, TableCreated,
 };
 
 #[derive(Debug, Clone)]
@@ -139,7 +140,7 @@ impl InProcessClient {
             ($ty:ty, $h:ident) => {{
                 let decoded: $ty = prost::Message::decode(cmd.value.as_slice())
                     .map_err(|e| SendError(format!("decode error: {e}")))?;
-                $h(decoded, &state, seq).map_err(|e| SendError(e.reason))
+                $h(decoded, &state, seq).map_err(|e| SendError(e.message.to_string()))
             }};
         }
 
@@ -164,7 +165,7 @@ impl InProcessClient {
             ($ty:ty, $h:ident) => {{
                 let decoded: $ty = prost::Message::decode(cmd.value.as_slice())
                     .map_err(|e| SendError(format!("decode error: {e}")))?;
-                $h(decoded, &state, seq).map_err(|e| SendError(e.reason))
+                $h(decoded, &state, seq).map_err(|e| SendError(e.message.to_string()))
             }};
         }
 
@@ -235,7 +236,7 @@ impl InProcessClient {
             ($ty:ty, $h:ident) => {{
                 let decoded: $ty = prost::Message::decode(cmd.value.as_slice())
                     .map_err(|e| SendError(format!("decode error: {e}")))?;
-                $h(decoded, &state, seq).map_err(|e| SendError(e.reason))
+                $h(decoded, &state, seq).map_err(|e| SendError(e.message.to_string()))
             }};
         }
 
@@ -316,25 +317,11 @@ pub fn rebuild_player(events: &[Any]) -> PlayerState {
             apply_released(&mut s, e);
         } else if let Some(e) = try_unpack::<FundsTransferred>(ev) {
             apply_transferred(&mut s, e);
-        } else if let Some(e) = try_unpack::<BuyInRequested>(ev) {
-            apply_buy_in_requested(&mut s, e);
-        } else if let Some(e) = try_unpack::<BuyInConfirmed>(ev) {
-            apply_buy_in_confirmed(&mut s, e);
-        } else if let Some(e) = try_unpack::<BuyInReservationReleased>(ev) {
-            apply_buy_in_released(&mut s, e);
-        } else if let Some(e) = try_unpack::<RegistrationRequested>(ev) {
-            apply_registration_requested(&mut s, e);
-        } else if let Some(e) = try_unpack::<RegistrationFeeConfirmed>(ev) {
-            apply_registration_confirmed(&mut s, e);
-        } else if let Some(e) = try_unpack::<RegistrationFeeReleased>(ev) {
-            apply_registration_released(&mut s, e);
-        } else if let Some(e) = try_unpack::<RebuyRequested>(ev) {
-            apply_rebuy_requested(&mut s, e);
-        } else if let Some(e) = try_unpack::<RebuyFeeConfirmed>(ev) {
-            apply_rebuy_confirmed(&mut s, e);
-        } else if let Some(e) = try_unpack::<RebuyFeeReleased>(ev) {
-            apply_rebuy_released(&mut s, e);
+        } else if let Some(e) = try_unpack::<FundsDeducted>(ev) {
+            apply_funds_deducted(&mut s, e);
         }
+        // Lifecycle events (BuyIn*/Rebuy*/Registration*) now apply to the
+        // reservation aggregate, not player.
     }
     s
 }

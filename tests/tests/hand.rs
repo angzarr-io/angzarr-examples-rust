@@ -57,6 +57,9 @@ pub struct HandWorld {
     winner: String,
     showdown_hole_cards: HashMap<String, Vec<Card>>,
     showdown_community_cards: Vec<Card>,
+
+    // Pre-action hole-card snapshots, keyed by label.
+    card_snapshots: HashMap<String, Vec<Card>>,
 }
 
 impl HandWorld {
@@ -152,8 +155,8 @@ impl HandWorld {
 
         let remaining_deck: Vec<Card> = (0..self.deck_remaining)
             .map(|i| Card {
-                suit: (i % 4) as i32,
-                rank: (2 + i / 4) as i32,
+                suit: (i % 4),
+                rank: (2 + i / 4),
             })
             .collect();
 
@@ -199,7 +202,7 @@ impl HandWorld {
 }
 
 fn pack_event_any<T: prost::Message + prost::Name>(event: &T) -> Any {
-    angzarr_client::pack_event(event, &T::full_name())
+    examples_utils::pack_event(event, &T::full_name())
 }
 
 // =============================================================================
@@ -397,7 +400,7 @@ fn given_flop_turn_dealt(world: &mut HandWorld) {
 
     let turn = Card { suit: 0, rank: 13 };
     let event = CommunityCardsDealt {
-        cards: vec![turn.clone()],
+        cards: vec![turn],
         phase: BettingPhase::Turn as i32,
         all_community_cards: vec![
             Card { suit: 0, rank: 10 },
@@ -420,7 +423,7 @@ fn given_completed_betting(world: &mut HandWorld, num_players: usize) {
 
     let river = Card { suit: 3, rank: 14 };
     let event = CommunityCardsDealt {
-        cards: vec![river.clone()],
+        cards: vec![river],
         phase: BettingPhase::River as i32,
         all_community_cards: vec![
             Card { suit: 0, rank: 10 },
@@ -552,7 +555,7 @@ fn given_hand_at_showdown_with_cards(
     let hole_cards = parse_cards(&hole_cards_str);
     let community_cards = parse_cards(&community_cards_str);
 
-    let players = vec![(&player_id as &str, 0, 500i64), ("player-2", 1, 500i64)];
+    let players = [(&player_id as &str, 0, 500i64), ("player-2", 1, 500i64)];
 
     world.game_variant = GameVariant::TexasHoldem;
     world.players = players
@@ -577,8 +580,8 @@ fn given_hand_at_showdown_with_cards(
 
     let remaining_deck: Vec<Card> = (0..40)
         .map(|i| Card {
-            suit: (i % 4) as i32,
-            rank: (2 + i / 4) as i32,
+            suit: (i % 4),
+            rank: (2 + i / 4),
         })
         .collect();
 
@@ -828,7 +831,7 @@ fn when_hands_evaluated(world: &mut HandWorld) {
             .insert(player_id.clone(), rank.rank_type);
 
         let key = (rank.score, rank.kickers.iter().map(|k| *k as i32).collect());
-        if best_key.as_ref().map_or(true, |b| key > *b) {
+        if best_key.as_ref().is_none_or(|b| key > *b) {
             best_key = Some(key);
             best_player = player_id.clone();
         }
@@ -1091,6 +1094,53 @@ fn then_player_hole_cards(world: &mut HandWorld, player_id: String, expected: us
     assert_eq!(
         hex::encode(&draw.player_root),
         hex::encode(world.player_root(&player_id))
+    );
+}
+
+#[given(expr = "I capture player {string} hole cards as {string}")]
+fn given_capture_hole_cards(world: &mut HandWorld, player_id: String, label: String) {
+    let state = world.rebuild_state();
+    let player_root = world.player_root(&player_id);
+    let player = state
+        .get_player(&player_root)
+        .unwrap_or_else(|| panic!("Player {} not found in aggregate", player_id));
+    world
+        .card_snapshots
+        .insert(label, player.hole_cards.clone());
+}
+
+#[then(expr = "player {string} hole card at index {int} matches {string} index {int}")]
+fn then_hole_card_matches_snapshot(
+    world: &mut HandWorld,
+    player_id: String,
+    idx: usize,
+    label: String,
+    src_idx: usize,
+) {
+    let state = world.rebuild_state();
+    let player_root = world.player_root(&player_id);
+    let player = state
+        .get_player(&player_root)
+        .unwrap_or_else(|| panic!("Player {} not found in aggregate", player_id));
+    let snapshot = world
+        .card_snapshots
+        .get(&label)
+        .unwrap_or_else(|| panic!("No snapshot captured under {:?}", label));
+    assert!(
+        idx < player.hole_cards.len(),
+        "Index {} out of range for current hand",
+        idx
+    );
+    assert!(
+        src_idx < snapshot.len(),
+        "Index {} out of range for snapshot {:?}",
+        src_idx,
+        label
+    );
+    assert_eq!(
+        player.hole_cards[idx], snapshot[src_idx],
+        "Player {} hole card at index {} ({:?}) does not match {:?} index {} ({:?})",
+        player_id, idx, player.hole_cards[idx], label, src_idx, snapshot[src_idx]
     );
 }
 

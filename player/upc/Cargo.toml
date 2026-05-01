@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 angzarr-client.workspace = true
+examples-proto.workspace = true
 tokio.workspace = true
 prost.workspace = true
 prost-types.workspace = true

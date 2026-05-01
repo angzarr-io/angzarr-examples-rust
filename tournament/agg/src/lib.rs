@@ -6,24 +6,25 @@ pub mod state;
 pub use state::TournamentState;
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{aggregate, CommandResult};
+use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
-    AdvanceBlindLevel, BlindLevelAdvanced, CloseRegistration, CreateTournament, EliminatePlayer,
-    EnrollPlayer, OpenRegistration, PauseTournament, PlayerEliminated, ProcessRebuy, RebuyDenied,
-    RebuyProcessed, RegistrationClosed, RegistrationOpened, ResumeTournament, TournamentCompleted,
-    TournamentCreated, TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled,
-    TournamentResumed,
+    AdvanceBlindLevel, BlindLevelAdvanced, CloseRegistration, CompleteTournament, CreateTournament,
+    EliminatePlayer, EnrollPlayer, OpenRegistration, PauseTournament, PlayerEliminated,
+    ProcessRebuy, RebuyDenied, RebuyProcessed, RegistrationClosed, RegistrationOpened,
+    ResumeTournament, StartTournament, TournamentCompleted, TournamentCreated,
+    TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled, TournamentResumed,
+    TournamentStarted,
 };
 
 use crate::state::{
     apply_blind_advanced, apply_completed, apply_created, apply_enrollment_rejected, apply_paused,
     apply_player_eliminated, apply_player_enrolled, apply_rebuy_denied, apply_rebuy_processed,
-    apply_registration_closed, apply_registration_opened, apply_resumed,
+    apply_registration_closed, apply_registration_opened, apply_resumed, apply_started,
 };
 
 pub struct TournamentAggregate;
 
-#[aggregate(domain = "tournament", state = TournamentState)]
+#[command_handler(domain = "tournament", state = TournamentState)]
 impl TournamentAggregate {
     // --- Command handlers ---
 
@@ -117,6 +118,26 @@ impl TournamentAggregate {
         handlers::handle_resume_tournament(cmd, state, seq)
     }
 
+    #[handles(StartTournament)]
+    fn on_start(
+        &self,
+        cmd: StartTournament,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_start_tournament(cmd, state, seq)
+    }
+
+    #[handles(CompleteTournament)]
+    fn on_complete(
+        &self,
+        cmd: CompleteTournament,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_complete_tournament(cmd, state, seq)
+    }
+
     // --- Event appliers ---
 
     #[applies(TournamentCreated)]
@@ -177,6 +198,11 @@ impl TournamentAggregate {
     #[applies(TournamentCompleted)]
     fn apply_completed(state: &mut TournamentState, event: TournamentCompleted) {
         apply_completed(state, event);
+    }
+
+    #[applies(TournamentStarted)]
+    fn apply_started(state: &mut TournamentState, event: TournamentStarted) {
+        apply_started(state, event);
     }
 }
 
@@ -257,7 +283,7 @@ mod applier_tests {
             total_registrations: 0,
             closed_at: None,
         };
-        TournamentAggregate::apply_registration_closed(&mut state_a, event.clone());
+        TournamentAggregate::apply_registration_closed(&mut state_a, event);
         apply_registration_closed(&mut state_b, event);
         assert_eq!(state_a.status, state_b.status);
         assert_eq!(state_a.total_prize_pool, state_b.total_prize_pool);
@@ -338,7 +364,7 @@ mod applier_tests {
         assert_eq!(
             state
                 .registered_players
-                .get(&hex::encode(&[0xaau8]))
+                .get(&hex::encode([0xaau8]))
                 .unwrap()
                 .rebuys_used,
             1
@@ -418,7 +444,7 @@ mod applier_tests {
         assert_eq!(state.players_remaining, 1);
         assert!(!state
             .registered_players
-            .contains_key(&hex::encode(&[0xaau8])));
+            .contains_key(&hex::encode([0xaau8])));
     }
 
     #[test]

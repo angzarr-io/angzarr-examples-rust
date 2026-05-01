@@ -4,7 +4,7 @@
 //! from the Python reference (`examples-python/main/pmg-hand-flow`): the PM
 //! is intentionally minimal — three event handlers drive the happy-path
 //! choreography while the heavier round-by-round state machine lives in
-//! the hand aggregate itself.
+//! the [`state_machine`] module (port of `hand-flow/hand_process.py`).
 //!
 //! Flow:
 //!   table.HandStarted  → hand.DealCards         (PM, phase = DEALING)
@@ -15,16 +15,24 @@
 //! the Tier 5 runtime can replay them through `#[applies]` methods to
 //! rebuild PM state across restarts.
 
+pub mod state_machine;
+
+pub use state_machine::{
+    Action as SmAction, BettingPhase as SmBettingPhase, BlindKind, Command as SmCommand,
+    HandProcess, Phase as SmPhase, PlayerState as SmPlayer,
+};
+
 use angzarr_client::proto::command_page::Payload as CommandPayload;
 use angzarr_client::proto::{
     event_page::Payload as EventPayload, page_header::SequenceType, CommandBook, CommandPage,
     Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse,
     Uuid as ProtoUuid,
 };
-use angzarr_client::{pack_event, process_manager, type_url, CommandResult};
+use angzarr_client::{process_manager, type_url, CommandResult};
 use examples_proto::{
     CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PlayerInHand, PostBlind,
 };
+use examples_utils::pack_event;
 use prost::Message;
 use prost_types::Any;
 
@@ -112,7 +120,7 @@ impl HandFlowPm {
 
         Ok(ProcessManagerHandleResponse {
             commands: vec![cmd],
-            process_events: Some(single_event_book(pm_event)),
+            process_events: vec![single_event_book(pm_event)],
             facts: vec![],
         })
     }
@@ -141,7 +149,7 @@ impl HandFlowPm {
 
         Ok(ProcessManagerHandleResponse {
             commands: vec![cmd],
-            process_events: Some(single_event_book(pm_event)),
+            process_events: vec![single_event_book(pm_event)],
             facts: vec![],
         })
     }
@@ -171,7 +179,7 @@ impl HandFlowPm {
 
         Ok(ProcessManagerHandleResponse {
             commands: vec![cmd],
-            process_events: Some(single_event_book(pm_event)),
+            process_events: vec![single_event_book(pm_event)],
             facts: vec![],
         })
     }
@@ -304,7 +312,11 @@ mod tests {
             .on_hand_started(event.clone(), &HandFlowState::default())
             .unwrap();
 
-        let pm_book = resp.process_events.expect("process_events");
+        let pm_book = resp
+            .process_events
+            .into_iter()
+            .next()
+            .expect("process_events");
         let any = first_event_any(&pm_book);
         assert!(any.type_url.ends_with("examples.HandStarted"));
         let decoded = HandStarted::decode(any.value.as_slice()).unwrap();

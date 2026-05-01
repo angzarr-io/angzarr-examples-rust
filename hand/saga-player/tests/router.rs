@@ -1,6 +1,6 @@
 //! Integration tests for the Hand -> Player saga router.
 
-use angzarr_client::proto::{event_page, EventBook, EventPage, SagaHandleRequest};
+use angzarr_client::proto::{event_page, Cover, EventBook, EventPage, SagaHandleRequest};
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::{HandRanking, PotAwarded, PotWinner};
@@ -35,6 +35,10 @@ fn pot_awarded_request() -> SagaHandleRequest {
     };
     SagaHandleRequest {
         source: Some(EventBook {
+            cover: Some(Cover {
+                domain: "hand".to_string(),
+                ..Default::default()
+            }),
             pages: vec![EventPage {
                 payload: Some(event_page::Payload::Event(any)),
                 ..Default::default()

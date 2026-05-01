@@ -1,14 +1,15 @@
 //! SeatPlayer command handler for PM-orchestrated buy-in flow.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{PlayerSeated, SeatPlayer, SeatingRejected};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Table does not exist"));
+        return Err(rejected("Table does not exist"));
     }
     Ok(())
 }

@@ -1,10 +1,9 @@
 //! Rejection handlers for saga/PM compensation.
 
 use angzarr_client::proto::{BusinessResponse, EventBook, Notification, RejectionNotification};
-use angzarr_client::{
-    emit_compensation_events, event_page, now, pack_event, unpack, CommandResult,
-};
+use angzarr_client::{emit_compensation_events, now, unpack, CommandResult};
 use examples_proto::{Currency, FundsReleased};
+use examples_utils::{event_page, pack_event};
 use tracing::warn;
 
 use crate::state::PlayerState;
@@ -30,7 +29,7 @@ pub fn handle_join_rejected(
         "Player compensation for JoinTable rejection"
     );
 
-    let table_root = rejection
+    let key = rejection
         .rejected_command
         .as_ref()
         .and_then(|cmd| cmd.cover.as_ref())
@@ -43,12 +42,8 @@ pub fn handle_join_rejected(
         })
         .unwrap_or_default();
 
-    let table_key = hex::encode(&table_root);
-    let reserved_amount = state
-        .table_reservations
-        .get(&table_key)
-        .copied()
-        .unwrap_or(0);
+    let key_hex = hex::encode(&key);
+    let reserved_amount = state.table_reservations.get(&key_hex).copied().unwrap_or(0);
     let new_reserved = state.reserved_funds - reserved_amount;
     let new_available = state.bankroll - new_reserved;
 
@@ -57,7 +52,7 @@ pub fn handle_join_rejected(
             amount: reserved_amount,
             currency_code: "CHIPS".to_string(),
         }),
-        table_root,
+        key,
         new_available_balance: Some(Currency {
             amount: new_available,
             currency_code: "CHIPS".to_string(),

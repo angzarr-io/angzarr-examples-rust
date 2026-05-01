@@ -1,40 +1,37 @@
 //! AddRebuyChips command handler for PM-orchestrated rebuy flow.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{AddRebuyChips, RebuyChipsAdded};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Table does not exist"));
+        return Err(rejected("Table does not exist"));
     }
     Ok(())
 }
 
 fn validate(cmd: &AddRebuyChips, state: &TableState) -> CommandResult<i64> {
     if cmd.player_root.is_empty() {
-        return Err(CommandRejectedError::new("player_root is required"));
+        return Err(rejected("player_root is required"));
     }
 
     if cmd.amount <= 0 {
-        return Err(CommandRejectedError::invalid_argument(
-            "amount must be positive",
-        ));
+        return Err(invalid_arg("amount must be positive"));
     }
 
     // Find the player's seat
     let seat_opt = state.find_seat_by_player(&cmd.player_root);
     if seat_opt.is_none() {
-        return Err(CommandRejectedError::new(
-            "Player is not seated at this table",
-        ));
+        return Err(rejected("Player is not seated at this table"));
     }
 
     let seat = seat_opt.unwrap();
     if seat.position != cmd.seat {
-        return Err(CommandRejectedError::new("Seat position mismatch"));
+        return Err(rejected("Seat position mismatch"));
     }
 
     // Calculate new stack

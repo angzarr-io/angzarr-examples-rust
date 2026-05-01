@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use angzarr_client::proto::{event_page, EventBook, EventPage, SagaHandleRequest};
+use angzarr_client::proto::{event_page, Cover, EventBook, EventPage, SagaHandleRequest};
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::HandEnded;
@@ -37,6 +37,10 @@ fn hand_ended_request() -> SagaHandleRequest {
     };
     SagaHandleRequest {
         source: Some(EventBook {
+            cover: Some(Cover {
+                domain: "table".to_string(),
+                ..Default::default()
+            }),
             pages: vec![EventPage {
                 payload: Some(event_page::Payload::Event(any)),
                 ..Default::default()

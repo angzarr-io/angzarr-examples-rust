@@ -4,27 +4,26 @@ use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::game_rules::get_rules;
 use crate::state::HandState;
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if state.exists() {
-        return Err(CommandRejectedError::new("Hand already dealt"));
+        return Err(rejected("Hand already dealt"));
     }
     Ok(())
 }
 
 fn validate(cmd: &DealCards) -> CommandResult<()> {
     if cmd.players.is_empty() {
-        return Err(CommandRejectedError::new("No players provided"));
+        return Err(rejected("No players provided"));
     }
     if cmd.players.len() < 2 {
-        return Err(CommandRejectedError::invalid_argument(
-            "Need at least 2 players",
-        ));
+        return Err(invalid_arg("Need at least 2 players"));
     }
     Ok(())
 }

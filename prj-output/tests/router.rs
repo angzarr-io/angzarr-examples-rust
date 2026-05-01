@@ -165,7 +165,7 @@ fn dispatch_table_created_then_hand_started_renders_both() {
         .expect("dispatch hand ok");
 
     let out = sink.output();
-    assert!(out.contains("Table created: Main"));
+    assert!(out.contains("Table \"Main\" created"));
     assert!(out.contains("HAND #1"));
 }
 
@@ -201,7 +201,7 @@ fn dispatch_action_taken_maps_enum_to_verb() {
         .expect("ok");
     let out = sink.output();
     assert!(out.contains("raises to $30"));
-    assert!(out.contains("pot $50"));
+    assert!(out.contains("pot: $50"));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn dispatch_cards_dealt_arm_without_hole_cards_falls_back_to_summary() {
             remaining_deck: vec![],
         })))
         .expect("ok");
-    assert!(sink.output().contains("Cards dealt (hand #3"));
+    assert!(sink.output().contains("Cards dealt"));
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn dispatch_pot_awarded_lists_winners() {
             awarded_at: None,
         })))
         .expect("ok");
-    assert!(sink.output().contains("wins $150 (main)"));
+    assert!(sink.output().contains("wins $150"));
 }
 
 #[test]

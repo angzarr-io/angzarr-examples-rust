@@ -1,36 +1,37 @@
 //! RevealCards command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{CardsMucked, CardsRevealed, HandRanking, RevealCards};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::game_rules::get_rules;
 use crate::state::{HandState, PlayerHandState};
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand not dealt"));
+        return Err(rejected("Hand not dealt"));
     }
     if state.is_complete() {
-        return Err(CommandRejectedError::new("Hand already complete"));
+        return Err(rejected("Hand already complete"));
     }
     if state.status != "showdown" {
-        return Err(CommandRejectedError::new("Not in showdown phase"));
+        return Err(rejected("Not in showdown phase"));
     }
     Ok(())
 }
 
 fn validate<'a>(cmd: &RevealCards, state: &'a HandState) -> CommandResult<&'a PlayerHandState> {
     if cmd.player_root.is_empty() {
-        return Err(CommandRejectedError::new("player_root is required"));
+        return Err(rejected("player_root is required"));
     }
 
     let player = state
         .get_player(&cmd.player_root)
-        .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
+        .ok_or_else(|| rejected("Player not in hand"))?;
 
     if player.has_folded {
-        return Err(CommandRejectedError::new("Player has folded"));
+        return Err(rejected("Player has folded"));
     }
 
     Ok(player)

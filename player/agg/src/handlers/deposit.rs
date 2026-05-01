@@ -1,15 +1,16 @@
 //! DepositFunds command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{Currency, DepositFunds, FundsDeposited};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::state::PlayerState;
 
 // docs:start:deposit_funds_guard
 fn deposit_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Player does not exist"));
+        return Err(rejected("Player does not exist"));
     }
     Ok(())
 }
@@ -19,9 +20,7 @@ fn deposit_funds_guard(state: &PlayerState) -> CommandResult<()> {
 fn deposit_funds_validate(cmd: &DepositFunds) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(CommandRejectedError::invalid_argument(
-            "amount must be positive",
-        ));
+        return Err(invalid_arg("amount must be positive"));
     }
     Ok(amount)
 }
@@ -91,7 +90,7 @@ mod tests {
         let result = deposit_funds_guard(&state);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().reason.contains("does not exist"));
+        assert!(result.unwrap_err().message.contains("does not exist"));
     }
 
     #[test]
@@ -106,7 +105,7 @@ mod tests {
         let result = deposit_funds_validate(&cmd);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().reason.contains("positive"));
+        assert!(result.unwrap_err().message.contains("positive"));
     }
 
     use crate::state::apply_registered;
@@ -160,7 +159,7 @@ mod tests {
             }),
         };
         let err = handle_deposit_funds(cmd, &state, 1).unwrap_err();
-        assert!(err.reason.contains("does not exist"));
+        assert!(err.message.contains("does not exist"));
     }
 
     #[test]
@@ -173,7 +172,7 @@ mod tests {
             }),
         };
         let err = handle_deposit_funds(cmd, &state, 1).unwrap_err();
-        assert!(err.reason.contains("positive"));
+        assert!(err.message.contains("positive"));
     }
 }
 // docs:end:unit_test_deposit

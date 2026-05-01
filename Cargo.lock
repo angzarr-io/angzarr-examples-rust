@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "angzarr-client",
  "examples-proto",
+ "examples-utils",
  "hex",
  "itertools 0.14.0",
  "prost",
@@ -26,6 +27,24 @@ version = "0.1.0"
 dependencies = [
  "angzarr-client",
  "examples-proto",
+ "examples-utils",
+ "hex",
+ "prost",
+ "prost-types",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "agg-reservation"
+version = "0.1.0"
+dependencies = [
+ "angzarr-client",
+ "examples-proto",
+ "examples-utils",
  "hex",
  "prost",
  "prost-types",
@@ -42,6 +61,7 @@ version = "0.1.0"
 dependencies = [
  "angzarr-client",
  "examples-proto",
+ "examples-utils",
  "hex",
  "prost",
  "prost-types",
@@ -59,6 +79,7 @@ version = "0.1.0"
 dependencies = [
  "angzarr-client",
  "examples-proto",
+ "examples-utils",
  "hex",
  "prost",
  "prost-types",
@@ -104,22 +125,26 @@ version = "0.5.0"
 dependencies = [
  "angzarr-macros",
  "async-trait",
- "backon",
  "chrono",
+ "futures",
  "hex",
  "hyper-util",
+ "indexmap",
  "prost",
  "prost-build",
  "prost-types",
+ "rand",
  "serde",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tonic-health",
  "tonic-prost",
  "tonic-prost-build",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -252,17 +277,6 @@ dependencies = [
  "sync_wrapper",
  "tower-layer",
  "tower-service",
-]
-
-[[package]]
-name = "backon"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
-dependencies = [
- "fastrand",
- "gloo-timers",
- "tokio",
 ]
 
 [[package]]
@@ -580,6 +594,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "examples-utils"
+version = "0.1.0"
+dependencies = [
+ "angzarr-client",
+ "prost",
+ "prost-types",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -782,18 +805,6 @@ dependencies = [
  "bitflags",
  "ignore",
  "walkdir",
-]
-
-[[package]]
-name = "gloo-timers"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbb143cf96099802033e0d4f4963b19fd2e0b728bcf076cd9cf7f6634f092994"
-dependencies = [
- "futures-channel",
- "futures-core",
- "js-sys",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1353,26 +1364,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
-name = "pmg-buy-in"
-version = "0.1.0"
-dependencies = [
- "angzarr-client",
- "examples-proto",
- "prost",
- "prost-types",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "pmg-hand-flow"
 version = "0.1.0"
 dependencies = [
  "angzarr-client",
  "examples-proto",
+ "examples-utils",
  "prost",
  "prost-types",
  "tokio",
@@ -1383,27 +1380,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "pmg-rebuy"
+name = "pmg-reservation"
 version = "0.1.0"
 dependencies = [
  "angzarr-client",
  "examples-proto",
- "hex",
- "prost",
- "prost-types",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "pmg-registration"
-version = "0.1.0"
-dependencies = [
- "angzarr-client",
- "examples-proto",
+ "examples-utils",
  "hex",
  "prost",
  "prost-types",
@@ -1420,22 +1402,24 @@ version = "0.1.0"
 dependencies = [
  "agg-hand",
  "agg-player",
+ "agg-reservation",
  "agg-table",
  "agg-tournament",
  "angzarr-client",
  "cucumber",
  "examples-proto",
+ "examples-utils",
  "futures",
  "hex",
- "pmg-buy-in",
  "pmg-hand-flow",
- "pmg-rebuy",
- "pmg-registration",
+ "pmg-reservation",
+ "prj-pretty-output",
  "prost",
  "prost-types",
  "regex",
  "saga-hand-player",
  "saga-hand-table",
+ "saga-player-table",
  "saga-table-hand",
  "saga-table-player",
  "sha2",
@@ -1750,6 +1734,19 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "saga-player-table"
+version = "0.1.0"
+dependencies = [
+ "angzarr-client",
+ "examples-proto",
+ "examples-utils",
+ "hex",
+ "prost",
+ "prost-types",
+ "uuid",
 ]
 
 [[package]]
@@ -2112,6 +2109,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2167,6 +2165,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tonic-health"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ff0636fef47afb3ec02818f5bceb4377b8abb9d6a386aeade18bd6212f8eb7"
+dependencies = [
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
 ]
 
 [[package]]
@@ -2271,6 +2282,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-serde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2280,12 +2301,15 @@ dependencies = [
  "nu-ansi-term",
  "once_cell",
  "regex-automata",
+ "serde",
+ "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
+ "tracing-serde",
 ]
 
 [[package]]
@@ -2357,10 +2381,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "upc-hand"
+version = "0.1.0"
+dependencies = [
+ "angzarr-client",
+ "examples-proto",
+ "prost",
+ "prost-types",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "upc-player"
 version = "0.1.0"
 dependencies = [
  "angzarr-client",
+ "examples-proto",
  "prost",
  "prost-types",
  "tokio",

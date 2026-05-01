@@ -1,8 +1,9 @@
 //! RequestDraw command handler (Five Card Draw specific).
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
+use examples_utils::{event_page, invalid_arg, pack_event, rejected};
 
 use crate::state::{HandState, PlayerHandState};
 
@@ -13,18 +14,16 @@ struct ValidatedDraw {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(CommandRejectedError::new("Hand does not exist"));
+        return Err(rejected("Hand does not exist"));
     }
     if state.is_complete() {
-        return Err(CommandRejectedError::new("Hand already complete"));
+        return Err(rejected("Hand already complete"));
     }
     if state.game_variant != GameVariant::FiveCardDraw {
-        return Err(CommandRejectedError::invalid_argument(
-            "Draw not supported in this game variant",
-        ));
+        return Err(invalid_arg("Draw not supported in this game variant"));
     }
     if state.current_phase != BettingPhase::Draw {
-        return Err(CommandRejectedError::new("Not in draw phase"));
+        return Err(rejected("Not in draw phase"));
     }
     Ok(())
 }
@@ -35,10 +34,10 @@ fn validate<'a>(
 ) -> CommandResult<(&'a PlayerHandState, ValidatedDraw)> {
     let player = state
         .get_player(&cmd.player_root)
-        .ok_or_else(|| CommandRejectedError::new("Player not in hand"))?;
+        .ok_or_else(|| rejected("Player not in hand"))?;
 
     if player.has_folded {
-        return Err(CommandRejectedError::new("Player has folded"));
+        return Err(rejected("Player has folded"));
     }
 
     let mut indices: Vec<i32> = cmd.card_indices.clone();
@@ -46,17 +45,17 @@ fn validate<'a>(
     indices.dedup();
 
     if indices.len() != cmd.card_indices.len() {
-        return Err(CommandRejectedError::new("Duplicate card indices"));
+        return Err(rejected("Duplicate card indices"));
     }
 
     for &idx in &indices {
         if !(0..5).contains(&idx) {
-            return Err(CommandRejectedError::new("Card index out of range (0-4)"));
+            return Err(rejected("Card index out of range (0-4)"));
         }
     }
 
     if indices.len() > state.remaining_deck.len() {
-        return Err(CommandRejectedError::new("Not enough cards in deck"));
+        return Err(rejected("Not enough cards in deck"));
     }
 
     Ok((player, ValidatedDraw { indices }))

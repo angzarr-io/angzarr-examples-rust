@@ -1,15 +1,18 @@
 [package]
-name = "pmg-buy-in"
+name = "upc-hand"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "upc-hand"
+path = "src/main.rs"
+
 [dependencies]
-examples-proto.workspace = true
 angzarr-client.workspace = true
+examples-proto.workspace = true
 tokio.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 tonic.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-uuid.workspace = true

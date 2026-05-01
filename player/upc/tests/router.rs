@@ -1,13 +1,17 @@
 //! Integration tests for the player domain upcaster router.
 
-use angzarr_client::proto::{event_page, page_header, EventPage, PageHeader};
+use angzarr_client::proto::{event_page, page_header, EventPage, PageHeader, UpcastRequest};
 use prost_types::Any;
-use upc_player::{build_router, handle_upcast};
+use upc_player::build_router;
 
-#[test]
-fn build_router_sets_player_domain() {
-    let router = build_router();
-    assert_eq!(router.domain(), "player");
+fn dispatch(events: Vec<EventPage>) -> Vec<EventPage> {
+    build_router()
+        .dispatch(UpcastRequest {
+            domain: "player".to_string(),
+            events,
+        })
+        .expect("upcast dispatch should succeed")
+        .events
 }
 
 #[test]
@@ -25,7 +29,7 @@ fn handle_upcast_preserves_unregistered_event_payloads() {
         no_commit: false,
         cascade_id: None,
     };
-    let result = handle_upcast(&[page]);
+    let result = dispatch(vec![page]);
     assert_eq!(result.len(), 1);
     match &result[0].payload {
         Some(event_page::Payload::Event(e)) => {
@@ -38,6 +42,6 @@ fn handle_upcast_preserves_unregistered_event_payloads() {
 
 #[test]
 fn handle_upcast_empty_input_returns_empty() {
-    let result = handle_upcast(&[]);
+    let result = dispatch(Vec::new());
     assert!(result.is_empty());
 }

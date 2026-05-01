@@ -5,38 +5,37 @@
 //! `features/example/unit/tournament.feature` (@EU-0803..@EU-0806).
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{event_page, pack_event, CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{CreateTournament, TournamentCreated};
+use examples_utils::{event_page, pack_event, rejected};
 
 use crate::state::TournamentState;
 
 fn guard(state: &TournamentState) -> CommandResult<()> {
     if state.exists() {
-        return Err(CommandRejectedError::new("Tournament already exists"));
+        return Err(rejected("Tournament already exists"));
     }
     Ok(())
 }
 
 fn validate(cmd: &CreateTournament) -> CommandResult<()> {
     if cmd.name.is_empty() {
-        return Err(CommandRejectedError::new("name is required"));
+        return Err(rejected("name is required"));
     }
     if cmd.buy_in <= 0 {
-        return Err(CommandRejectedError::new("buy_in must be positive"));
+        return Err(rejected("buy_in must be positive"));
     }
     if cmd.starting_stack <= 0 {
-        return Err(CommandRejectedError::new("starting_stack must be positive"));
+        return Err(rejected("starting_stack must be positive"));
     }
     if cmd.max_players < 2 {
-        return Err(CommandRejectedError::new("max_players must be at least 2"));
+        return Err(rejected("max_players must be at least 2"));
     }
     if cmd.min_players < 2 {
-        return Err(CommandRejectedError::new("min_players must be at least 2"));
+        return Err(rejected("min_players must be at least 2"));
     }
     if cmd.min_players > cmd.max_players {
-        return Err(CommandRejectedError::new(
-            "min_players cannot exceed max_players",
-        ));
+        return Err(rejected("min_players cannot exceed max_players"));
     }
     Ok(())
 }

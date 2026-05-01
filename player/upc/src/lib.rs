@@ -1,42 +1,62 @@
 //! Player domain upcaster library.
 //!
 //! Transforms old event versions to current versions during replay.
-//! Currently a passthrough - add transformations as needed for schema evolution.
+//! Currently a passthrough — the registered handler is a noop that
+//! exists only so the unified `Router::build()` accepts the upcaster
+//! (the builder rejects empty routers). Replace the placeholder
+//! `#[upcasts(from = X, to = Y)]` method with real transformations as
+//! schemas evolve.
 
-use angzarr_client::proto::EventPage;
-use angzarr_client::UpcasterRouter;
+use angzarr_client::router::{Built, Router, UpcasterRouter};
+use angzarr_client::upcaster;
+use examples_proto::PlayerRegistered;
+
+struct PlayerUpcaster;
+
+#[upcaster(name = "upcaster-player", domain = "player")]
+impl PlayerUpcaster {
+    #[upcasts(from = PlayerRegistered, to = PlayerRegistered)]
+    fn passthrough(old: PlayerRegistered) -> PlayerRegistered {
+        old
+    }
+}
 
 // docs:start:upcaster_router
 /// Build the upcaster router for player domain.
-///
-/// Currently a passthrough - add transformations as needed for schema evolution.
 pub fn build_router() -> UpcasterRouter {
-    UpcasterRouter::new("player")
-    // Example transformation (uncomment when needed):
-    // .on("PlayerRegisteredV1", upcast_player_registered_v1)
-}
-
-/// Handle upcasting for player domain events.
-///
-/// Delegates to the router for any registered transformations.
-/// Events without registered transformations pass through unchanged.
-pub fn handle_upcast(events: &[EventPage]) -> Vec<EventPage> {
-    let router = build_router();
-    router.upcast(events)
+    match Router::new("upcaster-player")
+        .with_handler(|| PlayerUpcaster)
+        .build()
+        .expect("failed to build upcaster router")
+    {
+        Built::Upcaster(r) => r,
+        _ => panic!("expected Upcaster variant"),
+    }
 }
 // docs:end:upcaster_router
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use angzarr_client::proto::{event_page, page_header, PageHeader};
+    use angzarr_client::proto::{event_page, page_header, EventPage, PageHeader, UpcastRequest};
     use prost_types::Any;
+
+    fn dispatch(events: Vec<EventPage>) -> Vec<EventPage> {
+        let router = build_router();
+        router
+            .dispatch(UpcastRequest {
+                domain: "player".to_string(),
+                events,
+            })
+            .expect("upcast dispatch should succeed")
+            .events
+    }
 
     /// Test that events without registered transformations pass through unchanged.
     #[test]
     fn test_passthrough_no_transformation() {
         let event = Any {
-            type_url: "type.googleapis.com/examples.PlayerRegistered".to_string(),
+            type_url: "type.googleapis.com/examples.SomeOtherEvent".to_string(),
             value: vec![1, 2, 3, 4],
         };
 
@@ -50,7 +70,7 @@ mod tests {
             cascade_id: None,
         };
 
-        let result = handle_upcast(&[page]);
+        let result = dispatch(vec![page]);
 
         assert_eq!(result.len(), 1);
         if let Some(event_page::Payload::Event(e)) = &result[0].payload {
@@ -79,7 +99,7 @@ mod tests {
             })
             .collect();
 
-        let result = handle_upcast(&events);
+        let result = dispatch(events);
 
         assert_eq!(result.len(), 5);
         for (i, page) in result.iter().enumerate() {
@@ -90,12 +110,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    /// Test that the router domain is correctly set.
-    #[test]
-    fn test_router_domain() {
-        let router = build_router();
-        assert_eq!(router.domain(), "player");
     }
 }

@@ -428,6 +428,21 @@ fn then_hand_number(world: &mut SagaWorld, num: i64) {
     assert_eq!(dc.hand_number, num);
 }
 
+#[then("the command has deck_seed equal to the hand_root")]
+fn then_deck_seed_matches_hand_root(world: &mut SagaWorld) {
+    let cmd_any = world.first_command_any().expect("no command payload");
+    let dc: DealCards = unpack(&cmd_any).expect("decode DealCards");
+    let expected = match &world.trigger {
+        Some(Trigger::HandStarted(ev)) => ev.hand_root.clone(),
+        _ => panic!("deck_seed assertion requires a HandStarted trigger"),
+    };
+    assert_eq!(
+        dc.deck_seed, expected,
+        "Expected deck_seed=hand_root ({:?}), got {:?}",
+        expected, dc.deck_seed
+    );
+}
+
 #[then("the saga emits an EndHand command to table domain")]
 fn then_end_hand(world: &mut SagaWorld) {
     assert!(!world.result_commands.is_empty());
@@ -616,8 +631,13 @@ fn given_router_three(world: &mut SagaWorld) {
 fn when_dispatch(world: &mut SagaWorld, dest: String) {
     let trigger = world.trigger.as_ref().expect("trigger set");
     let any = trigger_to_any(trigger);
+    let source_domain = trigger_source_domain(trigger);
     let req = SagaHandleRequest {
         source: Some(EventBook {
+            cover: Some(angzarr_client::proto::Cover {
+                domain: source_domain.to_string(),
+                ..Default::default()
+            }),
             pages: vec![EventPage {
                 payload: Some(event_page::Payload::Event(any)),
                 ..Default::default()
@@ -632,8 +652,18 @@ fn when_dispatch(world: &mut SagaWorld, dest: String) {
     world.result_commands = resp.commands;
 }
 
-#[then("the result is a examples.DealCards command to hand domain")]
-fn then_result_deal_cards(world: &mut SagaWorld) {
+fn trigger_source_domain(trigger: &Trigger) -> &'static str {
+    match trigger {
+        Trigger::HandStarted(_) => "table",
+        Trigger::HandComplete(_) => "hand",
+        Trigger::HandEnded(_) => "table",
+        Trigger::PotAwarded(_) => "hand",
+    }
+}
+
+#[then(expr = "the result is a {word} command to hand domain")]
+fn then_result_deal_cards(world: &mut SagaWorld, type_name: String) {
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     assert_eq!(world.result_commands.len(), 1);
     assert_eq!(
         world.result_commands[0].cover.as_ref().unwrap().domain,
@@ -641,8 +671,9 @@ fn then_result_deal_cards(world: &mut SagaWorld) {
     );
     let types = world.get_command_types();
     assert!(
-        types.iter().any(|t| t.ends_with("DealCards")),
-        "got {:?}",
+        types.iter().any(|t| t.ends_with(suffix)),
+        "expected {}, got {:?}",
+        suffix,
         types
     );
 }
@@ -660,8 +691,9 @@ fn then_deal_variant(world: &mut SagaWorld, variant: String) {
     then_game_variant(world, variant);
 }
 
-#[then("the result is a examples.EndHand command to table domain")]
-fn then_result_end_hand(world: &mut SagaWorld) {
+#[then(expr = "the result is a {word} command to table domain")]
+fn then_result_end_hand(world: &mut SagaWorld, type_name: String) {
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     assert_eq!(world.result_commands.len(), 1);
     assert_eq!(
         world.result_commands[0].cover.as_ref().unwrap().domain,
@@ -669,8 +701,9 @@ fn then_result_end_hand(world: &mut SagaWorld) {
     );
     let types = world.get_command_types();
     assert!(
-        types.iter().any(|t| t.ends_with("EndHand")),
-        "got {:?}",
+        types.iter().any(|t| t.ends_with(suffix)),
+        "expected {}, got {:?}",
+        suffix,
         types
     );
 }
@@ -715,8 +748,9 @@ fn then_n_commands_player(world: &mut SagaWorld, n: usize) {
     }
 }
 
-#[then("each command is a examples.ReleaseFunds")]
-fn then_each_release(world: &mut SagaWorld) {
+#[then(expr = "each command is a {word}")]
+fn then_each_command_is(world: &mut SagaWorld, type_name: String) {
+    let suffix = type_name.rsplit('.').next().unwrap_or(type_name.as_str());
     for cb in &world.result_commands {
         let any = cb
             .pages
@@ -727,31 +761,20 @@ fn then_each_release(world: &mut SagaWorld) {
             })
             .expect("payload");
         assert!(
-            any.type_url.ends_with("ReleaseFunds"),
-            "got {}",
+            any.type_url.ends_with(suffix),
+            "expected {}, got {}",
+            suffix,
             any.type_url
         );
-        ReleaseFunds::decode(any.value.as_slice()).expect("decode ReleaseFunds");
-    }
-}
-
-#[then("each command is a examples.DepositFunds")]
-fn then_each_deposit(world: &mut SagaWorld) {
-    for cb in &world.result_commands {
-        let any = cb
-            .pages
-            .first()
-            .and_then(|p| match &p.payload {
-                Some(command_page::Payload::Command(c)) => Some(c),
-                _ => None,
-            })
-            .expect("payload");
-        assert!(
-            any.type_url.ends_with("DepositFunds"),
-            "got {}",
-            any.type_url
-        );
-        DepositFunds::decode(any.value.as_slice()).expect("decode DepositFunds");
+        match suffix {
+            "ReleaseFunds" => {
+                ReleaseFunds::decode(any.value.as_slice()).expect("decode ReleaseFunds");
+            }
+            "DepositFunds" => {
+                DepositFunds::decode(any.value.as_slice()).expect("decode DepositFunds");
+            }
+            _ => {}
+        }
     }
 }
 

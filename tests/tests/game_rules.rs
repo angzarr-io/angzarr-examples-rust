@@ -350,7 +350,7 @@ fn then_hole_card_count(world: &mut RulesWorld, n: usize) {
 
 #[then(expr = "the phases are {string}")]
 fn then_phases(world: &mut RulesWorld, phases: String) {
-    let expected: Vec<BettingPhase> = phases.split(',').map(|s| phase_from_name(s)).collect();
+    let expected: Vec<BettingPhase> = phases.split(',').map(phase_from_name).collect();
     let actual = world.current_rules().phases();
     assert_eq!(
         actual, expected,
@@ -403,7 +403,7 @@ fn then_no_next_phase(world: &mut RulesWorld) {
 
 // --- Then: draw ---
 
-fn dr<'a>(world: &'a RulesWorld) -> &'a DrawResult {
+fn dr(world: &RulesWorld) -> &DrawResult {
     world.draw_result.as_ref().expect("no draw result")
 }
 
@@ -455,7 +455,7 @@ fn then_new_hand_retains(world: &mut RulesWorld, card_str: String) {
     let parsed = parse_cards(&card_str);
     let target = parsed[0];
     assert!(
-        dr(world).new_hole_cards.iter().any(|c| *c == target),
+        dr(world).new_hole_cards.contains(&target),
         "expected card {} in new hand",
         card_str
     );
@@ -466,7 +466,7 @@ fn then_new_hand_excludes(world: &mut RulesWorld, card_str: String) {
     let parsed = parse_cards(&card_str);
     let target = parsed[0];
     assert!(
-        !dr(world).new_hole_cards.iter().any(|c| *c == target),
+        !dr(world).new_hole_cards.contains(&target),
         "expected card {} to be absent",
         card_str
     );
