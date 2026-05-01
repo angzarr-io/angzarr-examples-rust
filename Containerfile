@@ -10,20 +10,13 @@
 #   done
 
 ARG RUST_VERSION=1.87
-# Cache-busting arg for proto updates - change to invalidate buf export cache
-# Use BSR label (without 'v' prefix) from angzarr-examples-proto releases
-ARG PROTO_VERSION=0.1.2
 
 # ============================================================================
 # Proto generation stage - runs build.rs to generate proto code
 # ============================================================================
 FROM docker.io/library/rust:${RUST_VERSION}-alpine AS proto-gen
 
-RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig curl
-
-# Install buf for proto export
-RUN curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf && \
-    chmod +x /usr/local/bin/buf
+RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig
 
 RUN rustup target add x86_64-unknown-linux-musl
 
@@ -33,12 +26,9 @@ ENV OPENSSL_DIR=/usr
 
 WORKDIR /app
 
-# Export example protos from buf registry
-# Use explicit version label for cache control
-ARG PROTO_VERSION
-ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
-RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-proto && \
-    ls -la /app/examples-proto/examples/
+# proto/build.rs reads .proto files directly from the angzarr-project
+# submodule (the spec contract). Copy it in so the build can see it.
+COPY angzarr-project/ ./angzarr-project/
 
 # Copy what's needed for proto generation
 COPY Cargo.toml Cargo.lock ./
@@ -99,11 +89,7 @@ RUN apk add --no-cache \
     protoc \
     openssl-dev \
     openssl-libs-static \
-    pkgconfig \
-    curl
-
-RUN curl -sSL https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64 -o /usr/local/bin/buf && \
-    chmod +x /usr/local/bin/buf
+    pkgconfig
 
 RUN rustup target add x86_64-unknown-linux-musl
 
@@ -113,11 +99,8 @@ ENV OPENSSL_DIR=/usr
 
 WORKDIR /app
 
-# Export example protos using explicit version for cache control
-ARG PROTO_VERSION
-ENV EXAMPLES_PROTO_ROOT=/app/examples-proto
-RUN buf export buf.build/angzarr/examples:${PROTO_VERSION} -o /app/examples-proto && \
-    ls -la /app/examples-proto/examples/
+# Submodule available for proto/build.rs (mirrors proto-gen stage).
+COPY angzarr-project/ ./angzarr-project/
 
 # Copy pre-generated proto files
 COPY --from=proto-gen /proto-out/ /proto-cache/
