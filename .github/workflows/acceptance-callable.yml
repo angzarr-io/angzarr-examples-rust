@@ -86,8 +86,14 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
-      # Note: protos read directly from the angzarr-project submodule by
-      # proto/build.rs at cargo build time — no buf export / cp staging.
+      # Note: rust proto/build.rs reads protos directly from the
+      # angzarr-project submodule at cargo build time — no buf export /
+      # cp staging needed for the rust build itself. `buf` is still used
+      # below to build a descriptor.bin for the gateway ConfigMap.
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
 
       - name: Parse image inputs
         id: images
@@ -231,9 +237,12 @@ jobs:
 
       - name: Generate gateway descriptor
         run: |
-          # Generate proto descriptor for gateway type discovery
+          # Build the proto descriptor directly from the submodule —
+          # no copy. `buf build` accepts a directory containing buf.yaml
+          # (or the proto root) and a list of input .proto files.
           echo "Generating gateway descriptor from examples protos..."
-          buf build examples-proto -o types.bin
+          buf build angzarr-project/proto -o types.bin \
+            --path angzarr-project/proto/examples
           echo "Descriptor size: $(stat -c%s types.bin) bytes"
 
       - name: Create gateway descriptor ConfigMap
