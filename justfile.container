@@ -9,17 +9,9 @@ ROOT := `git rev-parse --show-toplevel`
 default:
     @just --list
 
-# Export proto definitions from angzarr-project submodule
-proto-gen:
-    buf export angzarr-project/proto -o _proto_export
-    rm -rf angzarr-proto examples-proto
-    cp -r _proto_export angzarr-proto
-    mkdir -p examples-proto/examples
-    cp _proto_export/examples/*.proto examples-proto/examples/
-    rm -rf _proto_export
-
-# Build all workspace crates
-build: proto-gen
+# Build all workspace crates. proto/build.rs reads from the
+# angzarr-project submodule directly — no proto-gen step needed.
+build:
     cargo build --workspace
 
 # Build release binaries

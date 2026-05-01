@@ -86,21 +86,8 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
-      - name: Install buf
-        uses: bufbuild/buf-action@v1
-        with:
-          setup_only: true
-
-      - name: Export protos from submodule
-        run: |
-          # Layout must match proto imports ("examples/poker_types.proto"),
-          # so keep the examples/ prefix rather than flattening.
-          buf export angzarr-project/proto -o _proto_export
-          rm -rf angzarr-proto examples-proto
-          cp -r _proto_export angzarr-proto
-          mkdir -p examples-proto/examples
-          cp _proto_export/examples/*.proto examples-proto/examples/
-          rm -rf _proto_export
+      # Note: protos read directly from the angzarr-project submodule by
+      # proto/build.rs at cargo build time — no buf export / cp staging.
 
       - name: Parse image inputs
         id: images
@@ -110,12 +97,12 @@ jobs:
           # Build coordinator images JSON from version
           COORD=$(cat <<EOF
           {
-            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:21c113f@sha256:54bd2432effec9e35ffe0b150c362c0500c1d6c0fb4bcbb9113849c108ddf7e4",
-            "saga": "ghcr.io/angzarr-io/angzarr-saga:21c113f@sha256:fe4bc5bcdd252a8ebae92ac8e4faa3b6626eb22ebdd1a20c1f91b5398b01d539",
-            "projector": "ghcr.io/angzarr-io/angzarr-projector:21c113f@sha256:df5c4a32cdd5855c044c52860ae2b5eec7d60599d55c46c6cecd9dba7661f66c",
-            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:21c113f@sha256:bb9726f2d6ef0ea54d8ecc56c2944fa659cbcadcbe163b9782362740139f1ed4",
+            "aggregate": "ghcr.io/angzarr-io/angzarr-aggregate:e6f0e50@sha256:3d0825178a38e60b056952ca13f1dc0b0cbe3367c63461f56d83eb3115a23e40",
+            "saga": "ghcr.io/angzarr-io/angzarr-saga:e6f0e50@sha256:0e265cd455eca3e9dd1a5f0a4fcdf0e1b75b9c1286d55dab9802cc03fddfe780",
+            "projector": "ghcr.io/angzarr-io/angzarr-projector:e6f0e50@sha256:81173335c75886cb0b1c5f5435c5b4997b030b109a3d552c63fbb1596939d989",
+            "process-manager": "ghcr.io/angzarr-io/angzarr-process-manager:e6f0e50@sha256:d14f6d764857f80e0d693ec1697cb5cfe09f98ce449bc9896c090ad9633ee7ef",
             "stream": "ghcr.io/angzarr-io/angzarr-stream-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bb0bb16dc8b1039ba0cf63f38e6dbea380a389fbaae3143deaf70b4e0c38778f",
-            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:21c113f@sha256:ac5f95d76dcd1d6b504d5c654d75b3340757872c8a092955d6f29230547f4ffb",
+            "gateway": "ghcr.io/angzarr-io/angzarr-grpc-gateway:e6f0e50@sha256:2e1ebc5e1c4bea8cca2b27b1ab90a0d4010ff4c1986cd53ed1fe7bab367ae35d",
             "log": "ghcr.io/angzarr-io/angzarr-log-dev:ba4fcd4a767165f56aadd2bfbf2b294a59394800@sha256:bf96d6a207d9328c3792c6d15d8a06eee2b3711b81beb74809bde41e20cfdf64"
           }
           EOF
@@ -217,9 +204,17 @@ jobs:
       - name: Load example images from artifacts (PR)
         if: steps.images.outputs.build-examples == 'false' && github.event_name == 'pull_request'
         run: |
+          # Tarballs carry the PR-build tag (`pr-<N>-<sha>`); the chart's
+          # `tag: "latest"` references won't match, so load into the local
+          # docker daemon, retag as `:latest`, and load again into Kind.
           for tarball in /tmp/images/image-*/*.tar; do
             echo "Loading $tarball..."
-            kind load image-archive "$tarball" --name angzarr-test
+            img=$(docker load -i "$tarball" | grep -oE 'Loaded image: \S+' | awk '{print $NF}' | head -1)
+            base="${img%:*}"
+            echo "  loaded $img -> retag as $base:latest"
+            docker tag "$img" "$base:latest"
+            kind load docker-image "$img" --name angzarr-test
+            kind load docker-image "$base:latest" --name angzarr-test
           done
 
       - name: Pull and load provided example images (push)

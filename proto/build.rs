@@ -1,34 +1,38 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Example protos root - from buf export
-    // Run: buf export buf.build/angzarr/examples -o examples-proto
-    // Build scripts run from crate dir, so we go up to workspace root
+    // Read protos directly from the angzarr-project submodule. No
+    // buf-export + cp staging — the submodule pin IS the spec contract.
+    //
+    // Proto files declare `package angzarr_client.proto.examples`, so
+    // the generated rust module is `angzarr_client::proto::examples`.
+    // `proto/src/lib.rs` re-exports it at the crate root so call sites
+    // keep using `examples_proto::*`.
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let workspace_root = std::path::Path::new(&manifest_dir)
         .parent()
         .expect("proto crate should be in workspace");
+    let proto_root = workspace_root.join("angzarr-project").join("proto");
+    let proto_root_str = proto_root.to_string_lossy().to_string();
+    let examples_dir = proto_root.join("angzarr_client/proto/examples");
 
-    let proto_root = std::env::var("EXAMPLES_PROTO_ROOT").unwrap_or_else(|_| {
-        workspace_root
-            .join("examples-proto")
-            .to_string_lossy()
-            .to_string()
-    });
+    println!("cargo:rerun-if-changed={}", examples_dir.display());
 
-    println!("cargo:rerun-if-changed={}", proto_root);
-
-    let protos = vec![
-        format!("{}/examples/poker_types.proto", proto_root),
-        format!("{}/examples/player.proto", proto_root),
-        format!("{}/examples/table.proto", proto_root),
-        format!("{}/examples/hand.proto", proto_root),
-        format!("{}/examples/ai_sidecar.proto", proto_root),
+    let names = [
+        "poker_types.proto",
+        "player.proto",
+        "table.proto",
+        "hand.proto",
+        "ai_sidecar.proto",
         // Orchestration protos
-        format!("{}/examples/orchestration.proto", proto_root),
-        format!("{}/examples/buy_in.proto", proto_root),
-        format!("{}/examples/tournament.proto", proto_root),
-        format!("{}/examples/registration.proto", proto_root),
-        format!("{}/examples/rebuy.proto", proto_root),
+        "orchestration.proto",
+        "buy_in.proto",
+        "tournament.proto",
+        "registration.proto",
+        "rebuy.proto",
     ];
+    let protos: Vec<String> = names
+        .iter()
+        .map(|n| examples_dir.join(n).to_string_lossy().to_string())
+        .collect();
 
     let mut prost_config = prost_build::Config::new();
     prost_config.enable_type_names();
@@ -36,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
-        .compile_with_config(prost_config, &protos, &[proto_root])?;
+        .compile_with_config(prost_config, &protos, &[proto_root_str])?;
 
     Ok(())
 }
