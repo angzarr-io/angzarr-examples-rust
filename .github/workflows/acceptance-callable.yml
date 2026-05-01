@@ -93,17 +93,13 @@ jobs:
 
       - name: Export protos from submodule
         run: |
-          # The canonical protos declare `package angzarr_client.proto.examples`,
-          # so buf export lands them at `_proto_export/angzarr_client/proto/examples/`.
-          # The rust build.rs include root is flat (`examples/X.proto`); copy from
-          # the deep path and rewrite the imports to match. (Mirrors
-          # `justfile.container::proto-gen`.)
+          # Layout must match proto imports ("examples/poker_types.proto"),
+          # so keep the examples/ prefix rather than flattening.
           buf export angzarr-project/proto -o _proto_export
           rm -rf angzarr-proto examples-proto
           cp -r _proto_export angzarr-proto
           mkdir -p examples-proto/examples
-          cp _proto_export/angzarr_client/proto/examples/*.proto examples-proto/examples/
-          sed -i 's|angzarr_client/proto/examples/|examples/|g' examples-proto/examples/*.proto
+          cp _proto_export/examples/*.proto examples-proto/examples/
           rm -rf _proto_export
 
       - name: Parse image inputs
