@@ -2,17 +2,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read protos directly from the angzarr-project submodule. No
     // buf-export + cp staging — the submodule pin IS the spec contract.
     //
-    // Proto files declare `package angzarr_client.proto.examples`, so
-    // the generated rust module is `angzarr_client::proto::examples`.
-    // `proto/src/lib.rs` re-exports it at the crate root so call sites
-    // keep using `examples_proto::*`.
+    // Proto files declare `package examples;` (will become
+    // `angzarr_client.proto.examples` once the submodule is bumped past
+    // the rename — done in a separate PR that also brings rust source
+    // updates).
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let workspace_root = std::path::Path::new(&manifest_dir)
         .parent()
         .expect("proto crate should be in workspace");
     let proto_root = workspace_root.join("angzarr-project").join("proto");
     let proto_root_str = proto_root.to_string_lossy().to_string();
-    let examples_dir = proto_root.join("angzarr_client/proto/examples");
+    let examples_dir = proto_root.join("examples");
 
     println!("cargo:rerun-if-changed={}", examples_dir.display());
 
