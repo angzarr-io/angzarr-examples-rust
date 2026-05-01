@@ -1104,12 +1104,12 @@ fn given_capture_hole_cards(world: &mut HandWorld, player_id: String, label: Str
     let player = state
         .get_player(&player_root)
         .unwrap_or_else(|| panic!("Player {} not found in aggregate", player_id));
-    world.card_snapshots.insert(label, player.hole_cards.clone());
+    world
+        .card_snapshots
+        .insert(label, player.hole_cards.clone());
 }
 
-#[then(
-    expr = "player {string} hole card at index {int} matches {string} index {int}"
-)]
+#[then(expr = "player {string} hole card at index {int} matches {string} index {int}")]
 fn then_hole_card_matches_snapshot(
     world: &mut HandWorld,
     player_id: String,
