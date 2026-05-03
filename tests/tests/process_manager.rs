@@ -328,6 +328,84 @@ fn given_action_on(world: &mut PMWorld, pos: i32) {
     world.process.as_mut().unwrap().action_on = pos;
 }
 
+/// `dealer is at position D and N players seated at positions A, B, ...`
+/// — sets dealer and reseats the named positions with the default 1000 stack.
+/// The seat list is comma-separated; the leading numeric `N` is informational
+/// (it must equal the seat count). Used by EU-0445/0446/0447 multi-seat
+/// scenarios where the canned 2-player init isn't expressive enough.
+#[given(regex = r"^dealer is at position (\d+) and (\d+) players seated at positions ([\d, ]+)$")]
+fn given_dealer_and_seats(
+    world: &mut PMWorld,
+    dealer: i32,
+    _count: i32,
+    positions_csv: String,
+) {
+    let positions: Vec<i32> = positions_csv
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().expect("seat position must be int"))
+        .collect();
+
+    let process = world.process.as_mut().expect("process must exist");
+    process.dealer_position = dealer;
+    process.players.clear();
+    for pos in positions {
+        process.players.insert(
+            pos,
+            PlayerState::new(pos, format!("player-{}", pos + 1), 1000),
+        );
+    }
+}
+
+/// `blinds posted: SB position S amount X, BB position B amount Y`
+/// — debits the SB/BB stacks, sets bet_this_round on those seats,
+/// records the blind amounts, sets current_bet to the BB amount, and
+/// flags both blinds posted. Mirrors the post-blind state the hand
+/// aggregate would have produced before betting opens.
+#[given(
+    regex = r"^blinds posted: SB position (\d+) amount (\d+), BB position (\d+) amount (\d+)$"
+)]
+fn given_blinds_posted_positions(
+    world: &mut PMWorld,
+    sb_pos: i32,
+    sb_amount: i64,
+    bb_pos: i32,
+    bb_amount: i64,
+) {
+    let process = world.process.as_mut().expect("process must exist");
+    process.small_blind = sb_amount;
+    process.big_blind = bb_amount;
+    process.current_bet = bb_amount;
+    process.pot_total += sb_amount + bb_amount;
+    process.small_blind_posted = true;
+    process.big_blind_posted = true;
+    if let Some(p) = process.players.get_mut(&sb_pos) {
+        p.stack -= sb_amount;
+        p.bet_this_round = sb_amount;
+    }
+    if let Some(p) = process.players.get_mut(&bb_pos) {
+        p.stack -= bb_amount;
+        p.bet_this_round = bb_amount;
+    }
+}
+
+/// Mark the preflop round complete: every active seat acted and matched
+/// `current_bet`. EU-0446/0447 need this to satisfy the round-end
+/// precondition before dispatching a CommunityCardsDealt event.
+#[given("the preflop betting round is complete")]
+fn given_preflop_complete(world: &mut PMWorld) {
+    let process = world.process.as_mut().expect("process must exist");
+    process.betting_phase = Some(SmBettingPhase::Preflop);
+    let bet = process.current_bet;
+    for p in process.players.values_mut() {
+        if !p.has_folded && !p.is_all_in {
+            p.has_acted = true;
+            p.bet_this_round = bet;
+        }
+    }
+}
+
 #[given(expr = "an ActionTaken event for player at position {int} with action {word}")]
 fn given_action_at_position(world: &mut PMWorld, pos: i32, action: String) {
     world.last_action = action.clone();
@@ -500,6 +578,40 @@ fn when_pm_handles(world: &mut PMWorld) {
 #[when("the process manager ends the betting round")]
 fn when_pm_ends_round(world: &mut PMWorld) {
     world.end_betting_round();
+}
+
+/// `the player at position N calls X` — synthesize a CALL action for
+/// position `pos`: the seat tops up `bet_this_round` to `current_bet`
+/// (the gherkin `X` is the call delta), debits the stack by that delta,
+/// flags `has_acted`, and advances `action_on` to the next un-folded /
+/// un-all-in seat. Used by EU-0445 to preflop-call the BB twice and
+/// confirm the round does NOT close on `everyone-matched` alone.
+///
+/// Calls production methods only:
+///   - `apply_player_action(pos, Call, amount)` does chip accounting +
+///     flag updates,
+///   - `advance_action_on()` walks the seat ring without closing the
+///     round.
+/// A buggy production implementation will surface here, not just in the
+/// test fixture.
+#[when(regex = r"^the player at position (\d+) calls (\d+)$")]
+fn when_player_at_pos_calls(world: &mut PMWorld, pos: i32, amount: i64) {
+    let process = world.process.as_mut().expect("process must exist");
+    process.apply_player_action(pos, SmAction::Call, amount);
+    process.advance_action_on();
+}
+
+/// `a CommunityCardsDealt event for FLOP is handled` — dispatch the named
+/// betting phase through the production `apply_community_cards_dealt`,
+/// which resets per-round bet tracking and moves action to the first seat
+/// after the dealer. Used by EU-0446/0447 post-flop first-to-act scenarios.
+#[when(regex = r"^a CommunityCardsDealt event for (\w+) is handled$")]
+fn when_community_cards_dealt(world: &mut PMWorld, phase: String) {
+    let bp = SmBettingPhase::parse(&phase).expect("known betting phase");
+    let process = world.process.as_mut().expect("process must exist");
+    process.apply_community_cards_dealt(bp);
+    process.phase = SmPhase::Betting;
+    world.flush_emitted();
 }
 
 #[when("the action times out")]
@@ -689,6 +801,35 @@ fn then_player_stack(world: &mut PMWorld, player_id: String, amount: i64) {
 #[then("any pending timeout is cancelled")]
 fn then_timeout_cancelled(world: &mut PMWorld) {
     assert_eq!(world.process.as_ref().unwrap().phase, SmPhase::Complete);
+}
+
+/// `the betting round is not complete` — assert that the production
+/// `is_betting_complete()` returns false. EU-0445's discriminator: BB's
+/// option preflop must keep the round open even when every other seat
+/// already matched the BB. A buggy production implementation that closes
+/// the round on `everyone-matched` would fail here.
+#[then("the betting round is not complete")]
+fn then_betting_not_complete(world: &mut PMWorld) {
+    let process = world.process.as_ref().expect("process must exist");
+    assert!(
+        !process.is_betting_complete(),
+        "Expected is_betting_complete() == false, but production reports complete (players: {:?})",
+        process
+            .players
+            .values()
+            .map(|p| (p.position, p.has_acted, p.bet_this_round, p.has_folded, p.is_all_in))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[then(expr = "action_on is position {int}")]
+fn then_action_on_is(world: &mut PMWorld, pos: i32) {
+    let actual = world.process.as_ref().expect("process must exist").action_on;
+    assert_eq!(
+        actual, pos,
+        "Expected action_on={}, got {}",
+        pos, actual
+    );
 }
 
 #[then(expr = "betting_phase is set to {word}")]
@@ -1468,6 +1609,7 @@ fn given_handflowpm_started_hand(world: &mut PMWorld) {
         big_blind: 10,
         active_players: vec![(0, vec![1; 16])],
         phase: pmg_hand_flow::HandPhase::Dealing,
+        ..Default::default()
     });
 }
 
@@ -1527,6 +1669,7 @@ fn rebuild_tournament(events: &[Any]) -> pmg_reservation::TournamentStateHelper 
         .cloned()
         .map(|any| EventPage {
             header: Some(PageHeader {
+                sync_mode: None,
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: None,

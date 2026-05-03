@@ -60,6 +60,10 @@ pub struct HandWorld {
 
     // Pre-action hole-card snapshots, keyed by label.
     card_snapshots: HashMap<String, Vec<Card>>,
+
+    /// Cucumber-declared cover for the current scenario. See player.rs
+    /// for the rationale (unit-tier tests bypass the router).
+    command_cover: Option<angzarr_client::proto::Cover>,
 }
 
 impl HandWorld {
@@ -808,6 +812,28 @@ fn when_award_pot(world: &mut HandWorld, winner_id: String, amount: i64) {
     world.result = Some(handle_award_pot(cmd, &state, world.next_seq()));
 }
 
+/// Multi-winner AwardPot via cucumber data table. Each row is
+/// `| player_root | amount |` (header skipped). Used by EU-1009 split-pot
+/// scenarios where the single-winner step shape can't express two winners.
+#[when(regex = r"^I handle an AwardPot command with awards:$")]
+fn when_award_pot_table(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
+    let table = step.table.as_ref().expect("Expected data table");
+    let awards: Vec<PotAward> = table
+        .rows
+        .iter()
+        .skip(1)
+        .map(|row| PotAward {
+            player_root: world.player_root(row[0].as_str()),
+            amount: row[1].parse().expect("amount must be int"),
+            pot_type: "main".to_string(),
+        })
+        .collect();
+
+    let cmd = AwardPot { awards };
+    let state = world.rebuild_state();
+    world.result = Some(handle_award_pot(cmd, &state, world.next_seq()));
+}
+
 #[when("I rebuild the hand state")]
 fn when_rebuild_state(_world: &mut HandWorld) {
     // State is rebuilt in Then steps
@@ -894,6 +920,89 @@ fn then_error_contains(world: &mut HandWorld, expected: String) {
     );
 }
 
+#[then(expr = "the command is rejected with code {string}")]
+fn then_command_rejected_with_code(world: &mut HandWorld, code: String) {
+    let result = world
+        .result
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let err = result
+        .as_ref()
+        .err()
+        .expect("Expected command to be rejected but it succeeded");
+    assert_eq!(
+        err.code, code,
+        "Expected rejection code '{}', got '{}'",
+        code, err.code
+    );
+}
+
+#[then(expr = "the rejection field {string} equals {string}")]
+fn then_rejection_field_equals(world: &mut HandWorld, field: String, value: String) {
+    let result = world
+        .result
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let err = result
+        .as_ref()
+        .err()
+        .expect("Expected command to be rejected but it succeeded");
+    let actual = err.details.get(&field).cloned().unwrap_or_else(|| {
+        panic!(
+            "Rejection has no field '{}'; available: {:?}",
+            field,
+            err.details.keys().collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(
+        actual, value,
+        "Rejection field '{}': expected '{}', got '{}'",
+        field, value, actual
+    );
+}
+
+#[then(regex = r#"^the rejection cover has (.+)$"#)]
+fn then_rejection_cover_has(world: &mut HandWorld, spec: String) {
+    let cover = rejection_cover_or_fail_hand(world).clone();
+    for (field, value) in poker_tests::cover_field_pairs(&spec) {
+        let actual = poker_tests::read_cover_field(&cover, &field);
+        assert_eq!(
+            actual, value,
+            "Rejection cover {}: expected '{}', got '{}'",
+            field, value, actual
+        );
+    }
+}
+
+fn rejection_cover_or_fail_hand(world: &mut HandWorld) -> &angzarr_client::proto::Cover {
+    if let Some(cover) = world.command_cover.clone() {
+        if let Some(Err(rej)) = world.result.as_mut() {
+            if rej.cover.is_none() {
+                rej.cover = Some(cover);
+            }
+        }
+    }
+    let result = world
+        .result
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let err = result
+        .as_ref()
+        .err()
+        .expect("Expected command to be rejected but it succeeded");
+    err.cover.as_ref().expect(
+        "Rejection has no cover stamped — declare one via `the command cover has ...` Given steps",
+    )
+}
+
+#[given(regex = r#"^the command cover has (.+)$"#)]
+fn given_cover_has_hand(world: &mut HandWorld, spec: String) {
+    let cover = world.command_cover.get_or_insert_with(Default::default);
+    for (field, value) in poker_tests::cover_field_pairs(&spec) {
+        poker_tests::write_cover_field(cover, &field, &value);
+    }
+}
+
 #[then(expr = "each player has {int} hole cards")]
 fn then_each_player_cards(world: &mut HandWorld, expected: usize) {
     let event = world.result_event().expect("No event");
@@ -917,10 +1026,46 @@ fn then_remaining_deck(world: &mut HandWorld, expected: usize) {
 }
 
 #[then(expr = "player {string} has specific hole cards for seed {string}")]
-fn then_player_specific_cards(world: &mut HandWorld, _player_id: String, _seed: String) {
+fn then_player_specific_cards(world: &mut HandWorld, player_id: String, seed: String) {
+    // Canonical (seed, player_id) → expected_cards. Both Python and Rust use
+    // SplitMix64 + Fisher-Yates seeded by SHA-256(seed)[..8] big-endian u64;
+    // deals are from the front of the canonically-ordered deck. Drift here
+    // means the cross-language shuffle contract has been broken.
+    //
+    // Each tuple is (suit, rank) using proto enum values:
+    // suit 1=CLUBS, 2=DIAMONDS, 3=HEARTS, 4=SPADES; rank 2..14 (Ace=14).
+    let expected: &[((i32, i32), (i32, i32))] = match (seed.as_str(), player_id.as_str()) {
+        // 7♣ 7♥ → player-1; K♠ A♠ → player-2
+        ("test-seed-123", "player-1") => &[((1, 7), (3, 7))],
+        ("test-seed-123", "player-2") => &[((4, 13), (4, 14))],
+        _ => panic!(
+            "no canonical cards recorded for seed={:?} player={:?}; add an entry to then_player_specific_cards",
+            seed, player_id
+        ),
+    };
+    let (c0, c1) = expected[0];
+
     let event = world.result_event().expect("No event");
     let cards_dealt = try_unpack::<CardsDealt>(&event).expect("Failed to decode");
-    assert!(!cards_dealt.player_cards.is_empty());
+
+    // Match Python: the test world keys players by `uuid_or_empty(name)`,
+    // so look up by that bytes value, not the raw player_id string.
+    let expected_root = world.player_root(&player_id);
+    let player_cards = cards_dealt
+        .player_cards
+        .iter()
+        .find(|pc| pc.player_root == expected_root)
+        .unwrap_or_else(|| panic!("no cards for player {:?}", player_id));
+
+    assert_eq!(player_cards.cards.len(), 2, "expected 2 hole cards");
+    let actual: Vec<(i32, i32)> = player_cards.cards.iter().map(|c| (c.suit, c.rank)).collect();
+    assert_eq!(
+        actual,
+        vec![c0, c1],
+        "cross-language shuffle drift for seed={:?} player={:?}",
+        seed,
+        player_id
+    );
 }
 
 #[then(expr = "the player event has blind_type {string}")]
@@ -1160,12 +1305,40 @@ fn then_reveal_ranking(world: &mut HandWorld) {
 fn then_award_winner(world: &mut HandWorld, winner_id: String, expected: i64) {
     let event = world.result_event().expect("No event");
     let award = try_unpack::<PotAwarded>(&event).expect("Failed to decode");
-    let winner = award.winners.first().expect("No winner");
+    let expected_root = world.player_root(&winner_id);
+    let winner = award
+        .winners
+        .iter()
+        .find(|w| w.player_root == expected_root)
+        .unwrap_or_else(|| {
+            panic!(
+                "No winner with player_root for {:?}; got winners: {:?}",
+                winner_id,
+                award
+                    .winners
+                    .iter()
+                    .map(|w| (hex::encode(&w.player_root), w.amount))
+                    .collect::<Vec<_>>()
+            )
+        });
     assert_eq!(
-        hex::encode(&winner.player_root),
-        hex::encode(world.player_root(&winner_id))
+        winner.amount, expected,
+        "winner {:?}: expected amount {}, got {}",
+        winner_id, expected, winner.amount
     );
-    assert_eq!(winner.amount, expected);
+}
+
+#[then(expr = "the award event has {int} winners")]
+fn then_award_winner_count(world: &mut HandWorld, expected: usize) {
+    let event = world.result_event().expect("No event");
+    let award = try_unpack::<PotAwarded>(&event).expect("Failed to decode");
+    assert_eq!(
+        award.winners.len(),
+        expected,
+        "Expected {} winners, got {}",
+        expected,
+        award.winners.len()
+    );
 }
 
 #[then("a HandComplete event is emitted")]

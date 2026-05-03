@@ -13,8 +13,9 @@
 
 use std::collections::BTreeMap;
 
-/// High-level workflow phases. Mirrors python `HandPhase` plus the
-/// finer-grained sub-phases the BDD scenarios assert on.
+/// High-level workflow phases. Mirrors python `HandPhase`
+/// (`hand-flow/hand_process.py:21`) one-to-one — `AwaitingDeal` is the
+/// equivalent of Python's `WAITING_FOR_START`; the rest match by name.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Phase {
     #[default]
@@ -25,6 +26,7 @@ pub enum Phase {
     DealingCommunity,
     Draw,
     Showdown,
+    AwardingPot,
     Complete,
 }
 
@@ -38,19 +40,21 @@ impl Phase {
             Phase::DealingCommunity => "DEALING_COMMUNITY",
             Phase::Draw => "DRAW",
             Phase::Showdown => "SHOWDOWN",
+            Phase::AwardingPot => "AWARDING_POT",
             Phase::Complete => "COMPLETE",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
-            "AWAITING_DEAL" => Phase::AwaitingDeal,
+            "AWAITING_DEAL" | "WAITING_FOR_START" => Phase::AwaitingDeal,
             "DEALING" => Phase::Dealing,
             "POSTING_BLINDS" => Phase::PostingBlinds,
             "BETTING" => Phase::Betting,
             "DEALING_COMMUNITY" => Phase::DealingCommunity,
             "DRAW" => Phase::Draw,
             "SHOWDOWN" => Phase::Showdown,
+            "AWARDING_POT" => Phase::AwardingPot,
             "COMPLETE" => Phase::Complete,
             _ => return None,
         })
@@ -408,6 +412,85 @@ impl HandProcess {
         self.phase = Phase::Complete;
         self.emitted.push(Command::TimeoutCancel);
     }
+
+    /// Returns `true` iff the current betting round is complete: at most
+    /// one active (non-folded, non-all-in) seat OR every active seat has
+    /// `has_acted == true` AND `bet_this_round >= current_bet`.
+    ///
+    /// The bet-level check matters for the BB-option case: at preflop end
+    /// every non-BB player who called has `bet_this_round == current_bet`,
+    /// but the BB still has `has_acted == false` (action wasn't yet taken
+    /// — only the blind was posted). The blind-posting helpers must NOT
+    /// set `has_acted = true` for the BB, or the option vanishes.
+    ///
+    /// Used by EU-0445 to assert the round stays open after non-BB players
+    /// match the blind. Mirrors python `_is_betting_complete` in
+    /// `hand-flow/hand_process.py:556`.
+    pub fn is_betting_complete(&self) -> bool {
+        let active: Vec<&PlayerState> = self
+            .players
+            .values()
+            .filter(|p| !p.has_folded && !p.is_all_in)
+            .collect();
+        if active.len() <= 1 {
+            return true;
+        }
+        active
+            .iter()
+            .all(|p| p.has_acted && p.bet_this_round >= self.current_bet)
+    }
+
+    /// Advance `action_on` to the next un-folded, un-all-in seat strictly
+    /// after the current `action_on`, wrapping to the lowest seat if
+    /// needed. Sparse-seat-safe: walks `players.keys()` in sorted order
+    /// (BTreeMap), so positions like `[0, 1, 3]` are visited in order
+    /// without collapsing to `len()` modulus.
+    ///
+    /// Does NOT touch `phase` or emit commands. The richer
+    /// [`advance_betting`](Self::advance_betting) (private) does both
+    /// advancement AND round-end handling; that helper is for the runtime
+    /// driver, while this one is for tests and for callers that want to
+    /// step action without ending the round.
+    pub fn advance_action_on(&mut self) {
+        if self.players.is_empty() {
+            return;
+        }
+        let cur = self.action_on;
+        let after = self.players.range((cur + 1)..);
+        let wrap = self.players.range(..=cur);
+        for (pos, p) in after.chain(wrap) {
+            if !p.has_folded && !p.is_all_in {
+                self.action_on = *pos;
+                return;
+            }
+        }
+    }
+
+    /// Apply a player action with full chip accounting: updates
+    /// `bet_this_round`, `stack`, and `pot_total` in addition to the flag
+    /// updates done by [`apply_action`]. `amount` is the chips put in
+    /// THIS action — i.e. for a CALL it's the additional chips needed to
+    /// match `current_bet`, not the running total. For BET / RAISE / ALL_IN
+    /// the player's `bet_this_round` is bumped by `amount`, and if the new
+    /// `bet_this_round` exceeds `current_bet`, `current_bet` is raised to
+    /// match.
+    ///
+    /// Mirrors the chip-accounting half of python's `handle_action_taken`
+    /// (`hand-flow/hand_process.py:350`). The flag/raise-reopens-action
+    /// half is delegated to [`apply_action`].
+    pub fn apply_player_action(&mut self, position: i32, action: Action, amount: i64) {
+        if let Some(p) = self.players.get_mut(&position) {
+            p.stack -= amount;
+            p.bet_this_round += amount;
+            if matches!(action, Action::Bet | Action::Raise | Action::AllIn)
+                && p.bet_this_round > self.current_bet
+            {
+                self.current_bet = p.bet_this_round;
+            }
+        }
+        self.pot_total += amount;
+        self.apply_action(position, action);
+    }
 }
 
 #[cfg(test)]
@@ -443,5 +526,128 @@ mod tests {
                 kind: BlindKind::Small
             }
         ));
+    }
+
+    fn three_players_after_blinds() -> HandProcess {
+        // Dealer at 0, SB at 1 (posted 5), BB at 2 (posted 10).
+        // current_bet = 10, pot = 15. SB and BB have bet_this_round set;
+        // BB has has_acted=false (option still open).
+        let mut p = HandProcess::new();
+        p.players
+            .insert(0, PlayerState::new(0, "p1".into(), 1000));
+        let mut sb = PlayerState::new(1, "p2".into(), 995);
+        sb.bet_this_round = 5;
+        p.players.insert(1, sb);
+        let mut bb = PlayerState::new(2, "p3".into(), 990);
+        bb.bet_this_round = 10;
+        p.players.insert(2, bb);
+        p.dealer_position = 0;
+        p.current_bet = 10;
+        p.pot_total = 15;
+        p.action_on = 0;
+        p.betting_phase = Some(BettingPhase::Preflop);
+        p.phase = Phase::Betting;
+        p
+    }
+
+    #[test]
+    fn is_betting_complete_false_when_bb_has_option() {
+        // EU-0445 production-side check: after the dealer (UTG with 3
+        // players) and SB call, both have has_acted=true and bet_this_round
+        // matches current_bet — but BB still has has_acted=false. The
+        // round must NOT be reported complete.
+        let mut p = three_players_after_blinds();
+        p.apply_player_action(0, Action::Call, 10);
+        p.apply_player_action(1, Action::Call, 5);
+        assert!(
+            !p.is_betting_complete(),
+            "BB option should keep round open: {:?}",
+            p.players
+        );
+    }
+
+    #[test]
+    fn is_betting_complete_true_when_bb_acts() {
+        // After BB checks (or calls), all three have has_acted=true and
+        // bet_this_round == current_bet, so the round is complete.
+        let mut p = three_players_after_blinds();
+        p.apply_player_action(0, Action::Call, 10);
+        p.apply_player_action(1, Action::Call, 5);
+        p.apply_player_action(2, Action::Check, 0);
+        assert!(p.is_betting_complete());
+    }
+
+    #[test]
+    fn is_betting_complete_true_with_one_active_left() {
+        // Heads-up after one folds: only one active seat, round trivially
+        // complete (the remaining player wins by default).
+        let mut p = HandProcess::new();
+        p.players
+            .insert(0, PlayerState::new(0, "p1".into(), 500));
+        let mut p2 = PlayerState::new(1, "p2".into(), 500);
+        p2.has_folded = true;
+        p.players.insert(1, p2);
+        assert!(p.is_betting_complete());
+    }
+
+    #[test]
+    fn apply_player_action_call_updates_chip_state() {
+        let mut p = three_players_after_blinds();
+        let pot_before = p.pot_total;
+        p.apply_player_action(0, Action::Call, 10);
+        let actor = &p.players[&0];
+        assert_eq!(actor.bet_this_round, 10);
+        assert_eq!(actor.stack, 990);
+        assert!(actor.has_acted);
+        assert_eq!(p.pot_total, pot_before + 10);
+        assert_eq!(p.current_bet, 10, "CALL must not raise current_bet");
+    }
+
+    #[test]
+    fn apply_player_action_raise_lifts_current_bet_and_reopens_action() {
+        let mut p = three_players_after_blinds();
+        // Pre-mark dealer as acted to verify a subsequent raise re-opens it.
+        p.players.get_mut(&0).unwrap().has_acted = true;
+        p.players.get_mut(&1).unwrap().has_acted = true;
+        // BB raises to 30 (puts in 20 chips on top of their 10 blind).
+        p.apply_player_action(2, Action::Raise, 20);
+        assert_eq!(p.current_bet, 30);
+        assert_eq!(p.players[&2].bet_this_round, 30);
+        assert_eq!(p.players[&2].stack, 970);
+        assert!(p.players[&2].has_acted, "raiser keeps has_acted=true");
+        assert!(!p.players[&0].has_acted, "raise reopens action for dealer");
+        assert!(!p.players[&1].has_acted, "raise reopens action for SB");
+    }
+
+    #[test]
+    fn advance_action_on_wraps_and_skips_folded() {
+        let mut p = HandProcess::new();
+        p.players
+            .insert(0, PlayerState::new(0, "p1".into(), 500));
+        let mut p2 = PlayerState::new(1, "p2".into(), 500);
+        p2.has_folded = true;
+        p.players.insert(1, p2);
+        p.players
+            .insert(2, PlayerState::new(2, "p3".into(), 500));
+        p.action_on = 0;
+        p.advance_action_on();
+        assert_eq!(p.action_on, 2, "must skip folded seat 1");
+        p.advance_action_on();
+        assert_eq!(p.action_on, 0, "must wrap from highest seat back to 0");
+    }
+
+    #[test]
+    fn advance_action_on_handles_sparse_seats() {
+        // Seats 0 and 3 only — `len() % seat_max` would silently mis-walk.
+        let mut p = HandProcess::new();
+        p.players
+            .insert(0, PlayerState::new(0, "p1".into(), 500));
+        p.players
+            .insert(3, PlayerState::new(3, "p2".into(), 500));
+        p.action_on = 0;
+        p.advance_action_on();
+        assert_eq!(p.action_on, 3);
+        p.advance_action_on();
+        assert_eq!(p.action_on, 0);
     }
 }

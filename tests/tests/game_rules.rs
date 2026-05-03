@@ -3,6 +3,8 @@
 //! Pure-function tests against `agg_hand::game_rules`. No aggregate state,
 //! no commands, no events.
 
+use std::collections::HashMap;
+
 use agg_hand::game_rules::{
     get_rules, DealResult, DrawResult, FiveCardDrawRules, GameRules, HandRank, OmahaRules,
     PhaseTransition, TexasHoldemRules,
@@ -39,6 +41,10 @@ pub struct RulesWorld {
     // factory
     factory_rules: Option<Box<dyn GameRules>>,
     factory_label: String,
+
+    // Multi-hand intra-class ordering scenarios (EU-0729..0732) keep
+    // labelled (`A`, `B`) evaluator outputs for cross-comparison.
+    hand_results: HashMap<String, HandRank>,
 }
 
 impl std::fmt::Debug for RulesWorld {
@@ -524,6 +530,72 @@ fn then_rules_class(world: &mut RulesWorld, cls: String) {
     );
     // Also sanity-check the instance exists.
     let _ = world.factory_rules.as_deref().expect("no factory rules");
+}
+
+// --- Intra-class ordering (multi-hand) ---
+
+/// `I evaluate hand <label> with hole "..." and community "..."` —
+/// evaluate a labelled hand against the currently-selected rules and
+/// stash the result in `world.hand_results[label]` for later comparison.
+/// Used by EU-0729..0732 to pin same-rank ordering (e.g. A-high straight
+/// > K-high straight) so a buggy comparator can't slip past with the
+/// same rank label.
+#[when(
+    regex = r#"^I evaluate hand (\w+) with hole "([^"]*)" and community "([^"]*)"$"#
+)]
+fn when_evaluate_labelled_hand(
+    world: &mut RulesWorld,
+    label: String,
+    hole_str: String,
+    community_str: String,
+) {
+    let hole = parse_cards(&hole_str);
+    let community = parse_cards(&community_str);
+    let rank = world.current_rules().evaluate_hand(&hole, &community);
+    world.hand_results.insert(label, rank);
+}
+
+#[then(expr = "both hands rank {word}")]
+fn then_both_hands_rank(world: &mut RulesWorld, rank: String) {
+    let expected = rank_type_from_name(&rank);
+    let a = world
+        .hand_results
+        .get("A")
+        .expect("hand A not evaluated; run a `When I evaluate hand A ...` step first");
+    let b = world
+        .hand_results
+        .get("B")
+        .expect("hand B not evaluated; run a `When I evaluate hand B ...` step first");
+    assert_eq!(
+        a.rank_type, expected,
+        "hand A: expected rank {:?}, got {:?}",
+        expected, a.rank_type
+    );
+    assert_eq!(
+        b.rank_type, expected,
+        "hand B: expected rank {:?}, got {:?}",
+        expected, b.rank_type
+    );
+}
+
+#[then(expr = "hand {word} score is greater than hand {word} score")]
+fn then_hand_score_greater(world: &mut RulesWorld, lhs: String, rhs: String) {
+    let l = world
+        .hand_results
+        .get(&lhs)
+        .unwrap_or_else(|| panic!("hand {} not evaluated", lhs));
+    let r = world
+        .hand_results
+        .get(&rhs)
+        .unwrap_or_else(|| panic!("hand {} not evaluated", rhs));
+    assert!(
+        l.score > r.score,
+        "Expected hand {} score ({}) > hand {} score ({})",
+        lhs,
+        l.score,
+        rhs,
+        r.score
+    );
 }
 
 #[tokio::main]
