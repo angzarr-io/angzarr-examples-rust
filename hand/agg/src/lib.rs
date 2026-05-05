@@ -1,10 +1,13 @@
 //! Hand aggregate library.
 
 pub mod betting_round;
+pub mod errors;
 pub mod game_rules;
 pub mod handlers;
+pub mod pot_distribution;
 pub mod raise_tracking;
 pub mod state;
+pub mod substantial_action;
 
 pub use state::{HandState, PlayerHandState, PotState};
 

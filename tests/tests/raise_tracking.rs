@@ -5,7 +5,10 @@
 //! World is a thin holder of the inputs; every When/Then step calls into
 //! the production functions, no shadow `recompute()`.
 
-use agg_hand::raise_tracking::{all_in_to, min_raise_to, next_last_raise_increment};
+use agg_hand::raise_tracking::{
+    all_in_to, apply_short_all_in, min_raise_to, next_last_raise_increment, reset_per_round,
+    short_all_in_initial, ShortAllInOutcome,
+};
 use cucumber::{given, then, when, World};
 
 #[derive(Debug, Default, World)]
@@ -14,6 +17,13 @@ pub struct RaiseWorld {
     last_raise_increment: i64,
     min_raise_to: i64,
     all_in_to: i64,
+    /// Big blind, captured by Given steps that mention it. Used by the
+    /// per-street reset to compute the new last_raise_increment.
+    big_blind: i64,
+    /// Tracker for cumulative short all-in chains. Initialised on the
+    /// first all-in step and advanced by each subsequent all-in.
+    short_tracker: Option<ShortAllInOutcome>,
+    action_reopened: bool,
 }
 
 #[given(expr = "current_bet is {int} and last_raise_increment is {int}")]
@@ -66,12 +76,63 @@ fn when_bet_new_round(world: &mut RaiseWorld, amt: i64) {
     world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
+/// Drive the production `apply_short_all_in` helper. Initialises the
+/// tracker on first call, then advances it for each subsequent all-in.
+/// `current_bet` and `last_raise_increment` are kept in sync so
+/// downstream `then` steps can read them through the existing fields.
+fn apply_all_in_through_helper(world: &mut RaiseWorld, amt: i64) {
+    let prior = world
+        .short_tracker
+        .unwrap_or_else(|| short_all_in_initial(world.current_bet, world.last_raise_increment));
+    let next = apply_short_all_in(prior, amt);
+    world.short_tracker = Some(next);
+    world.current_bet = next.current_bet;
+    world.last_raise_increment = next.last_raise_increment;
+    world.action_reopened = next.action_reopened;
+    world.all_in_to = all_in_to(amt, 0);
+    world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
+}
+
 #[when(expr = "a player goes all-in to {int}")]
 fn when_all_in_to(world: &mut RaiseWorld, amt: i64) {
-    // The feature passes the absolute target; that's `all_in_to(stack,
-    // committed)`. We reverse-engineer one decomposition (stack=amt,
-    // committed=0) so the production helper is on the path.
-    world.all_in_to = all_in_to(amt, 0);
+    apply_all_in_through_helper(world, amt);
+}
+
+#[when(expr = "another player goes all-in to {int}")]
+fn when_another_player_all_in_to(world: &mut RaiseWorld, amt: i64) {
+    apply_all_in_through_helper(world, amt);
+}
+
+#[given(expr = "current_bet is {int} and last_raise_increment is {int} and big_blind is {int}")]
+fn given_state_with_big_blind(world: &mut RaiseWorld, bet: i64, inc: i64, bb: i64) {
+    world.current_bet = bet;
+    world.last_raise_increment = inc;
+    world.big_blind = bb;
+    world.min_raise_to = min_raise_to(bet, inc);
+}
+
+#[given(
+    expr = "current_bet is {int} and last_raise_increment is {int} on a new street with big_blind {int}"
+)]
+fn given_state_new_street_with_bb(world: &mut RaiseWorld, bet: i64, inc: i64, bb: i64) {
+    world.current_bet = bet;
+    world.last_raise_increment = inc;
+    world.big_blind = bb;
+    world.min_raise_to = min_raise_to(bet, inc);
+}
+
+#[when("a new betting round begins")]
+fn when_new_betting_round(world: &mut RaiseWorld) {
+    // Drive the production helper. Both the cucumber scenario and the
+    // Hand aggregate's `apply_betting_round_complete` call into this
+    // function, so any divergence between them surfaces here.
+    let reset = reset_per_round(world.big_blind).expect("non-negative bb");
+    world.current_bet = reset.current_bet;
+    world.last_raise_increment = reset.last_raise_increment;
+    // Reset the short-all-in tracker — a fresh street has no
+    // in-flight short-all-in chain.
+    world.short_tracker = None;
+    world.action_reopened = false;
     world.min_raise_to = min_raise_to(world.current_bet, world.last_raise_increment);
 }
 
@@ -115,6 +176,22 @@ fn then_all_in_less_than_min_raise(world: &mut RaiseWorld) {
         "all-in {} is not less than min_raise_to {}",
         world.all_in_to,
         mr
+    );
+}
+
+#[then("the bet is reopened for prior actors")]
+fn then_bet_reopened(world: &mut RaiseWorld) {
+    assert!(
+        world.action_reopened,
+        "Expected action to be reopened, but the tracker reports it is not"
+    );
+}
+
+#[then("the bet is not reopened for prior actors")]
+fn then_bet_not_reopened(world: &mut RaiseWorld) {
+    assert!(
+        !world.action_reopened,
+        "Expected action NOT to be reopened, but the tracker reports it is"
     );
 }
 
