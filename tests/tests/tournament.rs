@@ -55,6 +55,9 @@ pub struct TournamentWorld {
     last_error: Option<CommandRejectedError>,
     last_event_book: Option<EventBook>,
     last_state: Option<TournamentState>,
+    /// Cucumber-declared cover for the current scenario. See player.rs
+    /// for the rationale (unit-tier tests bypass the router).
+    command_cover: Option<angzarr_client::proto::Cover>,
 }
 
 impl std::fmt::Debug for TournamentWorld {
@@ -156,6 +159,7 @@ fn given_created_event(
         addon_config: None,
         blind_structure: vec![],
         created_at: Some(angzarr_client::now()),
+        ..Default::default()
     };
     world.add_event(pack(&event));
 }
@@ -173,6 +177,7 @@ fn append_created(world: &mut TournamentWorld, buy_in: i64, max_players: i32, mi
         addon_config: None,
         blind_structure: vec![],
         created_at: Some(angzarr_client::now()),
+        ..Default::default()
     };
     world.add_event(pack(&event));
 }
@@ -237,6 +242,7 @@ fn append_created_with_blinds_and_rebuy(
         addon_config: None,
         blind_structure,
         created_at: Some(angzarr_client::now()),
+        ..Default::default()
     };
     world.add_event(pack(&event));
 }
@@ -264,6 +270,56 @@ fn given_running_with_blinds(world: &mut TournamentWorld) {
         None,
     );
     // TournamentResumed applier sets status to Running.
+    world.add_event(pack(&TournamentResumed {
+        resumed_at: Some(angzarr_client::now()),
+    }));
+}
+
+#[given("a running tournament at the final defined blind level")]
+fn given_running_at_final_blind_level(world: &mut TournamentWorld) {
+    // Two-level structure with current_level already advanced to 2 (final).
+    // EU-0830 verifies that the next AdvanceBlindLevel rejects with
+    // BLIND_STRUCTURE_EXHAUSTED instead of silently emitting an event past
+    // the declared structure.
+    append_created_with_blinds_and_rebuy(
+        world,
+        vec![
+            BlindLevel {
+                level: 1,
+                small_blind: 25,
+                big_blind: 50,
+                ante: 0,
+                duration_minutes: 20,
+            },
+            BlindLevel {
+                level: 2,
+                small_blind: 50,
+                big_blind: 100,
+                ante: 10,
+                duration_minutes: 20,
+            },
+        ],
+        None,
+    );
+    world.add_event(pack(&TournamentResumed {
+        resumed_at: Some(angzarr_client::now()),
+    }));
+    // Advance from default level 1 to level 2 — the final defined level.
+    world.add_event(pack(&BlindLevelAdvanced {
+        level: 2,
+        small_blind: 50,
+        big_blind: 100,
+        ante: 10,
+        advanced_at: Some(angzarr_client::now()),
+    }));
+}
+
+#[given("a running tournament with no blind structure")]
+fn given_running_no_blind_structure(world: &mut TournamentWorld) {
+    // EU-0831 verifies that AdvanceBlindLevel rejects with
+    // BLIND_STRUCTURE_EXHAUSTED (max_defined_level=0) when no structure
+    // is declared.
+    append_created_with_blinds_and_rebuy(world, vec![], None);
     world.add_event(pack(&TournamentResumed {
         resumed_at: Some(angzarr_client::now()),
     }));
@@ -397,6 +453,7 @@ fn when_create_tournament(
         rebuy_config: None,
         addon_config: None,
         blind_structure: vec![],
+        ..Default::default()
     };
     dispatch!(world, handle_create_tournament, cmd);
 }
@@ -456,7 +513,7 @@ fn when_start_tournament(world: &mut TournamentWorld) {
 
 #[when("I handle an AdvanceBlindLevel command")]
 fn when_advance_blind_level(world: &mut TournamentWorld) {
-    dispatch!(world, handle_advance_blind_level, AdvanceBlindLevel {});
+    dispatch!(world, handle_advance_blind_level, AdvanceBlindLevel { ..Default::default() });
 }
 
 #[when(expr = "I handle an EliminatePlayer command for player {string} with hand_root {string}")]
@@ -506,6 +563,76 @@ fn then_error_contains(world: &mut TournamentWorld, expected: String) {
         expected,
         err.message
     );
+}
+
+#[then(expr = "the command is rejected with code {string}")]
+fn then_command_rejected_with_code(world: &mut TournamentWorld, code: String) {
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    assert_eq!(
+        err.code, code,
+        "Expected rejection code '{}', got '{}'",
+        code, err.code
+    );
+}
+
+#[then(expr = "the rejection field {string} equals {string}")]
+fn then_rejection_field_equals(world: &mut TournamentWorld, field: String, value: String) {
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let actual = err.details.get(&field).cloned().unwrap_or_else(|| {
+        panic!(
+            "Rejection has no field '{}'; available: {:?}",
+            field,
+            err.details.keys().collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(
+        actual, value,
+        "Rejection field '{}': expected '{}', got '{}'",
+        field, value, actual
+    );
+}
+
+#[then(regex = r#"^the rejection cover has (.+)$"#)]
+fn then_rejection_cover_has(world: &mut TournamentWorld, spec: String) {
+    let cover = rejection_cover_or_fail_tournament(world).clone();
+    for (field, value) in poker_tests::cover_field_pairs(&spec) {
+        let actual = poker_tests::read_cover_field(&cover, &field);
+        assert_eq!(
+            actual, value,
+            "Rejection cover {}: expected '{}', got '{}'",
+            field, value, actual
+        );
+    }
+}
+
+fn rejection_cover_or_fail_tournament(world: &mut TournamentWorld) -> &angzarr_client::proto::Cover {
+    if let (Some(rej), Some(cover)) = (world.last_error.as_mut(), world.command_cover.as_ref())
+    {
+        if rej.cover.is_none() {
+            rej.cover = Some(cover.clone());
+        }
+    }
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    err.cover.as_ref().expect(
+        "Rejection has no cover stamped — declare one via `the command cover has ...` Given steps",
+    )
+}
+
+#[given(regex = r#"^the command cover has (.+)$"#)]
+fn given_cover_has_tournament(world: &mut TournamentWorld, spec: String) {
+    let cover = world.command_cover.get_or_insert_with(Default::default);
+    for (field, value) in poker_tests::cover_field_pairs(&spec) {
+        poker_tests::write_cover_field(cover, &field, &value);
+    }
 }
 
 #[then(expr = "the tournament event has name {string}")]
@@ -760,6 +887,8 @@ fn given_created_named(
     max_players: i32,
     min_players: i32,
 ) {
+    // No blind structure by default — scenarios that exercise blind
+    // advancement supply their own via the dedicated "two-level" step.
     let event = TournamentCreated {
         name,
         game_variant: GameVariant::TexasHoldem as i32,
@@ -770,14 +899,9 @@ fn given_created_named(
         scheduled_start: None,
         rebuy_config: None,
         addon_config: None,
-        blind_structure: vec![BlindLevel {
-            level: 1,
-            small_blind: 25,
-            big_blind: 50,
-            ante: 0,
-            duration_minutes: 20,
-        }],
+        blind_structure: vec![],
         created_at: Some(angzarr_client::now()),
+        ..Default::default()
     };
     world.add_event(pack(&event));
 }

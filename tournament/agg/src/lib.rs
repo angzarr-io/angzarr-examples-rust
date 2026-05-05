@@ -1,5 +1,6 @@
 //! Tournament aggregate library.
 
+pub mod errors;
 pub mod handlers;
 pub mod state;
 
@@ -234,6 +235,7 @@ mod applier_tests {
                     duration_minutes: 20,
                 }],
                 created_at: None,
+                ..Default::default()
             },
         );
         s
@@ -256,6 +258,7 @@ mod applier_tests {
                 addon_config: None,
                 blind_structure: vec![],
                 created_at: None,
+                ..Default::default()
             },
         );
         assert_eq!(state.tournament_id, "tournament_Test");
@@ -514,6 +517,7 @@ mod handler_tests {
                     duration_minutes: 20,
                 }],
                 created_at: None,
+                ..Default::default()
             },
         );
         s
@@ -542,6 +546,7 @@ mod handler_tests {
                     rebuy_config: None,
                     addon_config: None,
                     blind_structure: vec![],
+                    ..Default::default()
                 },
                 &state,
                 0,
@@ -629,8 +634,18 @@ mod handler_tests {
         let agg = TournamentAggregate;
         let mut state = created_state();
         state.status = TournamentStatus::TournamentRunning;
+        // Add a second blind level so advancing from level 1 → 2 has a
+        // defined target. AdvanceBlindLevel rejects with
+        // BLIND_STRUCTURE_EXHAUSTED past the declared structure.
+        state.blind_structure.push(BlindLevel {
+            level: 2,
+            small_blind: 50,
+            big_blind: 100,
+            ante: 10,
+            duration_minutes: 20,
+        });
         let book = agg
-            .on_advance_blind(AdvanceBlindLevel {}, &state, 5)
+            .on_advance_blind(AdvanceBlindLevel { ..Default::default() }, &state, 5)
             .expect("handler should succeed");
         assert_eq!(book.pages.len(), 1);
     }

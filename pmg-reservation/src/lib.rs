@@ -90,6 +90,7 @@ fn make_command<M: Message>(
         }),
         pages: vec![CommandPage {
             header: Some(PageHeader {
+                sync_mode: None,
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             merge_strategy: MergeStrategy::MergeCommutative as i32,
@@ -113,6 +114,7 @@ fn single_event_book(domain: &str, root: &[u8], event: Any) -> EventBook {
         }),
         pages: vec![EventPage {
             header: Some(PageHeader {
+                sync_mode: None,
                 sequence_type: Some(SequenceType::Sequence(0)),
             }),
             created_at: Some(angzarr_client::now()),
@@ -339,6 +341,7 @@ impl ReservationPm {
             reservation_id: event.reservation_id.clone(),
             seat: event.seat,
             amount,
+            ..Default::default()
         };
 
         let initiated = BuyInInitiated {

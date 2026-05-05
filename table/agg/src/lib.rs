@@ -1,5 +1,6 @@
 //! Table aggregate library.
 
+pub mod errors;
 pub mod handlers;
 pub mod state;
 
@@ -309,6 +310,7 @@ mod applier_tests {
                 small_blind: 5,
                 big_blind: 10,
                 started_at: None,
+                ..Default::default()
             },
         );
         assert_eq!(state.status, "in_hand");
@@ -383,6 +385,7 @@ mod applier_tests {
                 seat_position: 3,
                 stack: 1000,
                 seated_at: None,
+                ..Default::default()
             },
         );
         assert_eq!(state.player_count(), 1);
@@ -557,7 +560,7 @@ mod handler_tests {
             },
         );
         let book = agg
-            .on_start_hand(StartHand {}, &state, 3)
+            .on_start_hand(StartHand { ..Default::default() }, &state, 3)
             .expect("handler should succeed");
         assert_eq!(book.pages.len(), 1);
     }
@@ -590,6 +593,7 @@ mod handler_tests {
                 small_blind: 5,
                 big_blind: 10,
                 started_at: None,
+                ..Default::default()
             },
         );
         let book = agg
@@ -621,6 +625,7 @@ mod handler_tests {
                     reservation_id: vec![0xaa],
                     seat: 1,
                     amount: 500,
+                    ..Default::default()
                 },
                 &state,
                 5,

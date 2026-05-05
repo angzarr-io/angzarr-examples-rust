@@ -15,7 +15,6 @@ members = [
     "hand/upc",
     "hand/saga-table",
     "hand/saga-player",
-    "hand-flow-oo",
     "tournament/agg",
     "prj-output",
     "pmg-hand-flow",

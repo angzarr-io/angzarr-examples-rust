@@ -106,7 +106,6 @@ jobs:
           - prj-output
           - upc-player
           - upc-hand
-          - hand-flow-oo
     steps:
       - uses: actions/checkout@v4
         with:
@@ -265,8 +264,7 @@ jobs:
             "pmg-reservation": "${PREFIX}-pmg-reservation:${TAG}",
             "prj-output": "${PREFIX}-prj-output:${TAG}",
             "upc-player": "${PREFIX}-upc-player:${TAG}",
-            "upc-hand": "${PREFIX}-upc-hand:${TAG}",
-            "hand-flow-oo": "${PREFIX}-hand-flow-oo:${TAG}"
+            "upc-hand": "${PREFIX}-upc-hand:${TAG}"
           }
           EOF
           )

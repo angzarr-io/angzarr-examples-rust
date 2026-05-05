@@ -4,7 +4,6 @@ use angzarr_client::proto::{BusinessResponse, EventBook, Notification, Rejection
 use angzarr_client::{emit_compensation_events, now, unpack, CommandResult};
 use examples_proto::{Currency, FundsReleased};
 use examples_utils::{event_page, pack_event};
-use tracing::warn;
 
 use crate::state::PlayerState;
 
@@ -23,11 +22,6 @@ pub fn handle_join_rejected(
         .as_ref()
         .and_then(|any| unpack::<RejectionNotification>(any).ok())
         .unwrap_or_default();
-
-    warn!(
-        rejection_reason = %rejection.rejection_reason,
-        "Player compensation for JoinTable rejection"
-    );
 
     let key = rejection
         .rejected_command

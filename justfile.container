@@ -68,13 +68,29 @@ clean:
 build-dev:
     cargo build --workspace
 
-# Run unit tests only
+# Run unit tests only (cargo --lib; equivalent to Python's `test-pytest`)
 test-unit:
     cargo test --workspace --lib
 
-# Run acceptance/integration tests
-test-acceptance:
-    cargo test --workspace --test '*'
+# Cucumber unit-level: poker handler logic, direct invocation, no infra.
+# Mirrors Python's `test-example-unit` (behave on features/example/unit/).
+# These run the per-domain BDD test binaries under tests/tests/, excluding
+# the e2e `acceptance` binary.
+test-example-unit:
+    cargo test --workspace \
+        --test betting_round --test game_rules --test hand \
+        --test orchestration --test player --test poker_game_unit \
+        --test process_manager --test projector --test raise_tracking \
+        --test saga --test table --test tournament
+
+# Cucumber acceptance-level: poker E2E via CommandClient (gRPC).
+# Mirrors Python's `test-example-acceptance` (behave on features/example/acceptance/).
+# Coordinator endpoints picked up from PLAYER_URL/TABLE_URL/HAND_URL/STREAM_URL.
+test-example-acceptance:
+    cargo test --workspace --test acceptance
+
+# Back-compat alias: pre-split target ran both BDD unit and acceptance.
+test-acceptance: test-example-unit test-example-acceptance
 
 # Run in standalone mode (local development)
 run: build-release

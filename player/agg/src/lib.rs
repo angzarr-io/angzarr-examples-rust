@@ -5,6 +5,7 @@
 //! moved to `reservation/agg`; the reservation PM translates lifecycle events
 //! into ReserveFunds / DeductReservedFunds / ReleaseFunds calls.
 
+pub mod errors;
 pub mod handlers;
 pub mod state;
 
@@ -512,6 +513,7 @@ mod handler_tests {
             }),
             pages: vec![CommandPage {
                 header: Some(PageHeader {
+                    sync_mode: None,
                     sequence_type: None,
                 }),
                 merge_strategy: 0,

@@ -3,28 +3,29 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{LeaveTable, PlayerLeft};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{CannotLeaveDuringHand, PlayerNotSeated, PlayerRootRequired, TableNotFound};
 use crate::state::{SeatState, TableState};
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Table does not exist"));
+        return Err(reject(TableNotFound));
     }
     if state.status == "in_hand" {
-        return Err(rejected("Cannot leave during a hand"));
+        return Err(reject(CannotLeaveDuringHand));
     }
     Ok(())
 }
 
 fn validate<'a>(cmd: &LeaveTable, state: &'a TableState) -> CommandResult<(i32, &'a SeatState)> {
     if cmd.player_root.is_empty() {
-        return Err(rejected("player_root is required"));
+        return Err(reject(PlayerRootRequired));
     }
 
     let seat_position = state
         .find_seat_position_by_player(&cmd.player_root)
-        .ok_or_else(|| rejected("Player not seated at table"))?;
+        .ok_or_else(|| reject(PlayerNotSeated))?;
 
     let seat = state.seats.get(&seat_position).unwrap();
 

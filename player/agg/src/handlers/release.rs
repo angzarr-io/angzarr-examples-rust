@@ -3,26 +3,29 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{Currency, FundsReleased, ReleaseFunds};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{NoFundsReservedForTable, PlayerNotFound, TableRootRequired};
 use crate::state::PlayerState;
 
 fn release_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Player does not exist"));
+        return Err(reject(PlayerNotFound));
     }
     Ok(())
 }
 
 fn release_funds_validate(cmd: &ReleaseFunds, state: &PlayerState) -> CommandResult<i64> {
     if cmd.key.is_empty() {
-        return Err(rejected("table_root is required"));
+        return Err(reject(TableRootRequired));
     }
 
     let key_hex = hex::encode(&cmd.key);
     match state.table_reservations.get(&key_hex) {
         Some(&amount) if amount > 0 => Ok(amount),
-        _ => Err(rejected("No funds reserved for this table")),
+        _ => Err(reject(NoFundsReservedForTable {
+            table_root_hex: key_hex,
+        })),
     }
 }
 

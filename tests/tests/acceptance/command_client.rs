@@ -204,6 +204,7 @@ impl InProcessClient {
                     player_root: s.player_root.clone(),
                     position: s.position,
                     stack: s.stack,
+                    ..Default::default()
                 })
                 .collect();
             let deal = examples_proto::DealCards {
@@ -215,6 +216,7 @@ impl InProcessClient {
                 small_blind: hs.small_blind,
                 big_blind: hs.big_blind,
                 deck_seed: vec![],
+                ..Default::default()
             };
             let packed = Any {
                 type_url: "type.googleapis.com/examples.DealCards".to_string(),
@@ -624,6 +626,7 @@ pub mod grpc {
                     }),
                     pages: vec![CommandPage {
                         header: Some(PageHeader {
+                            sync_mode: None,
                             sequence_type: Some(page_header::SequenceType::Sequence(sequence)),
                         }),
                         payload: Some(command_page::Payload::Command(cmd)),

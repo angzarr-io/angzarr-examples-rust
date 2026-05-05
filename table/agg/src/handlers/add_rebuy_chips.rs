@@ -3,35 +3,41 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{AddRebuyChips, RebuyChipsAdded};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    AmountMustBePositive, PlayerNotSeated, PlayerRootRequired, SeatPositionMismatch, TableNotFound,
+};
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Table does not exist"));
+        return Err(reject(TableNotFound));
     }
     Ok(())
 }
 
 fn validate(cmd: &AddRebuyChips, state: &TableState) -> CommandResult<i64> {
     if cmd.player_root.is_empty() {
-        return Err(rejected("player_root is required"));
+        return Err(reject(PlayerRootRequired));
     }
 
     if cmd.amount <= 0 {
-        return Err(invalid_arg("amount must be positive"));
+        return Err(reject(AmountMustBePositive { value: cmd.amount }));
     }
 
     // Find the player's seat
     let seat_opt = state.find_seat_by_player(&cmd.player_root);
     if seat_opt.is_none() {
-        return Err(rejected("Player is not seated at this table"));
+        return Err(reject(PlayerNotSeated));
     }
 
     let seat = seat_opt.unwrap();
     if seat.position != cmd.seat {
-        return Err(rejected("Seat position mismatch"));
+        return Err(reject(SeatPositionMismatch {
+            expected: seat.position as i64,
+            got: cmd.seat as i64,
+        }));
     }
 
     // Calculate new stack

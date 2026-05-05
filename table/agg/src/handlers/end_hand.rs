@@ -5,23 +5,24 @@ use std::collections::HashMap;
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{EndHand, HandEnded};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{HandRootMismatch, NoHandInProgress, TableNotFound};
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Table does not exist"));
+        return Err(reject(TableNotFound));
     }
     if state.status != "in_hand" {
-        return Err(rejected("No hand in progress"));
+        return Err(reject(NoHandInProgress));
     }
     Ok(())
 }
 
 fn validate(cmd: &EndHand, state: &TableState) -> CommandResult<()> {
     if hex::encode(&cmd.hand_root) != hex::encode(&state.current_hand_root) {
-        return Err(rejected("Hand root mismatch"));
+        return Err(reject(HandRootMismatch));
     }
     Ok(())
 }

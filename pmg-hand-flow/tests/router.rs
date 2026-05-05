@@ -7,8 +7,7 @@ use angzarr_client::proto::{event_page, Cover, EventBook, EventPage, ProcessMana
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::{
-    CardsDealt, DealCards, EndHand, GameVariant, HandComplete, HandStarted, PostBlind, PotWinner,
-    SeatSnapshot,
+    CardsDealt, EndHand, GameVariant, HandComplete, HandStarted, PostBlind, PotWinner, SeatSnapshot,
 };
 use pmg_hand_flow::HandFlowPm;
 use prost::Message;
@@ -86,6 +85,7 @@ fn hand_started_event() -> HandStarted {
         small_blind: 5,
         big_blind: 10,
         started_at: None,
+        ..Default::default()
     }
 }
 
@@ -114,13 +114,27 @@ fn config_exposes_hand_flow_pm_metadata() {
             assert!(sources.contains(&"hand".into()));
             assert!(targets.contains(&"hand".into()));
             assert!(targets.contains(&"table".into()));
-            assert!(handled.iter().any(|u| u.ends_with("HandStarted")));
-            assert!(handled.iter().any(|u| u.ends_with("CardsDealt")));
-            assert!(handled.iter().any(|u| u.ends_with("HandComplete")));
-            assert_eq!(handled.len(), 3);
-            assert!(applies.iter().any(|u| u.ends_with("HandStarted")));
-            assert!(applies.iter().any(|u| u.ends_with("CardsDealt")));
-            assert!(applies.iter().any(|u| u.ends_with("HandComplete")));
+            for name in [
+                "HandStarted",
+                "CardsDealt",
+                "BlindPosted",
+                "ActionTaken",
+                "BettingRoundComplete",
+                "CommunityCardsDealt",
+                "ShowdownStarted",
+                "PotAwarded",
+                "HandComplete",
+            ] {
+                assert!(
+                    handled.iter().any(|u| u.ends_with(name)),
+                    "missing handles for {name}"
+                );
+                assert!(
+                    applies.iter().any(|u| u.ends_with(name)),
+                    "missing applies for {name}"
+                );
+            }
+            assert_eq!(handled.len(), 9);
         }
         other => panic!("expected ProcessManager, got {:?}", other),
     }
@@ -133,19 +147,22 @@ fn router_builds_as_process_manager() {
 }
 
 #[test]
-fn dispatch_hand_started_emits_deal_cards_to_hand() {
+fn dispatch_hand_started_emits_no_command_only_state() {
+    // Mirrors python `HandFlowPM.on_hand_started` — `DealCards` comes
+    // from the `saga-table-hand` saga, not from the PM.
     let router = build();
     let resp = router
         .dispatch(pm_request("table", pack(&hand_started_event())))
         .expect("dispatch ok");
-    assert_eq!(resp.commands.len(), 1);
-    let cmd = &resp.commands[0];
-    assert_eq!(cmd.cover.as_ref().unwrap().domain, "hand");
-    let any = first_command_any(cmd);
-    assert!(any.type_url.ends_with("examples.DealCards"));
-    let deal = DealCards::decode(any.value.as_slice()).unwrap();
-    assert_eq!(deal.hand_number, 1);
-    assert_eq!(deal.players.len(), 3);
+    assert!(
+        resp.commands.is_empty(),
+        "PM should not emit DealCards (saga-table-hand emits it)"
+    );
+    assert_eq!(
+        resp.process_events.len(),
+        1,
+        "PM should still re-emit the trigger for state replay"
+    );
 }
 
 #[test]
@@ -168,6 +185,7 @@ fn dispatch_cards_dealt_emits_post_blind_for_small_blind_player() {
         players: vec![],
         dealt_at: None,
         remaining_deck: vec![],
+        ..Default::default()
     };
     let resp = build()
         .dispatch(pm_request_with_state("hand", pack(&cards), prior))

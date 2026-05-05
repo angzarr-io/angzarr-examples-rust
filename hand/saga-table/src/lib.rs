@@ -12,7 +12,11 @@ pub struct HandTableSaga;
 #[saga(name = "saga-hand-table", source = "hand", target = "table")]
 impl HandTableSaga {
     #[handles(HandComplete)]
-    pub fn on_hand_complete(&self, event: HandComplete) -> CommandResult<SagaResponse> {
+    pub fn on_hand_complete(
+        &self,
+        event: HandComplete,
+        source_cover: Option<Cover>,
+    ) -> CommandResult<SagaResponse> {
         let results: Vec<PotResult> = event
             .winners
             .iter()
@@ -24,13 +28,14 @@ impl HandTableSaga {
             })
             .collect();
 
-        // NOTE: Tier 5 saga dispatch does not surface the source cover; the
-        // `hand_root` here must come from `event` metadata. When the proto
-        // carries only `table_root` + `hand_number`, downstream validation
-        // that checks `hand_root` expects the same handle the Hand aggregate
-        // carries in its cover. See pmg-hand-flow for the flow that plumbs
-        // this through.
-        let hand_root = Vec::new();
+        // `hand_root` is the originating Hand aggregate's UUID — extracted
+        // from the source EventBook's cover.root by the saga macro. Mirrors
+        // Python's `hand_root = source_cover.proto().root.value` pattern.
+        let hand_root = source_cover
+            .as_ref()
+            .and_then(|c| c.root.as_ref())
+            .map(|r| r.value.clone())
+            .unwrap_or_default();
         let end_hand = EndHand { hand_root, results };
         let command_any = Any {
             type_url: angzarr_client::full_type_url::<EndHand>(),

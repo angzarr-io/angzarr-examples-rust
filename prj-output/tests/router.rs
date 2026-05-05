@@ -161,6 +161,7 @@ fn dispatch_table_created_then_hand_started_renders_both() {
             small_blind: 5,
             big_blind: 10,
             started_at: None,
+            ..Default::default()
         })))
         .expect("dispatch hand ok");
 
@@ -234,6 +235,7 @@ fn dispatch_cards_dealt_arm_without_hole_cards_falls_back_to_summary() {
             players: vec![],
             dealt_at: None,
             remaining_deck: vec![],
+            ..Default::default()
         })))
         .expect("ok");
     assert!(sink.output().contains("Cards dealt"));

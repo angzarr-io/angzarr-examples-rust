@@ -60,6 +60,12 @@ pub struct PlayerWorld {
     /// chips_to_add seeded for `a pending rebuy ... chips N` so the matching
     /// RebuyFeeConfirmed seeder can echo it through to orchestration assertions.
     pending_rebuy_chips: HashMap<String, i64>,
+    /// Cucumber-declared addressing envelope for the current scenario's
+    /// command. Unit-tier `When` steps call handlers directly (the
+    /// production router's dispatch boundary never runs), so the cover
+    /// has to be stamped onto rejections from the test side. Populated
+    /// by the `the command cover has ...` Given steps.
+    command_cover: Option<angzarr_client::proto::Cover>,
 }
 
 impl std::fmt::Debug for PlayerWorld {
@@ -730,6 +736,7 @@ fn build_join_rejection_notification(table_name: &str) -> Notification {
         }),
         pages: vec![CommandPage {
             header: Some(PageHeader {
+                sync_mode: None,
                 sequence_type: None,
             }),
             merge_strategy: 0,
@@ -849,6 +856,81 @@ fn error_message_equals(world: &mut PlayerWorld, expected: String) {
         expected, err.message
     );
 }
+
+#[then(expr = "the command is rejected with code {string}")]
+fn command_rejected_with_code(world: &mut PlayerWorld, code: String) {
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    assert_eq!(
+        err.code, code,
+        "Expected rejection code '{}', got '{}'",
+        code, err.code
+    );
+}
+
+#[then(expr = "the rejection field {string} equals {string}")]
+fn rejection_field_equals(world: &mut PlayerWorld, field: String, value: String) {
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let actual = err.details.get(&field).cloned().unwrap_or_else(|| {
+        panic!(
+            "Rejection has no field '{}'; available: {:?}",
+            field,
+            err.details.keys().collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(
+        actual, value,
+        "Rejection field '{}': expected '{}', got '{}'",
+        field, value, actual
+    );
+}
+
+#[then(regex = r#"^the rejection cover has (.+)$"#)]
+fn rejection_cover_has(world: &mut PlayerWorld, spec: String) {
+    let cover = rejection_cover_or_fail_player(world).clone();
+    for (field, value) in cover_field_pairs(&spec) {
+        let actual = read_cover_field(&cover, &field);
+        assert_eq!(
+            actual, value,
+            "Rejection cover {}: expected '{}', got '{}'",
+            field, value, actual
+        );
+    }
+}
+
+fn rejection_cover_or_fail_player(world: &mut PlayerWorld) -> &angzarr_client::proto::Cover {
+    // Late-stamp from world's command_cover before reading. Mirrors what
+    // the production router's dispatch boundary does; needed here because
+    // unit-tier `When` steps call handlers directly.
+    if let (Some(rej), Some(cover)) = (world.last_error.as_mut(), world.command_cover.as_ref())
+    {
+        if rej.cover.is_none() {
+            rej.cover = Some(cover.clone());
+        }
+    }
+    let err = world
+        .last_error
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    err.cover.as_ref().expect(
+        "Rejection has no cover stamped — declare one via `the command cover has ...` Given steps",
+    )
+}
+
+#[given(regex = r#"^the command cover has (.+)$"#)]
+fn given_cover_has_player(world: &mut PlayerWorld, spec: String) {
+    let cover = world.command_cover.get_or_insert_with(Default::default);
+    for (field, value) in cover_field_pairs(&spec) {
+        write_cover_field(cover, &field, &value);
+    }
+}
+
+use poker_tests::{cover_field_pairs, read_cover_field, write_cover_field};
 
 // =============================================================================
 // Then steps — PlayerRegistered field assertions

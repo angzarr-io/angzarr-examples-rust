@@ -240,7 +240,7 @@ impl GameRules for OmahaRules {
                     .map(|c| **c)
                     .collect();
                 let rank = evaluate_five(&five);
-                if rank.score > best.score {
+                if (rank.score, &rank.kickers) > (best.score, &best.kickers) {
                     best = rank;
                 }
             }
@@ -347,7 +347,7 @@ pub fn find_best_hand_default(cards: &[Card]) -> HandRank {
     let mut best = HandRank::new(HandRankType::HighCard, 0, vec![]);
     for combo in cards.iter().copied().combinations(5) {
         let rank = evaluate_five(&combo);
-        if rank.score > best.score {
+        if (rank.score, &rank.kickers) > (best.score, &best.kickers) {
             best = rank;
         }
     }

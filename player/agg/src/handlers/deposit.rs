@@ -3,14 +3,15 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{Currency, DepositFunds, FundsDeposited};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{AmountMustBePositive, PlayerNotFound};
 use crate::state::PlayerState;
 
 // docs:start:deposit_funds_guard
 fn deposit_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Player does not exist"));
+        return Err(reject(PlayerNotFound));
     }
     Ok(())
 }
@@ -20,7 +21,7 @@ fn deposit_funds_guard(state: &PlayerState) -> CommandResult<()> {
 fn deposit_funds_validate(cmd: &DepositFunds) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(invalid_arg("amount must be positive"));
+        return Err(reject(AmountMustBePositive { value: amount }));
     }
     Ok(amount)
 }

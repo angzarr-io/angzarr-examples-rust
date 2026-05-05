@@ -174,11 +174,13 @@ mod applier_tests {
                         player_root: vec![1],
                         position: 0,
                         stack: 500,
+                        ..Default::default()
                     },
                     PlayerInHand {
                         player_root: vec![2],
                         position: 1,
                         stack: 500,
+                        ..Default::default()
                     },
                 ],
                 dealt_at: None,
@@ -189,6 +191,7 @@ mod applier_tests {
                     };
                     10
                 ],
+                ..Default::default()
             },
         );
         state
@@ -216,9 +219,11 @@ mod applier_tests {
                     player_root: vec![1],
                     position: 0,
                     stack: 500,
+                    ..Default::default()
                 }],
                 dealt_at: None,
                 remaining_deck: vec![],
+                ..Default::default()
             },
         );
         assert!(state.exists());
@@ -325,9 +330,11 @@ mod applier_tests {
                     player_root: vec![1],
                     position: 0,
                     stack: 500,
+                    ..Default::default()
                 }],
                 dealt_at: None,
                 remaining_deck: vec![Card { suit: 1, rank: 7 }; 10],
+                ..Default::default()
             },
         );
         let new_cards = vec![
@@ -358,6 +365,7 @@ mod applier_tests {
             ShowdownStarted {
                 players_to_show: vec![vec![1]],
                 started_at: None,
+                ..Default::default()
             },
         );
         assert_eq!(state.status, "showdown");
@@ -442,11 +450,13 @@ mod handler_tests {
                         player_root: vec![1],
                         position: 0,
                         stack: 500,
+                        ..Default::default()
                     },
                     PlayerInHand {
                         player_root: vec![2],
                         position: 1,
                         stack: 500,
+                        ..Default::default()
                     },
                 ],
                 dealt_at: None,
@@ -457,6 +467,7 @@ mod handler_tests {
                     };
                     48
                 ],
+                ..Default::default()
             },
         );
         state
@@ -477,17 +488,20 @@ mod handler_tests {
                             player_root: vec![1],
                             position: 0,
                             stack: 500,
+                            ..Default::default()
                         },
                         PlayerInHand {
                             player_root: vec![2],
                             position: 1,
                             stack: 500,
+                            ..Default::default()
                         },
                     ],
                     dealer_position: 0,
                     small_blind: 5,
                     big_blind: 10,
                     deck_seed: vec![0u8; 32],
+                    ..Default::default()
                 },
                 &state,
                 0,
@@ -524,6 +538,7 @@ mod handler_tests {
                     player_root: vec![1],
                     action: ActionType::Fold as i32,
                     amount: 0,
+                    ..Default::default()
                 },
                 &state,
                 2,
@@ -569,15 +584,18 @@ mod handler_tests {
                         player_root: vec![1],
                         position: 0,
                         stack: 500,
+                        ..Default::default()
                     },
                     PlayerInHand {
                         player_root: vec![2],
                         position: 1,
                         stack: 500,
+                        ..Default::default()
                     },
                 ],
                 dealt_at: None,
                 remaining_deck: vec![Card { suit: 1, rank: 7 }; 10],
+                ..Default::default()
             },
         );
         state.current_phase = BettingPhase::Draw;
@@ -604,6 +622,7 @@ mod handler_tests {
                 RevealCards {
                     player_root: vec![1],
                     muck: false,
+                    ..Default::default()
                 },
                 &state,
                 5,

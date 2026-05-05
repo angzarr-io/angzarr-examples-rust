@@ -62,6 +62,19 @@ impl SagaWorld {
 
     fn run_saga(&self, saga_name: &str) -> Option<SagaResponse> {
         let trigger = self.trigger.as_ref()?;
+        // Direct invocation paths: when these tests bypass the router macro,
+        // they must hand-construct the source_cover that the macro would
+        // otherwise plumb through. Match Python's pattern: the cover's root is
+        // the originating aggregate's UUID.
+        let hand_source_cover = || {
+            Some(angzarr_client::proto::Cover {
+                domain: "hand".to_string(),
+                root: Some(angzarr_client::proto::Uuid {
+                    value: uuid_for("hand-1"),
+                }),
+                ..Default::default()
+            })
+        };
         match (saga_name, trigger) {
             ("TableSyncSaga", Trigger::HandStarted(ev)) => Some(
                 saga_table_hand::TableHandSaga
@@ -70,7 +83,7 @@ impl SagaWorld {
             ),
             ("TableSyncSaga", Trigger::HandComplete(ev)) => Some(
                 saga_hand_table::HandTableSaga
-                    .on_hand_complete(ev.clone())
+                    .on_hand_complete(ev.clone(), hand_source_cover())
                     .expect("HandTableSaga handler"),
             ),
             ("HandResultsSaga", Trigger::HandEnded(ev)) => Some(
@@ -140,6 +153,7 @@ fn given_hand_started_table(world: &mut SagaWorld) {
         small_blind_position: 1,
         big_blind_position: 2,
         started_at: Some(angzarr_client::now()),
+        ..Default::default()
     }));
 }
 
@@ -292,6 +306,7 @@ fn given_hand_started_simple(world: &mut SagaWorld) {
         small_blind: 5,
         big_blind: 10,
         started_at: Some(angzarr_client::now()),
+        ..Default::default()
     }));
 }
 
@@ -316,6 +331,7 @@ fn given_event_book(world: &mut SagaWorld, step: &cucumber::gherkin::Step) {
         small_blind: 5,
         big_blind: 10,
         started_at: Some(angzarr_client::now()),
+        ..Default::default()
     }));
 }
 

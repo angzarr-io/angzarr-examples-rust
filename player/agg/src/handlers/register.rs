@@ -3,23 +3,24 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{PlayerRegistered, RegisterPlayer};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{DisplayNameRequired, EmailRequired, PlayerAlreadyExists};
 use crate::state::PlayerState;
 
 fn register_player_guard(state: &PlayerState) -> CommandResult<()> {
     if state.exists() {
-        return Err(rejected("Player already exists"));
+        return Err(reject(PlayerAlreadyExists));
     }
     Ok(())
 }
 
 fn register_player_validate(cmd: &RegisterPlayer) -> CommandResult<()> {
     if cmd.display_name.is_empty() {
-        return Err(rejected("display_name is required"));
+        return Err(reject(DisplayNameRequired));
     }
     if cmd.email.is_empty() {
-        return Err(rejected("email is required"));
+        return Err(reject(EmailRequired));
     }
     Ok(())
 }

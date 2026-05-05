@@ -3,39 +3,46 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{AwardPot, HandComplete, PlayerStackSnapshot, PotAwarded, PotWinner};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    AwardPlayerNotInHand, AwardsExceedPot, FoldedPlayerCannotWin, HandAlreadyComplete,
+    HandNotDealt, NoAwardsSpecified,
+};
 use crate::state::HandState;
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Hand not dealt"));
+        return Err(reject(HandNotDealt));
     }
     if state.is_complete() {
-        return Err(rejected("Hand already complete"));
+        return Err(reject(HandAlreadyComplete));
     }
     Ok(())
 }
 
 fn validate(cmd: &AwardPot, state: &HandState) -> CommandResult<()> {
     if cmd.awards.is_empty() {
-        return Err(rejected("No awards specified"));
+        return Err(reject(NoAwardsSpecified));
     }
 
     let mut total_awarded = 0i64;
     for award in &cmd.awards {
         let player = state
             .get_player(&award.player_root)
-            .ok_or_else(|| rejected("Award to player not in hand"))?;
+            .ok_or_else(|| reject(AwardPlayerNotInHand))?;
 
         if player.has_folded {
-            return Err(rejected("Folded player cannot win"));
+            return Err(reject(FoldedPlayerCannotWin));
         }
         total_awarded += award.amount;
     }
 
     if total_awarded > state.total_pot() {
-        return Err(rejected("Awards exceed pot total"));
+        return Err(reject(AwardsExceedPot {
+            got: total_awarded,
+            bound: state.total_pot(),
+        }));
     }
 
     Ok(())

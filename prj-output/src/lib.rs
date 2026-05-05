@@ -977,6 +977,7 @@ mod tests {
             small_blind: 5,
             big_blind: 10,
             started_at: None,
+            ..Default::default()
         };
         proj.on_hand_started(event).unwrap();
         let out = sink.output();
@@ -1137,6 +1138,7 @@ mod tests {
             players: vec![],
             dealt_at: None,
             remaining_deck: vec![],
+            ..Default::default()
         })
         .unwrap();
         let out = sink.output();
@@ -1175,6 +1177,7 @@ mod tests {
             small_blind: 1,
             big_blind: 2,
             started_at: None,
+            ..Default::default()
         })
         .unwrap();
         proj.store.record_board(&hand_root, "Flop", &[]).unwrap();

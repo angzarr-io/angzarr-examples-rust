@@ -49,14 +49,14 @@ RUN mkdir -p examples-utils/src \
     reservation/agg/src \
     table/agg/src table/saga-hand/src table/saga-player/src \
     hand/agg/src hand/upc/src hand/saga-table/src hand/saga-player/src \
-    hand-flow-oo/src tournament/agg/src \
+    tournament/agg/src \
     pmg-hand-flow/src pmg-reservation/src \
     prj-output/src tests/tests && \
     for d in examples-utils \
              player/agg player/upc player/saga-table reservation/agg \
              table/agg table/saga-hand table/saga-player \
              hand/agg hand/upc hand/saga-table hand/saga-player \
-             hand-flow-oo tournament/agg \
+             tournament/agg \
              pmg-hand-flow pmg-reservation prj-output; do \
       echo "[package]\nname = \"stub\"\nversion = \"0.1.0\"\nedition = \"2021\"" > $d/Cargo.toml 2>/dev/null || true; \
       echo "fn main() {}" > $d/src/main.rs; \
@@ -77,7 +77,6 @@ COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/upc/Cargo.toml ./hand/upc/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
-COPY hand-flow-oo/Cargo.toml ./hand-flow-oo/
 COPY tournament/agg/Cargo.toml ./tournament/agg/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
 COPY pmg-reservation/Cargo.toml ./pmg-reservation/
@@ -142,7 +141,6 @@ COPY hand/agg/Cargo.toml ./hand/agg/
 COPY hand/upc/Cargo.toml ./hand/upc/
 COPY hand/saga-table/Cargo.toml ./hand/saga-table/
 COPY hand/saga-player/Cargo.toml ./hand/saga-player/
-COPY hand-flow-oo/Cargo.toml ./hand-flow-oo/
 COPY tournament/agg/Cargo.toml ./tournament/agg/
 COPY pmg-hand-flow/Cargo.toml ./pmg-hand-flow/
 COPY pmg-reservation/Cargo.toml ./pmg-reservation/
@@ -155,7 +153,7 @@ RUN mkdir -p examples-utils/src \
     reservation/agg/src \
     table/agg/src table/saga-hand/src table/saga-player/src \
     hand/agg/src hand/upc/src hand/saga-table/src hand/saga-player/src \
-    hand-flow-oo/src tournament/agg/src \
+    tournament/agg/src \
     pmg-hand-flow/src pmg-reservation/src \
     prj-output/src tests/src tests/tests && \
     echo "fn main() {}" > proto/src/lib.rs && \
@@ -164,7 +162,7 @@ RUN mkdir -p examples-utils/src \
     for d in player/agg player/upc reservation/agg \
              table/agg table/saga-hand table/saga-player \
              hand/agg hand/upc hand/saga-table hand/saga-player \
-             hand-flow-oo tournament/agg \
+             tournament/agg \
              pmg-hand-flow pmg-reservation prj-output; do \
       echo "fn main() {}" > $d/src/main.rs; \
       : > $d/src/lib.rs; \
@@ -202,7 +200,6 @@ COPY hand/agg/src ./hand/agg/src
 COPY hand/upc/src ./hand/upc/src
 COPY hand/saga-table/src ./hand/saga-table/src
 COPY hand/saga-player/src ./hand/saga-player/src
-COPY hand-flow-oo/src ./hand-flow-oo/src
 COPY tournament/agg/src ./tournament/agg/src
 COPY pmg-hand-flow/src ./pmg-hand-flow/src
 COPY pmg-reservation/src ./pmg-reservation/src
@@ -223,7 +220,6 @@ RUN rm -rf target/x86_64-unknown-linux-musl/release/.fingerprint/agg-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/pmg-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/prj-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/upc-* \
-    target/x86_64-unknown-linux-musl/release/.fingerprint/hand-flow-oo-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/examples-proto-* \
     target/x86_64-unknown-linux-musl/release/.fingerprint/examples-utils-* \
     target/x86_64-unknown-linux-musl/release/deps/libagg* \
@@ -231,7 +227,6 @@ RUN rm -rf target/x86_64-unknown-linux-musl/release/.fingerprint/agg-* \
     target/x86_64-unknown-linux-musl/release/deps/libpmg* \
     target/x86_64-unknown-linux-musl/release/deps/libprj* \
     target/x86_64-unknown-linux-musl/release/deps/libupc* \
-    target/x86_64-unknown-linux-musl/release/deps/libhand_flow_oo* \
     target/x86_64-unknown-linux-musl/release/deps/libexamples_proto* \
     target/x86_64-unknown-linux-musl/release/deps/libexamples_utils*
 
@@ -253,7 +248,6 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     cp target/x86_64-unknown-linux-musl/release/saga-hand-player /out/ && \
     cp target/x86_64-unknown-linux-musl/release/pmg-hand-flow /out/ && \
     cp target/x86_64-unknown-linux-musl/release/pmg-reservation /out/ && \
-    cp target/x86_64-unknown-linux-musl/release/hand-flow-oo /out/ && \
     cp target/x86_64-unknown-linux-musl/release/prj-pretty-output /out/prj-output
 
 # ============================================================================
@@ -337,12 +331,6 @@ FROM runtime AS upc-hand
 COPY --from=builder --chown=nonroot:nonroot /out/upc-hand ./server
 ENV PORT=50041
 EXPOSE 50041
-ENTRYPOINT ["./server"]
-
-FROM runtime AS hand-flow-oo
-COPY --from=builder --chown=nonroot:nonroot /out/hand-flow-oo ./server
-ENV PORT=50395
-EXPOSE 50395
 ENTRYPOINT ["./server"]
 
 FROM runtime AS prj-output

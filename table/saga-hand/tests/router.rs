@@ -31,6 +31,7 @@ fn hand_started_request() -> SagaHandleRequest {
         small_blind: 10,
         big_blind: 20,
         started_at: None,
+        ..Default::default()
     };
     let any = Any {
         type_url: full_type_url::<HandStarted>(),

@@ -8,9 +8,66 @@ use angzarr_client::proto::{
 use examples_proto::{Card, Currency, Rank, Suit};
 use prost::Message;
 use prost_types::Any;
-use sha2::{Digest, Sha256};
+
+/// Parse compound cover spec like `domain "X" and correlation_id "Y"`
+/// into ordered `(field, value)` pairs. Shared by every domain's
+/// cover-related cucumber step (Given setter + Then assertion).
+pub fn cover_field_pairs(spec: &str) -> Vec<(String, String)> {
+    static FIELD_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = FIELD_RE.get_or_init(|| regex::Regex::new(r#"(\w+)\s+"([^"]*)""#).unwrap());
+    let pairs: Vec<_> = re
+        .captures_iter(spec)
+        .map(|cap| (cap[1].to_string(), cap[2].to_string()))
+        .collect();
+    assert!(
+        !pairs.is_empty(),
+        "No `field \"value\"` pairs in cover spec: {}",
+        spec
+    );
+    pairs
+}
+
+/// Apply a single (field, value) pair to a Cover. Used by `Given the
+/// command cover has ...` step impls.
+pub fn write_cover_field(cover: &mut Cover, field: &str, value: &str) {
+    match field {
+        "domain" => cover.domain = value.to_string(),
+        "correlation_id" => cover.correlation_id = value.to_string(),
+        "root_hex" => {
+            cover.root = Some(Uuid {
+                value: hex::decode(value).expect("valid hex for root_hex"),
+            });
+        }
+        _ => panic!(
+            "Unknown cover field '{}'; supported: domain, correlation_id, root_hex",
+            field
+        ),
+    }
+}
+
+/// Read a single field off a Cover as a string. Used by `Then the
+/// rejection cover has ...` step impls.
+pub fn read_cover_field(cover: &Cover, field: &str) -> String {
+    match field {
+        "domain" => cover.domain.clone(),
+        "correlation_id" => cover.correlation_id.clone(),
+        "root_hex" => cover
+            .root
+            .as_ref()
+            .map(|r| hex::encode(&r.value))
+            .unwrap_or_default(),
+        _ => panic!(
+            "Unknown cover field '{}'; supported: domain, correlation_id, root_hex",
+            field
+        ),
+    }
+}
 
 /// Generate a deterministic 16-byte UUID from a seed string.
+///
+/// RFC 4122 UUID v5 with `NAMESPACE_OID`. Cross-language byte-identical
+/// to Python's `uuid.uuid5(uuid.NAMESPACE_OID, seed).bytes`, so the same
+/// seed produces the same 16 bytes in both Python and Rust tests.
 ///
 /// # Examples
 ///
@@ -21,10 +78,9 @@ use sha2::{Digest, Sha256};
 /// assert_eq!(player_id.len(), 16);
 /// ```
 pub fn uuid_for(seed: &str) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(seed.as_bytes());
-    let hash = hasher.finalize();
-    hash[0..16].to_vec()
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, seed.as_bytes())
+        .as_bytes()
+        .to_vec()
 }
 
 /// Generate a deterministic hand root from table root and hand number.
@@ -104,6 +160,7 @@ pub fn event_book(root: &[u8], domain: &str, events: &[Any]) -> EventBook {
             .enumerate()
             .map(|(i, e)| EventPage {
                 header: Some(PageHeader {
+                    sync_mode: None,
                     sequence_type: Some(page_header::SequenceType::Sequence(i as u32)),
                 }),
                 payload: Some(event_page::Payload::Event(e.clone())),
@@ -268,6 +325,18 @@ mod tests {
         let a = uuid_for("alice");
         let b = uuid_for("bob");
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_uuid_for_matches_python_uuid5_namespace_oid() {
+        // Pinned cross-language byte identity. Python equivalent:
+        //   uuid.uuid5(uuid.NAMESPACE_OID, "table-1").bytes.hex()
+        // Any drift here means Python's `uuid_for` would emit different
+        // bytes and break cucumber assertions like
+        //   `the rejection field "table_root_hex" equals "..."`.
+        let bytes = uuid_for("table-1");
+        let hex = hex::encode(&bytes);
+        assert_eq!(hex, "eba6a19b488f5e1097a5a34a92553679");
     }
 
     #[test]

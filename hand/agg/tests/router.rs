@@ -41,6 +41,7 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
         .enumerate()
         .map(|(i, a)| EventPage {
             header: Some(angzarr_client::proto::PageHeader {
+                sync_mode: None,
                 sequence_type: Some(angzarr_client::proto::page_header::SequenceType::Sequence(
                     i as u32,
                 )),
@@ -79,17 +80,20 @@ fn deal_cards_cmd() -> DealCards {
                 player_root: vec![0x01; 8],
                 position: 0,
                 stack: 1000,
+                ..Default::default()
             },
             PlayerInHand {
                 player_root: vec![0x02; 8],
                 position: 1,
                 stack: 1000,
+                ..Default::default()
             },
         ],
         dealer_position: 0,
         small_blind: 10,
         big_blind: 20,
         deck_seed: vec![0xDD; 32],
+        ..Default::default()
     }
 }
 
@@ -105,15 +109,18 @@ fn cards_dealt_event() -> Any {
                 player_root: vec![0x01; 8],
                 position: 0,
                 stack: 1000,
+                ..Default::default()
             },
             PlayerInHand {
                 player_root: vec![0x02; 8],
                 position: 1,
                 stack: 1000,
+                ..Default::default()
             },
         ],
         dealt_at: None,
         remaining_deck: vec![],
+        ..Default::default()
     })
 }
 
@@ -187,6 +194,7 @@ fn dispatch_player_action_arm() {
             player_root: vec![0x01; 8],
             action: ActionType::Call as i32,
             amount: 20,
+            ..Default::default()
         },
         vec![cards_dealt_event()],
     );
@@ -217,6 +225,7 @@ fn dispatch_reveal_cards_arm() {
         RevealCards {
             player_root: vec![0x01; 8],
             muck: false,
+            ..Default::default()
         },
         vec![cards_dealt_event()],
     );
@@ -255,6 +264,7 @@ fn replay_then_run(event_any: Any) -> Result<BusinessResponse, angzarr_client::C
         events: Some(EventBook {
             pages: vec![EventPage {
                 header: Some(angzarr_client::proto::PageHeader {
+                    sync_mode: None,
                     sequence_type: Some(
                         angzarr_client::proto::page_header::SequenceType::Sequence(0),
                     ),
@@ -335,6 +345,7 @@ fn apply_showdown_started_branch() {
     let _ = replay_then_run(pack(&ShowdownStarted {
         players_to_show: vec![vec![0x01; 8], vec![0x02; 8]],
         started_at: None,
+        ..Default::default()
     }));
 }
 

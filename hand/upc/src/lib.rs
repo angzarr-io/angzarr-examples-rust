@@ -46,6 +46,7 @@ mod tests {
         let page = EventPage {
             payload: Some(event_page::Payload::Event(event.clone())),
             header: Some(PageHeader {
+                sync_mode: None,
                 sequence_type: Some(page_header::SequenceType::Sequence(0)),
             }),
             created_at: None,

@@ -53,11 +53,19 @@ build:
 build-dev:
     just _container build-dev
 
-# Run unit tests
+# Run unit tests (cargo --lib; mirrors Python's `test-pytest`)
 test-unit:
     just _container test-unit
 
-# Run acceptance/BDD tests
+# Cucumber unit-level BDD tests (mirrors Python's `test-example-unit`)
+test-example-unit:
+    just _container test-example-unit
+
+# Cucumber acceptance-level BDD tests (mirrors Python's `test-example-acceptance`)
+test-example-acceptance:
+    just _container test-example-acceptance
+
+# Back-compat alias for the pre-split BDD target
 test-acceptance:
     just _container test-acceptance
 

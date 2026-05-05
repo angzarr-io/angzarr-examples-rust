@@ -3,35 +3,51 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{CreateTable, TableCreated};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    BigBlindMustExceedSmallBlind, MaxBuyInMustExceedMinBuyIn, MaxPlayersOutOfRange,
+    MinBuyInMustBePositive, SmallBlindMustBePositive, TableAlreadyExists, TableNameRequired,
+};
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if state.exists() {
-        return Err(rejected("Table already exists"));
+        return Err(reject(TableAlreadyExists));
     }
     Ok(())
 }
 
 fn validate(cmd: &CreateTable) -> CommandResult<()> {
     if cmd.table_name.is_empty() {
-        return Err(rejected("table_name is required"));
+        return Err(reject(TableNameRequired));
     }
     if cmd.small_blind <= 0 {
-        return Err(invalid_arg("small_blind must be positive"));
+        return Err(reject(SmallBlindMustBePositive {
+            value: cmd.small_blind,
+        }));
     }
     if cmd.big_blind <= 0 || cmd.big_blind < cmd.small_blind {
-        return Err(rejected("big_blind must be >= small_blind"));
+        return Err(reject(BigBlindMustExceedSmallBlind {
+            lhs: cmd.big_blind,
+            rhs: cmd.small_blind,
+        }));
     }
     if cmd.min_buy_in <= 0 {
-        return Err(invalid_arg("min_buy_in must be positive"));
+        return Err(reject(MinBuyInMustBePositive {
+            value: cmd.min_buy_in,
+        }));
     }
     if cmd.max_buy_in < cmd.min_buy_in {
-        return Err(rejected("max_buy_in must be >= min_buy_in"));
+        return Err(reject(MaxBuyInMustExceedMinBuyIn {
+            lhs: cmd.max_buy_in,
+            rhs: cmd.min_buy_in,
+        }));
     }
     if cmd.max_players < 2 || cmd.max_players > 10 {
-        return Err(rejected("max_players must be 2-10"));
+        return Err(reject(MaxPlayersOutOfRange {
+            got: cmd.max_players,
+        }));
     }
     Ok(())
 }

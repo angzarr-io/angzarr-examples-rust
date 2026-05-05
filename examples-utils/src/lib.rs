@@ -5,6 +5,10 @@
 //! local lets the examples migrate at one site (this file) instead of
 //! at every handler.
 
+pub mod error_shapes;
+pub mod errors;
+pub use errors::{reject, CommandError, ErrorStatus};
+
 use angzarr_client::proto::{
     event_page as proto_event_page, page_header::SequenceType, EventPage, PageHeader,
 };
@@ -30,6 +34,7 @@ pub fn pack_event<M: Message + Name>(msg: &M, _type_name: &str) -> Any {
 pub fn event_page(seq: u32, event: Any) -> EventPage {
     EventPage {
         header: Some(PageHeader {
+            sync_mode: None,
             sequence_type: Some(SequenceType::Sequence(seq)),
         }),
         created_at: Some(now()),

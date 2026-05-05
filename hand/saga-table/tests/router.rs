@@ -1,9 +1,11 @@
 //! Integration tests for the Hand -> Table saga router.
 
-use angzarr_client::proto::{event_page, Cover, EventBook, EventPage, SagaHandleRequest};
+use angzarr_client::proto::{
+    command_page, event_page, Cover, EventBook, EventPage, SagaHandleRequest, Uuid,
+};
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
-use examples_proto::HandComplete;
+use examples_proto::{EndHand, HandComplete};
 use prost::Message;
 use prost_types::Any;
 use saga_hand_table::HandTableSaga;
@@ -19,7 +21,7 @@ fn build() -> angzarr_client::router::runtime::SagaRouter {
     }
 }
 
-fn hand_complete_request() -> SagaHandleRequest {
+fn hand_complete_request(hand_root: Vec<u8>) -> SagaHandleRequest {
     let event = HandComplete {
         table_root: vec![0xAA; 16],
         hand_number: 1,
@@ -35,6 +37,7 @@ fn hand_complete_request() -> SagaHandleRequest {
         source: Some(EventBook {
             cover: Some(Cover {
                 domain: "hand".to_string(),
+                root: Some(Uuid { value: hand_root }),
                 ..Default::default()
             }),
             pages: vec![EventPage {
@@ -77,9 +80,24 @@ fn router_builds_as_saga() {
 #[test]
 fn dispatch_hand_complete_emits_end_hand_command() {
     let router = build();
+    let hand_root = vec![0x77; 16];
     let resp = router
-        .dispatch(hand_complete_request())
+        .dispatch(hand_complete_request(hand_root.clone()))
         .expect("dispatch ok");
     assert_eq!(resp.commands.len(), 1);
     assert_eq!(resp.commands[0].cover.as_ref().unwrap().domain, "table");
+
+    // The emitted EndHand should carry hand_root pulled from the source
+    // EventBook's cover.root — the macro now plumbs source_cover through to
+    // the saga handler, matching Python.
+    let cmd_any = match resp.commands[0].pages[0]
+        .payload
+        .as_ref()
+        .expect("page payload")
+    {
+        command_page::Payload::Command(any) => any,
+        _ => panic!("expected inline command payload"),
+    };
+    let end_hand = EndHand::decode(&*cmd_any.value).expect("decode EndHand");
+    assert_eq!(end_hand.hand_root, hand_root);
 }

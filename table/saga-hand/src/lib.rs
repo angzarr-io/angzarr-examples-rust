@@ -20,6 +20,7 @@ impl TableHandSaga {
                 player_root: seat.player_root.clone(),
                 position: seat.position,
                 stack: seat.stack,
+                ..Default::default()
             })
             .collect();
 
@@ -36,6 +37,7 @@ impl TableHandSaga {
             // cards. hand_root = sha256(table_id, hand_n) is deterministic
             // per-hand.
             deck_seed: event.hand_root.clone(),
+            ..Default::default()
         };
 
         let command_any = Any {
@@ -100,6 +102,7 @@ mod tests {
                 small_blind: 1,
                 big_blind: 2,
                 started_at: None,
+                ..Default::default()
             })
             .expect("handler succeeds");
 

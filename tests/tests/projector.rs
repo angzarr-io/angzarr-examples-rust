@@ -312,6 +312,7 @@ fn given_active_players(
             small_blind: sb,
             big_blind: bb,
             started_at: None,
+            ..Default::default()
         })
         .unwrap();
     world.last_card_line.clear();
@@ -351,6 +352,7 @@ fn given_cards_dealt(world: &mut ProjectorWorld, player: String, c1: String, c2:
             players: vec![],
             dealt_at: None,
             remaining_deck: vec![],
+            ..Default::default()
         })
         .unwrap();
 }
@@ -477,6 +479,7 @@ fn given_showdown(world: &mut ProjectorWorld) {
         .on_showdown_started(ShowdownStarted {
             players_to_show: vec![],
             started_at: None,
+            ..Default::default()
         })
         .unwrap();
 }
@@ -509,6 +512,7 @@ fn given_cards_revealed(
                 score: 0,
             }),
             revealed_at: None,
+            ..Default::default()
         })
         .unwrap();
 }

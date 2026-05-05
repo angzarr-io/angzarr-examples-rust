@@ -23,6 +23,7 @@ fn handle_upcast_preserves_unregistered_event_payloads() {
     let page = EventPage {
         payload: Some(event_page::Payload::Event(event.clone())),
         header: Some(PageHeader {
+            sync_mode: None,
             sequence_type: Some(page_header::SequenceType::Sequence(42)),
         }),
         created_at: None,

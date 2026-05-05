@@ -3,13 +3,14 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{PlayerSeated, SeatPlayer, SeatingRejected};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::TableNotFound;
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Table does not exist"));
+        return Err(reject(TableNotFound));
     }
     Ok(())
 }
@@ -63,6 +64,7 @@ pub fn handle_seat_player(
                 seat_position,
                 stack: cmd.amount,
                 seated_at: Some(angzarr_client::now()),
+                ..Default::default()
             };
             let event_any = pack_event(&event, "examples.PlayerSeated");
             Ok(EventBook {

@@ -1,29 +1,32 @@
 //! DealCards command handler.
 
-use rand::prelude::*;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{Card, CardsDealt, DealCards, GameVariant, PlayerHoleCards, Rank, Suit};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{HandAlreadyDealt, NeedAtLeast2Players, NoPlayersInHand};
 use crate::game_rules::get_rules;
 use crate::state::HandState;
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if state.exists() {
-        return Err(rejected("Hand already dealt"));
+        return Err(reject(HandAlreadyDealt));
     }
     Ok(())
 }
 
 fn validate(cmd: &DealCards) -> CommandResult<()> {
     if cmd.players.is_empty() {
-        return Err(rejected("No players provided"));
+        return Err(reject(NoPlayersInHand));
     }
     if cmd.players.len() < 2 {
-        return Err(invalid_arg("Need at least 2 players"));
+        return Err(reject(NeedAtLeast2Players {
+            got: cmd.players.len() as i32,
+        }));
     }
     Ok(())
 }
@@ -68,6 +71,7 @@ fn compute(cmd: &DealCards) -> CardsDealt {
         players: cmd.players.clone(),
         dealt_at: Some(angzarr_client::now()),
         remaining_deck,
+        ..Default::default()
     }
 }
 
@@ -115,10 +119,39 @@ fn create_deck() -> Vec<Card> {
     deck
 }
 
-/// Shuffle the deck using a seed for determinism.
+/// SplitMix64 — portable PRNG used so seeded shuffles produce byte-identical
+/// decks across language implementations. Specified by the cucumber spec
+/// (hand.feature EU-0004 asserts specific cards for a given seed); any
+/// non-portable PRNG would silently break that assertion across languages.
+/// Mirrors Python `_SplitMix64` in `hand/agg/handlers/game_rules.py`.
+struct SplitMix64 {
+    state: u64,
+}
+
+impl SplitMix64 {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+}
+
+/// Shuffle the deck using a seed for determinism. Seed derivation:
+/// SHA-256(seed_bytes) → first 8 bytes big-endian → u64 → SplitMix64 state.
+/// Both languages must use this exact derivation for decks to match.
 fn shuffle_deck(deck: &mut [Card], seed: &[u8]) {
     let hash = Sha256::digest(seed);
     let seed_int = u64::from_be_bytes(hash[..8].try_into().unwrap());
-    let mut rng = StdRng::seed_from_u64(seed_int);
-    deck.shuffle(&mut rng);
+    let mut rng = SplitMix64::new(seed_int);
+    let n = deck.len();
+    for i in (1..n).rev() {
+        let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+        deck.swap(i, j);
+    }
 }

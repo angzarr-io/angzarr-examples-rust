@@ -898,6 +898,7 @@ fn given_player_seated(
         seat_position,
         stack,
         seated_at: None,
+        ..Default::default()
     });
 }
 
@@ -1717,6 +1718,7 @@ fn given_tournament_event_book_created(
         addon_config: None,
         blind_structure: vec![],
         created_at: None,
+        ..Default::default()
     };
     world
         .tournament_events
@@ -1756,6 +1758,7 @@ fn given_tournament_event_book_table(world: &mut PMWorld, step: &cucumber::gherk
                     addon_config: None,
                     blind_structure: vec![],
                     created_at: None,
+                    ..Default::default()
                 };
                 world
                     .tournament_events
@@ -1813,6 +1816,7 @@ fn when_apply_tournament_created(world: &mut PMWorld, name: String, max_players:
         addon_config: None,
         blind_structure: vec![],
         created_at: None,
+        ..Default::default()
     };
     world
         .tournament_events

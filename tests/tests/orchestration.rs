@@ -40,6 +40,7 @@ fn pack<M: prost::Message + prost::Name>(msg: &M) -> Any {
 fn event_page_for(any: Any) -> EventPage {
     EventPage {
         header: Some(PageHeader {
+            sync_mode: None,
             sequence_type: Some(SequenceType::Sequence(0)),
         }),
         created_at: Some(angzarr_client::now()),
@@ -292,6 +293,7 @@ fn seed_tournament_open(world: &OrchestrationWorld, max_players: i32, registered
             addon_config: None,
             blind_structure: vec![],
             created_at: None,
+            ..Default::default()
         }),
     );
     world.fake.append(
@@ -332,6 +334,7 @@ fn seed_tournament_closed(world: &OrchestrationWorld, max_players: i32) {
             addon_config: None,
             blind_structure: vec![],
             created_at: None,
+            ..Default::default()
         }),
     );
     world.fake.append(
@@ -367,6 +370,7 @@ fn seed_tournament_rebuy_running(world: &OrchestrationWorld, rebuy_allowed: bool
             addon_config: None,
             blind_structure: vec![],
             created_at: None,
+            ..Default::default()
         }),
     );
     world.fake.append(
@@ -556,6 +560,7 @@ fn when_buy_in_pm_handles_seated(world: &mut OrchestrationWorld) {
         seat_position: 0,
         stack: 500,
         seated_at: Some(angzarr_client::now()),
+        ..Default::default()
     };
     let pm = world.pm();
     let state = pm_state_for(world, Kind::BuyIn);

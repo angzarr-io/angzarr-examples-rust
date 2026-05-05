@@ -3,8 +3,13 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{BettingPhase, DrawCompleted, GameVariant, RequestDraw};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    DrawNotSupportedInVariant, DuplicateCardIndices, HandAlreadyComplete, HandNotDealt,
+    InvalidCardIndex, NotEnoughCardsInDeck, NotInDrawPhase, PlayerHasFolded, PlayerNotInHand,
+    TooManyDiscards,
+};
 use crate::state::{HandState, PlayerHandState};
 
 /// Validated draw parameters.
@@ -14,16 +19,16 @@ struct ValidatedDraw {
 
 fn guard(state: &HandState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Hand does not exist"));
+        return Err(reject(HandNotDealt));
     }
     if state.is_complete() {
-        return Err(rejected("Hand already complete"));
+        return Err(reject(HandAlreadyComplete));
     }
     if state.game_variant != GameVariant::FiveCardDraw {
-        return Err(invalid_arg("Draw not supported in this game variant"));
+        return Err(reject(DrawNotSupportedInVariant));
     }
     if state.current_phase != BettingPhase::Draw {
-        return Err(rejected("Not in draw phase"));
+        return Err(reject(NotInDrawPhase));
     }
     Ok(())
 }
@@ -34,10 +39,17 @@ fn validate<'a>(
 ) -> CommandResult<(&'a PlayerHandState, ValidatedDraw)> {
     let player = state
         .get_player(&cmd.player_root)
-        .ok_or_else(|| rejected("Player not in hand"))?;
+        .ok_or_else(|| reject(PlayerNotInHand))?;
 
     if player.has_folded {
-        return Err(rejected("Player has folded"));
+        return Err(reject(PlayerHasFolded));
+    }
+
+    if cmd.card_indices.len() > 5 {
+        return Err(reject(TooManyDiscards {
+            got: cmd.card_indices.len() as i32,
+            bound: 5,
+        }));
     }
 
     let mut indices: Vec<i32> = cmd.card_indices.clone();
@@ -45,17 +57,20 @@ fn validate<'a>(
     indices.dedup();
 
     if indices.len() != cmd.card_indices.len() {
-        return Err(rejected("Duplicate card indices"));
+        return Err(reject(DuplicateCardIndices));
     }
 
     for &idx in &indices {
         if !(0..5).contains(&idx) {
-            return Err(rejected("Card index out of range (0-4)"));
+            return Err(reject(InvalidCardIndex { got: idx }));
         }
     }
 
     if indices.len() > state.remaining_deck.len() {
-        return Err(rejected("Not enough cards in deck"));
+        return Err(reject(NotEnoughCardsInDeck {
+            requested: indices.len() as i32,
+            available: state.remaining_deck.len() as i32,
+        }));
     }
 
     Ok((player, ValidatedDraw { indices }))

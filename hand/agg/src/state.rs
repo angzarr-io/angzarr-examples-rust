@@ -131,6 +131,11 @@ pub fn apply_blind_posted(state: &mut HandState, event: BlindPosted) {
         player.stack = event.player_stack;
         player.bet_this_round += event.amount;
         player.total_invested += event.amount;
+        // A short-stacked player whose blind/ante consumes their entire
+        // stack is committed all-in for the hand (TDA Rule 38).
+        if event.player_stack == 0 {
+            player.is_all_in = true;
+        }
     }
     if let Some(pot) = state.pots.first_mut() {
         pot.amount = event.pot_total;

@@ -63,6 +63,7 @@ mod tests {
         let page = EventPage {
             payload: Some(event_page::Payload::Event(event.clone())),
             header: Some(PageHeader {
+                sync_mode: None,
                 sequence_type: Some(page_header::SequenceType::Sequence(1)),
             }),
             created_at: None,
@@ -91,6 +92,7 @@ mod tests {
                     value: vec![i as u8],
                 })),
                 header: Some(PageHeader {
+                    sync_mode: None,
                     sequence_type: Some(page_header::SequenceType::Sequence(i)),
                 }),
                 created_at: None,

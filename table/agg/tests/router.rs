@@ -40,6 +40,7 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
         .enumerate()
         .map(|(i, a)| EventPage {
             header: Some(angzarr_client::proto::PageHeader {
+                sync_mode: None,
                 sequence_type: Some(angzarr_client::proto::page_header::SequenceType::Sequence(
                     i as u32,
                 )),
@@ -174,7 +175,7 @@ fn dispatch_leave_table_arm() {
 
 #[test]
 fn dispatch_start_hand_arm() {
-    let ctx = contextual(StartHand {}, vec![table_created_event()]);
+    let ctx = contextual(StartHand { ..Default::default() }, vec![table_created_event()]);
     let _ = run(ctx);
 }
 
@@ -198,6 +199,7 @@ fn dispatch_seat_player_arm() {
             reservation_id: vec![0xDD; 16],
             seat: 0,
             amount: 100,
+            ..Default::default()
         },
         vec![table_created_event()],
     );
@@ -247,6 +249,7 @@ fn replay_then_noop(event_any: Any) -> Result<BusinessResponse, angzarr_client::
         events: Some(EventBook {
             pages: vec![EventPage {
                 header: Some(angzarr_client::proto::PageHeader {
+                    sync_mode: None,
                     sequence_type: Some(
                         angzarr_client::proto::page_header::SequenceType::Sequence(0),
                     ),
@@ -320,6 +323,7 @@ fn apply_hand_started_branch() {
         small_blind: 1,
         big_blind: 2,
         started_at: None,
+        ..Default::default()
     }));
 }
 
@@ -351,6 +355,7 @@ fn apply_player_seated_branch() {
         seat_position: 0,
         stack: 100,
         seated_at: None,
+        ..Default::default()
     }));
 }
 

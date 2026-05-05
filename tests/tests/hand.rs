@@ -127,6 +127,7 @@ impl HandWorld {
                 player_root: self.player_root(id),
                 position: *pos,
                 stack: *stack,
+                ..Default::default()
             })
             .collect();
 
@@ -173,6 +174,7 @@ impl HandWorld {
             players: self.players.clone(),
             dealt_at: None,
             remaining_deck,
+            ..Default::default()
         };
         self.events.push(pack_event_any(&event));
         self.hand_number = 1;
@@ -450,6 +452,7 @@ fn given_showdown_started(world: &mut HandWorld) {
             .map(|p| p.player_root.clone())
             .collect(),
         started_at: None,
+        ..Default::default()
     };
     world.events.push(pack_event_any(&event));
 }
@@ -509,6 +512,7 @@ fn given_cards_revealed(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
             score: 0,
         }),
         revealed_at: None,
+        ..Default::default()
     };
     world.events.push(pack_event_any(&event));
 }
@@ -568,6 +572,7 @@ fn given_hand_at_showdown_with_cards(
             player_root: world.player_root(id),
             position: *pos,
             stack: *stack,
+            ..Default::default()
         })
         .collect();
 
@@ -598,6 +603,7 @@ fn given_hand_at_showdown_with_cards(
         players: world.players.clone(),
         dealt_at: None,
         remaining_deck,
+        ..Default::default()
     };
     world.events.push(pack_event_any(&cards_dealt));
     world.hand_number = 1;
@@ -626,6 +632,7 @@ fn given_hand_at_showdown_with_cards(
     let showdown_started = ShowdownStarted {
         players_to_show: vec![],
         started_at: None,
+        ..Default::default()
     };
     world.events.push(pack_event_any(&showdown_started));
 }
@@ -656,6 +663,7 @@ fn when_deal_cards(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
             player_root: world.player_root(&row[0]),
             position: row[1].parse().unwrap(),
             stack: row[2].parse().unwrap(),
+            ..Default::default()
         })
         .collect();
 
@@ -670,6 +678,7 @@ fn when_deal_cards(world: &mut HandWorld, step: &cucumber::gherkin::Step) {
         small_blind: 5,
         big_blind: 10,
         deck_seed: vec![],
+        ..Default::default()
     };
 
     let state = world.rebuild_state();
@@ -691,6 +700,7 @@ fn when_deal_cards_seeded(world: &mut HandWorld, step: &cucumber::gherkin::Step)
             player_root: world.player_root(&row[0]),
             position: row[1].parse().unwrap(),
             stack: row[2].parse().unwrap(),
+            ..Default::default()
         })
         .collect();
 
@@ -705,6 +715,7 @@ fn when_deal_cards_seeded(world: &mut HandWorld, step: &cucumber::gherkin::Step)
         small_blind: 5,
         big_blind: 10,
         deck_seed: seed.as_bytes().to_vec(),
+        ..Default::default()
     };
 
     let state = world.rebuild_state();
@@ -749,6 +760,7 @@ fn when_player_action_amount(
         player_root: world.player_root(&player_id),
         action: action as i32,
         amount,
+        ..Default::default()
     };
 
     let state = world.rebuild_state();
@@ -792,6 +804,7 @@ fn when_reveal_cards(world: &mut HandWorld, player_id: String, muck: String) {
     let cmd = RevealCards {
         player_root: world.player_root(&player_id),
         muck: muck == "true",
+        ..Default::default()
     };
 
     let state = world.rebuild_state();
@@ -1480,6 +1493,7 @@ fn given_cards_dealt_raw(world: &mut HandWorld, table_root_hex: String, hand_num
         players: vec![],
         dealt_at: None,
         remaining_deck: vec![],
+        ..Default::default()
     };
     world.events.push(pack_event_any(&event));
     world.hand_number = hand_number;
@@ -1586,11 +1600,13 @@ fn when_deal_twice(world: &mut HandWorld, seed: String) {
             player_root: world.player_root("player-1"),
             position: 0,
             stack: 500,
+            ..Default::default()
         },
         PlayerInHand {
             player_root: world.player_root("player-2"),
             position: 1,
             stack: 500,
+            ..Default::default()
         },
     ];
     let cmd = DealCards {
@@ -1602,6 +1618,7 @@ fn when_deal_twice(world: &mut HandWorld, seed: String) {
         small_blind: 5,
         big_blind: 10,
         deck_seed: seed.as_bytes().to_vec(),
+        ..Default::default()
     };
 
     let state = new_hand_state();
@@ -1633,6 +1650,7 @@ fn when_deal_cards_no_players(world: &mut HandWorld, step: &cucumber::gherkin::S
         small_blind: 5,
         big_blind: 10,
         deck_seed: vec![],
+        ..Default::default()
     };
 
     let state = world.rebuild_state();
@@ -1652,6 +1670,7 @@ fn when_player_action_unknown(world: &mut HandWorld, player_id: String) {
         player_root: world.player_root(&player_id),
         action: 0, // ActionUnspecified
         amount: 0,
+        ..Default::default()
     };
     let state = world.rebuild_state();
     world.result = Some(handle_player_action(cmd, &state, world.next_seq()));
@@ -1672,6 +1691,7 @@ fn when_player_action_no_root(world: &mut HandWorld, action_str: String) {
         player_root: vec![],
         action: action as i32,
         amount: 0,
+        ..Default::default()
     };
     let state = world.rebuild_state();
     world.result = Some(handle_player_action(cmd, &state, world.next_seq()));
@@ -1693,6 +1713,7 @@ fn when_reveal_cards_no_root(world: &mut HandWorld, muck: String) {
     let cmd = RevealCards {
         player_root: vec![],
         muck: muck == "true",
+        ..Default::default()
     };
     let state = world.rebuild_state();
     world.result = Some(handle_reveal_cards(cmd, &state, world.next_seq()));
@@ -1785,7 +1806,18 @@ fn then_player_stack_equals(world: &mut HandWorld, player_id: String, expected: 
 
 #[then(expr = "player {string} is all-in")]
 fn then_player_is_all_in(world: &mut HandWorld, player_id: String) {
-    let state = world.rebuild_state();
+    // Apply the in-flight result event to the rebuilt state so callers
+    // can assert post-handler invariants (is_all_in, stack=0) without
+    // requiring every When step to manually push the event into the
+    // event timeline. Mirrors Python's stateful aggregate pattern.
+    let mut state = world.rebuild_state();
+    if let Some(event_any) = world.result_event() {
+        if let Some(ev) = try_unpack::<BlindPosted>(&event_any) {
+            apply_blind_posted(&mut state, ev);
+        } else if let Some(ev) = try_unpack::<ActionTaken>(&event_any) {
+            apply_action_taken(&mut state, ev);
+        }
+    }
     let player = state
         .get_player(&world.player_root(&player_id))
         .expect("Player not found");

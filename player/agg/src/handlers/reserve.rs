@@ -6,14 +6,17 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{Currency, FundsReserved, ReserveFunds};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    AmountMustBePositive, FundsAlreadyReservedForTable, InsufficientFunds, PlayerNotFound,
+};
 use crate::state::PlayerState;
 
 // docs:start:reserve_funds_imp
 fn reserve_funds_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Player does not exist"));
+        return Err(reject(PlayerNotFound));
     }
     Ok(())
 }
@@ -21,15 +24,20 @@ fn reserve_funds_guard(state: &PlayerState) -> CommandResult<()> {
 fn reserve_funds_validate(cmd: &ReserveFunds, state: &PlayerState) -> CommandResult<i64> {
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(invalid_arg("amount must be positive"));
+        return Err(reject(AmountMustBePositive { value: amount }));
     }
     if amount > state.available_balance() {
-        return Err(rejected("Insufficient funds"));
+        return Err(reject(InsufficientFunds {
+            requested: amount,
+            available: state.available_balance(),
+        }));
     }
 
     let key_hex = hex::encode(&cmd.key);
     if state.table_reservations.contains_key(&key_hex) {
-        return Err(rejected("Funds already reserved for this table"));
+        return Err(reject(FundsAlreadyReservedForTable {
+            table_root_hex: key_hex,
+        }));
     }
 
     Ok(amount)

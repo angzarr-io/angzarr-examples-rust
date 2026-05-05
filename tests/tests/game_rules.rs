@@ -589,12 +589,14 @@ fn then_hand_score_greater(world: &mut RulesWorld, lhs: String, rhs: String) {
         .get(&rhs)
         .unwrap_or_else(|| panic!("hand {} not evaluated", rhs));
     assert!(
-        l.score > r.score,
-        "Expected hand {} score ({}) > hand {} score ({})",
+        (l.score, &l.kickers) > (r.score, &r.kickers),
+        "Expected hand {} ({}, kickers={:?}) > hand {} ({}, kickers={:?})",
         lhs,
         l.score,
+        l.kickers,
         rhs,
-        r.score
+        r.score,
+        r.kickers,
     );
 }
 

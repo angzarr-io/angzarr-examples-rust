@@ -42,6 +42,7 @@ fn contextual<M: Message + prost::Name>(cmd: M, prior: Vec<Any>) -> ContextualCo
         .enumerate()
         .map(|(i, a)| EventPage {
             header: Some(angzarr_client::proto::PageHeader {
+                sync_mode: None,
                 sequence_type: Some(angzarr_client::proto::page_header::SequenceType::Sequence(
                     i as u32,
                 )),
@@ -83,6 +84,7 @@ fn tournament_created_event() -> Any {
         addon_config: None,
         blind_structure: vec![],
         created_at: None,
+        ..Default::default()
     })
 }
 
@@ -103,6 +105,7 @@ fn create_tournament_cmd() -> ContextualCommand {
             rebuy_config: None,
             addon_config: None,
             blind_structure: vec![],
+            ..Default::default()
         },
         vec![],
     )
@@ -202,7 +205,7 @@ fn dispatch_process_rebuy_arm() {
 
 #[test]
 fn dispatch_advance_blind_level_arm() {
-    let ctx = contextual(AdvanceBlindLevel {}, vec![tournament_created_event()]);
+    let ctx = contextual(AdvanceBlindLevel { ..Default::default() }, vec![tournament_created_event()]);
     let _ = run(ctx);
 }
 
@@ -251,6 +254,7 @@ fn replay_then_run(event_any: Any) -> Result<BusinessResponse, angzarr_client::C
         rebuy_config: None,
         addon_config: None,
         blind_structure: vec![],
+        ..Default::default()
     });
     let ctx = ContextualCommand {
         command: Some(CommandBook {
@@ -263,6 +267,7 @@ fn replay_then_run(event_any: Any) -> Result<BusinessResponse, angzarr_client::C
         events: Some(EventBook {
             pages: vec![EventPage {
                 header: Some(angzarr_client::proto::PageHeader {
+                    sync_mode: None,
                     sequence_type: Some(
                         angzarr_client::proto::page_header::SequenceType::Sequence(0),
                     ),

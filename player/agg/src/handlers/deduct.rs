@@ -7,29 +7,33 @@
 use angzarr_client::proto::EventBook;
 use angzarr_client::CommandResult;
 use examples_proto::{Currency, DeductReservedFunds, FundsDeducted};
-use examples_utils::{event_page, invalid_arg, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{AmountExceedsReservedFunds, AmountMustBePositive, KeyRequired, PlayerNotFound};
 use crate::state::PlayerState;
 
 fn deduct_guard(state: &PlayerState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Player does not exist"));
+        return Err(reject(PlayerNotFound));
     }
     Ok(())
 }
 
 fn deduct_validate(cmd: &DeductReservedFunds, state: &PlayerState) -> CommandResult<i64> {
     if cmd.key.is_empty() {
-        return Err(rejected("key is required"));
+        return Err(reject(KeyRequired));
     }
     let amount = cmd.amount.as_ref().map(|c| c.amount).unwrap_or(0);
     if amount <= 0 {
-        return Err(invalid_arg("amount must be positive"));
+        return Err(reject(AmountMustBePositive { value: amount }));
     }
     let key_hex = hex::encode(&cmd.key);
     let reserved_for_key = state.table_reservations.get(&key_hex).copied().unwrap_or(0);
     if amount > reserved_for_key {
-        return Err(rejected("amount exceeds reserved funds for this key"));
+        return Err(reject(AmountExceedsReservedFunds {
+            requested: amount,
+            available: reserved_for_key,
+        }));
     }
     Ok(amount)
 }

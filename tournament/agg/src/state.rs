@@ -207,6 +207,7 @@ mod tests {
                     duration_minutes: 20,
                 }],
                 created_at: None,
+                ..Default::default()
             },
         );
         state

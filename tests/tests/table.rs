@@ -43,6 +43,9 @@ pub struct TableWorld {
     player_stacks: HashMap<String, i64>,
     dealer_position: i32,
     hand_number: i64,
+    /// Cucumber-declared cover for the current scenario. See player.rs
+    /// for the rationale (unit-tier tests bypass the router).
+    command_cover: Option<angzarr_client::proto::Cover>,
 }
 
 impl TableWorld {
@@ -115,7 +118,7 @@ fn pack_event_any<T: prost::Message + prost::Name>(event: &T) -> Any {
 fn given_no_events(world: &mut TableWorld) {
     world.events.clear();
     world.min_buy_in = 200;
-    world.max_buy_in = 2000;
+    world.max_buy_in = 1000;
     world.max_players = 9;
 }
 
@@ -125,7 +128,7 @@ fn given_table_created(world: &mut TableWorld, table_name: String) {
         world.min_buy_in = 200;
     }
     if world.max_buy_in == 0 {
-        world.max_buy_in = 2000;
+        world.max_buy_in = 1000;
     }
     if world.max_players == 0 {
         world.max_players = 9;
@@ -148,7 +151,7 @@ fn given_table_created(world: &mut TableWorld, table_name: String) {
 fn given_table_created_min_buyin(world: &mut TableWorld, table_name: String, min_buy_in: i64) {
     world.events.clear();
     world.min_buy_in = min_buy_in;
-    world.max_buy_in = 2000;
+    world.max_buy_in = 1000;
     world.max_players = 9;
     given_table_created(world, table_name);
 }
@@ -157,7 +160,7 @@ fn given_table_created_min_buyin(world: &mut TableWorld, table_name: String, min
 fn given_table_created_max_players(world: &mut TableWorld, table_name: String, max_players: i32) {
     world.events.clear();
     world.min_buy_in = 200;
-    world.max_buy_in = 2000;
+    world.max_buy_in = 1000;
     world.max_players = max_players;
     given_table_created(world, table_name);
 }
@@ -197,6 +200,7 @@ fn given_hand_started(world: &mut TableWorld, hand_number: i64) {
         small_blind: 5,
         big_blind: 10,
         started_at: None,
+        ..Default::default()
     };
     world.events.push(pack_event_any(&event));
 }
@@ -290,7 +294,7 @@ fn when_leave_table(world: &mut TableWorld, player_id: String) {
 
 #[when("I handle a StartHand command")]
 fn when_start_hand(world: &mut TableWorld) {
-    let cmd = StartHand {};
+    let cmd = StartHand { ..Default::default() };
     let state = world.rebuild_state();
     world.result = Some(handle_start_hand(cmd, &state, world.next_seq()));
 }
@@ -400,6 +404,89 @@ fn then_error_contains(world: &mut TableWorld, expected: String) {
         expected,
         msg
     );
+}
+
+#[then(expr = "the command is rejected with code {string}")]
+fn then_command_rejected_with_code(world: &mut TableWorld, code: String) {
+    let result = world
+        .result
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let err = result
+        .as_ref()
+        .err()
+        .expect("Expected command to be rejected but it succeeded");
+    assert_eq!(
+        err.code, code,
+        "Expected rejection code '{}', got '{}'",
+        code, err.code
+    );
+}
+
+#[then(expr = "the rejection field {string} equals {string}")]
+fn then_rejection_field_equals(world: &mut TableWorld, field: String, value: String) {
+    let result = world
+        .result
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let err = result
+        .as_ref()
+        .err()
+        .expect("Expected command to be rejected but it succeeded");
+    let actual = err.details.get(&field).cloned().unwrap_or_else(|| {
+        panic!(
+            "Rejection has no field '{}'; available: {:?}",
+            field,
+            err.details.keys().collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(
+        actual, value,
+        "Rejection field '{}': expected '{}', got '{}'",
+        field, value, actual
+    );
+}
+
+#[then(regex = r#"^the rejection cover has (.+)$"#)]
+fn then_rejection_cover_has(world: &mut TableWorld, spec: String) {
+    let cover = rejection_cover_or_fail_table(world).clone();
+    for (field, value) in poker_tests::cover_field_pairs(&spec) {
+        let actual = poker_tests::read_cover_field(&cover, &field);
+        assert_eq!(
+            actual, value,
+            "Rejection cover {}: expected '{}', got '{}'",
+            field, value, actual
+        );
+    }
+}
+
+fn rejection_cover_or_fail_table(world: &mut TableWorld) -> &angzarr_client::proto::Cover {
+    if let Some(cover) = world.command_cover.clone() {
+        if let Some(Err(rej)) = world.result.as_mut() {
+            if rej.cover.is_none() {
+                rej.cover = Some(cover);
+            }
+        }
+    }
+    let result = world
+        .result
+        .as_ref()
+        .expect("Expected command to be rejected but it succeeded");
+    let err = result
+        .as_ref()
+        .err()
+        .expect("Expected command to be rejected but it succeeded");
+    err.cover.as_ref().expect(
+        "Rejection has no cover stamped — declare one via `the command cover has ...` Given steps",
+    )
+}
+
+#[given(regex = r#"^the command cover has (.+)$"#)]
+fn given_cover_has_table(world: &mut TableWorld, spec: String) {
+    let cover = world.command_cover.get_or_insert_with(Default::default);
+    for (field, value) in poker_tests::cover_field_pairs(&spec) {
+        poker_tests::write_cover_field(cover, &field, &value);
+    }
 }
 
 #[then(expr = "the table event has table_name {string}")]
@@ -585,6 +672,7 @@ fn when_seat_player(
         reservation_id: uuid_or_empty(&reservation),
         seat,
         amount,
+        ..Default::default()
     };
     let state = world.rebuild_state();
     world.result = Some(handle_seat_player(cmd, &state, world.next_seq()));
@@ -624,7 +712,7 @@ fn when_end_hand_mismatched(world: &mut TableWorld) {
 fn when_start_then_end_hand(world: &mut TableWorld, winner: String, amount: i64) {
     // StartHand
     let state = world.rebuild_state();
-    let book = handle_start_hand(StartHand {}, &state, world.next_seq()).expect("start hand");
+    let book = handle_start_hand(StartHand { ..Default::default() }, &state, world.next_seq()).expect("start hand");
     let mut hand_root: Vec<u8> = Vec::new();
     if let Some(page) = book.pages.first() {
         if let Some(event_page::Payload::Event(e)) = &page.payload {

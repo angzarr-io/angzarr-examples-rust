@@ -7,18 +7,23 @@ use examples_proto::{
     PlayerEliminated, ResumeTournament, StartTournament, TournamentCompleted, TournamentPaused,
     TournamentResumed, TournamentStarted, TournamentStatus,
 };
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    BlindStructureExhausted, NotEnoughPlayersToStart, PlayerNotRegistered, RegistrationNotOpen,
+    TournamentAlreadyCompleted, TournamentAlreadyPaused, TournamentNotFound, TournamentNotPaused,
+    TournamentNotRunning, TournamentNotRunningOrPaused,
+};
 use crate::state::TournamentState;
 
 // --- AdvanceBlindLevel ---
 
 fn guard_advance(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Tournament does not exist"));
+        return Err(reject(TournamentNotFound));
     }
     if !state.is_running() {
-        return Err(rejected("Tournament is not running"));
+        return Err(reject(TournamentNotRunning));
     }
     Ok(())
 }
@@ -30,20 +35,20 @@ pub fn handle_advance_blind_level(
 ) -> CommandResult<EventBook> {
     guard_advance(state)?;
 
+    // Reject when the structure is exhausted (or empty). Emitting a
+    // `BlindLevelAdvanced` past the declared structure would write a lie
+    // into the event log; surface the decision to the operator instead.
+    let max_defined_level = state.blind_structure.len() as i32;
     let next_level = state.current_level + 1;
+    if next_level > max_defined_level {
+        return Err(reject(BlindStructureExhausted {
+            current: state.current_level,
+            max_value: max_defined_level,
+        }));
+    }
 
-    let (small_blind, big_blind, ante) = if (next_level as usize) <= state.blind_structure.len() {
-        let level = &state.blind_structure[(next_level - 1) as usize];
-        (level.small_blind, level.big_blind, level.ante)
-    } else if let Some(last_level) = state.blind_structure.last() {
-        (
-            last_level.small_blind,
-            last_level.big_blind,
-            last_level.ante,
-        )
-    } else {
-        return Err(rejected("No blind structure defined"));
-    };
+    let level = &state.blind_structure[(next_level - 1) as usize];
+    let (small_blind, big_blind, ante) = (level.small_blind, level.big_blind, level.ante);
 
     let event = BlindLevelAdvanced {
         level: next_level,
@@ -64,10 +69,10 @@ pub fn handle_advance_blind_level(
 
 fn guard_eliminate(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Tournament does not exist"));
+        return Err(reject(TournamentNotFound));
     }
     if !state.is_running() {
-        return Err(rejected("Tournament is not running"));
+        return Err(reject(TournamentNotRunning));
     }
     Ok(())
 }
@@ -81,7 +86,7 @@ pub fn handle_eliminate_player(
 
     let player_root_hex = hex::encode(&cmd.player_root);
     if !state.is_player_registered(&player_root_hex) {
-        return Err(rejected("Player is not registered in this tournament"));
+        return Err(reject(PlayerNotRegistered { player_root_hex }));
     }
 
     let finish_position = state.players_remaining;
@@ -106,13 +111,13 @@ pub fn handle_eliminate_player(
 
 fn guard_pause(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Tournament does not exist"));
+        return Err(reject(TournamentNotFound));
     }
     if state.status == TournamentStatus::TournamentPaused {
-        return Err(rejected("Tournament is already paused"));
+        return Err(reject(TournamentAlreadyPaused));
     }
     if !state.is_running() {
-        return Err(rejected("Tournament is not running"));
+        return Err(reject(TournamentNotRunning));
     }
     Ok(())
 }
@@ -140,10 +145,10 @@ pub fn handle_pause_tournament(
 
 fn guard_resume(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Tournament does not exist"));
+        return Err(reject(TournamentNotFound));
     }
     if state.status != TournamentStatus::TournamentPaused {
-        return Err(rejected("Tournament is not paused"));
+        return Err(reject(TournamentNotPaused));
     }
     Ok(())
 }
@@ -170,13 +175,16 @@ pub fn handle_resume_tournament(
 
 fn guard_start(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Tournament does not exist"));
+        return Err(reject(TournamentNotFound));
     }
     if !state.is_registration_open() {
-        return Err(rejected("Registration is not open"));
+        return Err(reject(RegistrationNotOpen));
     }
     if (state.registered_players.len() as i32) < state.min_players {
-        return Err(rejected("Not enough players to start"));
+        return Err(reject(NotEnoughPlayersToStart {
+            requested: state.min_players as i64,
+            available: state.registered_players.len() as i64,
+        }));
     }
     Ok(())
 }
@@ -206,15 +214,15 @@ pub fn handle_start_tournament(
 
 fn guard_complete(state: &TournamentState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Tournament does not exist"));
+        return Err(reject(TournamentNotFound));
     }
     if state.status == TournamentStatus::TournamentCompleted {
-        return Err(rejected("Tournament is already completed"));
+        return Err(reject(TournamentAlreadyCompleted));
     }
     if state.status != TournamentStatus::TournamentRunning
         && state.status != TournamentStatus::TournamentPaused
     {
-        return Err(rejected("Tournament must be running or paused to complete"));
+        return Err(reject(TournamentNotRunningOrPaused));
     }
     Ok(())
 }

@@ -1,52 +1,56 @@
 //! JoinTable command handler.
 
 use angzarr_client::proto::EventBook;
-use angzarr_client::{CommandRejectedError, CommandResult};
+use angzarr_client::CommandResult;
 use examples_proto::{JoinTable, PlayerJoined};
-use examples_utils::{event_page, pack_event, rejected};
+use examples_utils::{event_page, pack_event, reject};
 
+use crate::errors::{
+    BuyInAboveMax, BuyInBelowMin, PlayerAlreadySeated, PlayerRootRequired, SeatOccupied,
+    TableIsFull, TableNotFound,
+};
 use crate::state::TableState;
 
 fn guard(state: &TableState) -> CommandResult<()> {
     if !state.exists() {
-        return Err(rejected("Table does not exist"));
+        return Err(reject(TableNotFound));
     }
     Ok(())
 }
 
 fn validate(cmd: &JoinTable, state: &TableState) -> CommandResult<i32> {
     if cmd.player_root.is_empty() {
-        return Err(rejected("player_root is required"));
+        return Err(reject(PlayerRootRequired));
     }
 
     if state.find_seat_by_player(&cmd.player_root).is_some() {
-        return Err(rejected("Player already seated"));
+        return Err(reject(PlayerAlreadySeated));
     }
 
     if cmd.buy_in_amount < state.min_buy_in {
-        return Err(CommandRejectedError::invalid_argument(
-            "BUY_IN_BELOW_MIN",
-            "Buy-in must be at least the table minimum",
-            [("min_buy_in", state.min_buy_in.to_string())],
-        ));
+        return Err(reject(BuyInBelowMin {
+            got: cmd.buy_in_amount,
+            bound: state.min_buy_in,
+        }));
     }
     if cmd.buy_in_amount > state.max_buy_in {
-        return Err(CommandRejectedError::invalid_argument(
-            "BUY_IN_ABOVE_MAX",
-            "Buy-in cannot exceed the table maximum",
-            [("max_buy_in", state.max_buy_in.to_string())],
-        ));
+        return Err(reject(BuyInAboveMax {
+            got: cmd.buy_in_amount,
+            bound: state.max_buy_in,
+        }));
     }
 
     let seat_position = if cmd.preferred_seat >= 0 && cmd.preferred_seat < state.max_players {
         if state.seats.contains_key(&cmd.preferred_seat) {
-            return Err(rejected("Seat is occupied"));
+            return Err(reject(SeatOccupied {
+                seat: cmd.preferred_seat,
+            }));
         }
         cmd.preferred_seat
     } else {
         state
             .next_available_seat()
-            .ok_or_else(|| rejected("Table is full"))?
+            .ok_or_else(|| reject(TableIsFull))?
     };
 
     Ok(seat_position)
