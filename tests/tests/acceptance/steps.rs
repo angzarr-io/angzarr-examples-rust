@@ -193,7 +193,9 @@ fn leave_table(world: &mut AcceptanceWorld, name: &str, table_name: &str) {
 fn start_hand(world: &mut AcceptanceWorld, table_name: &str) {
     let table_root = world.table_root(table_name);
     let seq = world.tables[table_name].sequence;
-    let cmd = StartHand { ..Default::default() };
+    let cmd = StartHand {
+        ..Default::default()
+    };
     let packed = pack_command(&cmd, "examples.StartHand");
     let result = world.client.send_command("table", &table_root, packed, seq);
     match result {

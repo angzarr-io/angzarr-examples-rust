@@ -294,7 +294,9 @@ fn when_leave_table(world: &mut TableWorld, player_id: String) {
 
 #[when("I handle a StartHand command")]
 fn when_start_hand(world: &mut TableWorld) {
-    let cmd = StartHand { ..Default::default() };
+    let cmd = StartHand {
+        ..Default::default()
+    };
     let state = world.rebuild_state();
     world.result = Some(handle_start_hand(cmd, &state, world.next_seq()));
 }
@@ -712,7 +714,14 @@ fn when_end_hand_mismatched(world: &mut TableWorld) {
 fn when_start_then_end_hand(world: &mut TableWorld, winner: String, amount: i64) {
     // StartHand
     let state = world.rebuild_state();
-    let book = handle_start_hand(StartHand { ..Default::default() }, &state, world.next_seq()).expect("start hand");
+    let book = handle_start_hand(
+        StartHand {
+            ..Default::default()
+        },
+        &state,
+        world.next_seq(),
+    )
+    .expect("start hand");
     let mut hand_root: Vec<u8> = Vec::new();
     if let Some(page) = book.pages.first() {
         if let Some(event_page::Payload::Event(e)) = &page.payload {

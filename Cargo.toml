@@ -11,6 +11,7 @@ members = [
     "table/agg",
     "table/saga-hand",
     "table/saga-player",
+    "table/saga-tournament-h4h",
     "hand/agg",
     "hand/upc",
     "hand/saga-table",

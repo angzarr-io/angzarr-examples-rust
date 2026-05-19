@@ -27,9 +27,7 @@ fn validate(cmd: &CreateTournament) -> CommandResult<()> {
         return Err(reject(NameRequired));
     }
     if cmd.buy_in <= 0 {
-        return Err(reject(BuyInMustBePositive {
-            value: cmd.buy_in,
-        }));
+        return Err(reject(BuyInMustBePositive { value: cmd.buy_in }));
     }
     if cmd.starting_stack <= 0 {
         return Err(reject(StartingStackMustBePositive {

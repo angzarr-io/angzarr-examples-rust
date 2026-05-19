@@ -16,7 +16,12 @@ ARG RUST_VERSION=1.87
 # ============================================================================
 FROM docker.io/library/rust:${RUST_VERSION}-alpine AS proto-gen
 
-RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig
+RUN apk add --no-cache musl-dev protobuf-dev protoc openssl-dev openssl-libs-static pkgconfig git
+
+# INFRA-1: trust any bind-mounted workspace path (rootless docker friendliness).
+RUN git config --system --add safe.directory '*' \
+ && git config --system --add safe.directory '/workspace' \
+ && git config --system --add safe.directory '/angzarr'
 
 RUN rustup target add x86_64-unknown-linux-musl
 
@@ -103,7 +108,13 @@ RUN apk add --no-cache \
     protoc \
     openssl-dev \
     openssl-libs-static \
-    pkgconfig
+    pkgconfig \
+    git
+
+# INFRA-1: trust any bind-mounted workspace path (rootless docker friendliness).
+RUN git config --system --add safe.directory '*' \
+ && git config --system --add safe.directory '/workspace' \
+ && git config --system --add safe.directory '/angzarr'
 
 RUN rustup target add x86_64-unknown-linux-musl
 

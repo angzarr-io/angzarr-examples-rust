@@ -178,7 +178,10 @@ fn hand_shapes() {
     assert_invalid_operation_in_state(&hand_errors::CannotCheckWithBet);
     assert_invalid_operation_in_state(&hand_errors::NothingToCall);
     assert_invalid_operation_in_state(&hand_errors::CannotBetOverExistingBet);
-    let bet_below = hand_errors::BetBelowMinRaise { got: 50, bound: 200 };
+    let bet_below = hand_errors::BetBelowMinRaise {
+        got: 50,
+        bound: 200,
+    };
     assert_bound_violation(&bet_below);
     assert_eq!(bet_below.kind(), BoundKind::BelowMin);
     let bet_above = hand_errors::BetExceedsStack {
@@ -363,7 +366,8 @@ fn leaf_codes_are_non_empty_strings() {
     for code in &codes {
         assert!(!code.is_empty(), "Found empty CODE constant");
         assert!(
-            code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'),
+            code.chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'),
             "CODE must be SCREAMING_SNAKE: got {}",
             code
         );

@@ -62,13 +62,9 @@ pub struct BigBlindMustExceedSmallBlind {
 impl CommandError for BigBlindMustExceedSmallBlind {
     const CODE: &'static str = "BIG_BLIND_MUST_EXCEED_SMALL_BLIND";
     const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
-    const TEMPLATE: &'static str =
-        "big_blind {lhs} must be >= small_blind {rhs}";
+    const TEMPLATE: &'static str = "big_blind {lhs} must be >= small_blind {rhs}";
     fn fields(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("lhs", self.lhs.to_string()),
-            ("rhs", self.rhs.to_string()),
-        ]
+        vec![("lhs", self.lhs.to_string()), ("rhs", self.rhs.to_string())]
     }
 }
 impl PreconditionError for BigBlindMustExceedSmallBlind {}
@@ -106,13 +102,9 @@ pub struct MaxBuyInMustExceedMinBuyIn {
 impl CommandError for MaxBuyInMustExceedMinBuyIn {
     const CODE: &'static str = "MAX_BUY_IN_MUST_EXCEED_MIN_BUY_IN";
     const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
-    const TEMPLATE: &'static str =
-        "max_buy_in {lhs} must be >= min_buy_in {rhs}";
+    const TEMPLATE: &'static str = "max_buy_in {lhs} must be >= min_buy_in {rhs}";
     fn fields(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("lhs", self.lhs.to_string()),
-            ("rhs", self.rhs.to_string()),
-        ]
+        vec![("lhs", self.lhs.to_string()), ("rhs", self.rhs.to_string())]
     }
 }
 impl PreconditionError for MaxBuyInMustExceedMinBuyIn {}
@@ -390,6 +382,58 @@ impl IdentityMismatch for SeatPositionMismatch {
     }
 }
 
+// --- Hand-for-hand (TDA Rule 12) ---------------------------------------
+
+pub struct TableAlreadyInHandForHand;
+impl CommandError for TableAlreadyInHandForHand {
+    const CODE: &'static str = "TABLE_ALREADY_IN_HAND_FOR_HAND";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "Table is already in hand-for-hand mode";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl PreconditionError for TableAlreadyInHandForHand {}
+impl StateAlreadyEntered for TableAlreadyInHandForHand {}
+
+pub struct TableNotInHandForHand;
+impl CommandError for TableNotInHandForHand {
+    const CODE: &'static str = "TABLE_NOT_IN_HAND_FOR_HAND";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "Table is not in hand-for-hand mode";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl PreconditionError for TableNotInHandForHand {}
+impl StateMismatch for TableNotInHandForHand {}
+
+// --- ChangeSeats (PR #12 design decision 2) ----------------------------
+
+/// PR #12 design decision 2 — `ChangeSeats` whose `current_seat ==
+/// requested_seat` is a structured rejection. Coordinators / UIs should
+/// surface bad operator input rather than silently no-op (which would
+/// hide the wired-twice-same-seat bug). The error payload carries the
+/// duplicated seat for log traceability. Stable code:
+/// [`angzarr_client::error_codes::codes::SEATS_IDENTICAL`].
+pub struct SeatsIdentical {
+    pub seat: i32,
+}
+impl CommandError for SeatsIdentical {
+    const CODE: &'static str = "SEATS_IDENTICAL";
+    const STATUS: ErrorStatus = ErrorStatus::InvalidArgument;
+    const TEMPLATE: &'static str = "current_seat and requested_seat are identical at {seat}";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        vec![("seat", self.seat.to_string())]
+    }
+}
+impl ValidationError for SeatsIdentical {}
+impl ValueOutOfRange for SeatsIdentical {
+    fn got(&self) -> i64 {
+        self.seat as i64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,15 +476,9 @@ mod tests {
 
     #[test]
     fn big_blind_must_exceed_small_blind_renders_both_fields() {
-        let err = BigBlindMustExceedSmallBlind {
-            lhs: 5,
-            rhs: 10,
-        };
+        let err = BigBlindMustExceedSmallBlind { lhs: 5, rhs: 10 };
         assert_eq!(err.render(), "big_blind 5 must be >= small_blind 10");
-        let r = reject(BigBlindMustExceedSmallBlind {
-            lhs: 5,
-            rhs: 10,
-        });
+        let r = reject(BigBlindMustExceedSmallBlind { lhs: 5, rhs: 10 });
         assert_eq!(r.details.get("lhs"), Some(&"5".to_string()));
         assert_eq!(r.details.get("rhs"), Some(&"10".to_string()));
     }
@@ -458,12 +496,21 @@ mod tests {
     fn empty_field_errors_render_template_unchanged() {
         assert_eq!(TableNotFound.render(), "Table does not exist");
         assert_eq!(PlayerRootRequired.render(), "player_root is required");
-        assert_eq!(PlayerAlreadySeated.render(), "Player already seated at table");
+        assert_eq!(
+            PlayerAlreadySeated.render(),
+            "Player already seated at table"
+        );
         assert_eq!(TableIsFull.render(), "Table is full");
         assert_eq!(PlayerNotSeated.render(), "Player is not seated at table");
-        assert_eq!(CannotLeaveDuringHand.render(), "Cannot leave table during a hand");
+        assert_eq!(
+            CannotLeaveDuringHand.render(),
+            "Cannot leave table during a hand"
+        );
         assert_eq!(HandAlreadyInProgress.render(), "Hand already in progress");
-        let nepts = NotEnoughPlayersToStartHand { requested: 2, available: 1 };
+        let nepts = NotEnoughPlayersToStartHand {
+            requested: 2,
+            available: 1,
+        };
         assert_eq!(
             nepts.render(),
             "Not enough players to start hand: requested 2, available 1"

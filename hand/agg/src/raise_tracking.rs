@@ -217,7 +217,10 @@ mod tests {
     fn reset_per_round_works_with_various_big_blinds() {
         assert_eq!(reset_per_round(1).unwrap().last_raise_increment, 1);
         assert_eq!(reset_per_round(25).unwrap().last_raise_increment, 25);
-        assert_eq!(reset_per_round(10_000).unwrap().last_raise_increment, 10_000);
+        assert_eq!(
+            reset_per_round(10_000).unwrap().last_raise_increment,
+            10_000
+        );
     }
 
     #[test]

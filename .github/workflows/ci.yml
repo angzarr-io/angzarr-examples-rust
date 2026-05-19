@@ -20,9 +20,26 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Unbypassable guard against `--no-verify` / `LEFTHOOK=0` locally. Mirrors
+  # the parent-side check that lefthook runs on pre-commit. Pointer-only
+  # bumps pass; dirty submodule working trees fail.
+  submodules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Verify submodules are clean
+        run: just check-submodules-clean
+
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: [submodules]
     steps:
       - uses: actions/checkout@v4
         with:

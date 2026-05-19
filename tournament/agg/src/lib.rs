@@ -9,18 +9,32 @@ pub use state::TournamentState;
 use angzarr_client::proto::EventBook;
 use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
-    AdvanceBlindLevel, BlindLevelAdvanced, CloseRegistration, CompleteTournament, CreateTournament,
-    EliminatePlayer, EnrollPlayer, OpenRegistration, PauseTournament, PlayerEliminated,
-    ProcessRebuy, RebuyDenied, RebuyProcessed, RegistrationClosed, RegistrationOpened,
-    ResumeTournament, StartTournament, TournamentCompleted, TournamentCreated,
-    TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled, TournamentResumed,
-    TournamentStarted,
+    AbsentBlindAdvanced, AdvanceAbsentBlind, AdvanceBlindLevel, AwardBounty, BagAndTag,
+    BagAndTagComplete, BlindLevelAdvanced, BountyAwarded, CloseRegistration, ColorUp,
+    ColorUpCompleted, CompleteTournament, CreateTournament, DecrementPenalty, DetectNoShow,
+    DisqualifyPlayer, EliminatePlayer, EnrollPlayer, EnterHandForHand, HandForHandEnded,
+    HandForHandHandRecorded, HandForHandRoundComplete, HandForHandStarted, IssuePenalty,
+    MixedGameVariantRotated, NewHandsHalted, NoShowDetected, OpenRegistration, PauseTournament,
+    PenaltyIssued, PenaltyRoundsDecremented, PlayerDisqualified, PlayerEliminated,
+    PlayerMovedBetweenTables, PlayerMovedTables, PlayerReEntered, ProcessRebuy, ReEntryPlayer,
+    RebalanceTables, RebuyDenied, RebuyProcessed, RecordHandForHandHand,
+    RecordHandForHandRoundComplete, RecordSimultaneousBusts, RecordTableHandComplete,
+    RegistrationClosed, RegistrationOpened, ReseatAbsentPlayer, ResumeTournament,
+    RotateMixedGameVariant, SeatRedrawTriggered, SimultaneousBustsRecorded, StartTournament,
+    StopNewHands, TournamentCompleted, TournamentCreated, TournamentEnrollmentRejected,
+    TournamentPaused, TournamentPlayerEnrolled, TournamentResumed, TournamentStarted,
+    TriggerSeatRedraw,
 };
 
 use crate::state::{
-    apply_blind_advanced, apply_completed, apply_created, apply_enrollment_rejected, apply_paused,
-    apply_player_eliminated, apply_player_enrolled, apply_rebuy_denied, apply_rebuy_processed,
-    apply_registration_closed, apply_registration_opened, apply_resumed, apply_started,
+    apply_bag_and_tag_complete, apply_blind_advanced, apply_bounty_awarded,
+    apply_color_up_completed, apply_completed, apply_created, apply_enrollment_rejected,
+    apply_hand_for_hand_ended, apply_hand_for_hand_round_complete, apply_hand_for_hand_started,
+    apply_mixed_game_variant_rotated, apply_new_hands_halted, apply_no_show_detected, apply_paused,
+    apply_penalty_issued, apply_penalty_rounds_decremented, apply_player_disqualified,
+    apply_player_eliminated, apply_player_enrolled, apply_player_moved_tables,
+    apply_player_re_entered, apply_rebuy_denied, apply_rebuy_processed, apply_registration_closed,
+    apply_registration_opened, apply_resumed, apply_started,
 };
 
 pub struct TournamentAggregate;
@@ -139,6 +153,198 @@ impl TournamentAggregate {
         handlers::handle_complete_tournament(cmd, state, seq)
     }
 
+    // --- Advanced (TDA/WSOP) command handlers ---
+
+    #[handles(ColorUp)]
+    fn on_color_up(
+        &self,
+        cmd: ColorUp,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_color_up(cmd, state, seq)
+    }
+
+    #[handles(RebalanceTables)]
+    fn on_rebalance_tables(
+        &self,
+        cmd: RebalanceTables,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_rebalance_tables(cmd, state, seq)
+    }
+
+    #[handles(EnterHandForHand)]
+    fn on_enter_hand_for_hand(
+        &self,
+        cmd: EnterHandForHand,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_enter_hand_for_hand(cmd, state, seq)
+    }
+
+    #[handles(RecordTableHandComplete)]
+    fn on_record_table_hand_complete(
+        &self,
+        cmd: RecordTableHandComplete,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_record_table_hand_complete(cmd, state, seq)
+    }
+
+    #[handles(RecordHandForHandRoundComplete)]
+    fn on_record_h4h_round_complete(
+        &self,
+        cmd: RecordHandForHandRoundComplete,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_record_round_complete(cmd, state, seq)
+    }
+
+    #[handles(RecordHandForHandHand)]
+    fn on_record_h4h_hand(
+        &self,
+        cmd: RecordHandForHandHand,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_record_h4h_hand(cmd, state, seq)
+    }
+
+    #[handles(RecordSimultaneousBusts)]
+    fn on_record_simultaneous_busts(
+        &self,
+        cmd: RecordSimultaneousBusts,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_record_simultaneous_busts(cmd, state, seq)
+    }
+
+    #[handles(TriggerSeatRedraw)]
+    fn on_trigger_seat_redraw(
+        &self,
+        cmd: TriggerSeatRedraw,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_trigger_seat_redraw(cmd, state, seq)
+    }
+
+    #[handles(ReseatAbsentPlayer)]
+    fn on_reseat_absent_player(
+        &self,
+        cmd: ReseatAbsentPlayer,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_reseat_absent_player(cmd, state, seq)
+    }
+
+    #[handles(ReEntryPlayer)]
+    fn on_re_entry_player(
+        &self,
+        cmd: ReEntryPlayer,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_re_entry_player(cmd, state, seq)
+    }
+
+    #[handles(AdvanceAbsentBlind)]
+    fn on_advance_absent_blind(
+        &self,
+        cmd: AdvanceAbsentBlind,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_advance_absent_blind(cmd, state, seq)
+    }
+
+    #[handles(RotateMixedGameVariant)]
+    fn on_rotate_mixed_game_variant(
+        &self,
+        cmd: RotateMixedGameVariant,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_rotate_mixed_game_variant(cmd, state, seq)
+    }
+
+    #[handles(StopNewHands)]
+    fn on_stop_new_hands(
+        &self,
+        cmd: StopNewHands,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_stop_new_hands(cmd, state, seq)
+    }
+
+    #[handles(BagAndTag)]
+    fn on_bag_and_tag(
+        &self,
+        cmd: BagAndTag,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_bag_and_tag(cmd, state, seq)
+    }
+
+    #[handles(IssuePenalty)]
+    fn on_issue_penalty(
+        &self,
+        cmd: IssuePenalty,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_issue_penalty(cmd, state, seq)
+    }
+
+    #[handles(DecrementPenalty)]
+    fn on_decrement_penalty(
+        &self,
+        cmd: DecrementPenalty,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_decrement_penalty(cmd, state, seq)
+    }
+
+    #[handles(DisqualifyPlayer)]
+    fn on_disqualify_player(
+        &self,
+        cmd: DisqualifyPlayer,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_disqualify_player(cmd, state, seq)
+    }
+
+    #[handles(AwardBounty)]
+    fn on_award_bounty(
+        &self,
+        cmd: AwardBounty,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_award_bounty(cmd, state, seq)
+    }
+
+    #[handles(DetectNoShow)]
+    fn on_detect_no_show(
+        &self,
+        cmd: DetectNoShow,
+        state: &TournamentState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_detect_no_show(cmd, state, seq)
+    }
+
     // --- Event appliers ---
 
     #[applies(TournamentCreated)]
@@ -204,6 +410,132 @@ impl TournamentAggregate {
     #[applies(TournamentStarted)]
     fn apply_started(state: &mut TournamentState, event: TournamentStarted) {
         apply_started(state, event);
+    }
+
+    // --- Advanced event appliers ---
+
+    #[applies(ColorUpCompleted)]
+    fn apply_color_up_completed(state: &mut TournamentState, event: ColorUpCompleted) {
+        apply_color_up_completed(state, event);
+    }
+
+    #[applies(PlayerMovedBetweenTables)]
+    fn apply_player_moved_between_tables(
+        _state: &mut TournamentState,
+        _event: PlayerMovedBetweenTables,
+    ) {
+        // No-op at the tournament aggregate; saga performs per-table
+        // chip motion. Captured here so the event is replayable
+        // without triggering "unknown event" warnings.
+    }
+
+    #[applies(HandForHandStarted)]
+    fn apply_hand_for_hand_started(state: &mut TournamentState, event: HandForHandStarted) {
+        apply_hand_for_hand_started(state, event);
+    }
+
+    #[applies(HandForHandRoundComplete)]
+    fn apply_hand_for_hand_round_complete(
+        state: &mut TournamentState,
+        event: HandForHandRoundComplete,
+    ) {
+        apply_hand_for_hand_round_complete(state, event);
+    }
+
+    #[applies(HandForHandHandRecorded)]
+    fn apply_hand_for_hand_hand_recorded(
+        _state: &mut TournamentState,
+        _event: HandForHandHandRecorded,
+    ) {
+        // No-op state change — the recorded event is consumed by the
+        // tournament-clock projector, not the aggregate.
+    }
+
+    #[applies(HandForHandEnded)]
+    fn apply_hand_for_hand_ended(state: &mut TournamentState, event: HandForHandEnded) {
+        apply_hand_for_hand_ended(state, event);
+    }
+
+    #[applies(SimultaneousBustsRecorded)]
+    fn apply_simultaneous_busts_recorded(
+        _state: &mut TournamentState,
+        _event: SimultaneousBustsRecorded,
+    ) {
+        // Bust group is consulted by CompleteTournament payout
+        // splitting; no aggregate state mutation required.
+    }
+
+    #[applies(SeatRedrawTriggered)]
+    fn apply_seat_redraw_triggered(_state: &mut TournamentState, _event: SeatRedrawTriggered) {
+        // Saga signal; aggregate has no state to update.
+    }
+
+    #[applies(PlayerMovedTables)]
+    fn apply_player_moved_tables(state: &mut TournamentState, event: PlayerMovedTables) {
+        // Two-purpose applier:
+        //   - Saga-side rebalance fan-out (no aggregate state to update).
+        //   - Per-table progress receipt for `RecordTableHandComplete`
+        //     while in hand-for-hand: discard the reported table from
+        //     `hand_for_hand_pending_tables` so the next command's
+        //     state replay sees the prior table's removal. Matches the
+        //     cpp tournament `apply_player_moved_tables`.
+        apply_player_moved_tables(state, event);
+    }
+
+    #[applies(PlayerReEntered)]
+    fn apply_player_re_entered(state: &mut TournamentState, event: PlayerReEntered) {
+        apply_player_re_entered(state, event);
+    }
+
+    #[applies(AbsentBlindAdvanced)]
+    fn apply_absent_blind_advanced(_state: &mut TournamentState, _event: AbsentBlindAdvanced) {
+        // Per-table chip motion; aggregate has no per-stack ledger.
+    }
+
+    #[applies(MixedGameVariantRotated)]
+    fn apply_mixed_game_variant_rotated(
+        state: &mut TournamentState,
+        event: MixedGameVariantRotated,
+    ) {
+        apply_mixed_game_variant_rotated(state, event);
+    }
+
+    #[applies(NewHandsHalted)]
+    fn apply_new_hands_halted(state: &mut TournamentState, event: NewHandsHalted) {
+        apply_new_hands_halted(state, event);
+    }
+
+    #[applies(BagAndTagComplete)]
+    fn apply_bag_and_tag_complete(state: &mut TournamentState, event: BagAndTagComplete) {
+        apply_bag_and_tag_complete(state, event);
+    }
+
+    #[applies(PenaltyIssued)]
+    fn apply_penalty_issued(state: &mut TournamentState, event: PenaltyIssued) {
+        apply_penalty_issued(state, event);
+    }
+
+    #[applies(PenaltyRoundsDecremented)]
+    fn apply_penalty_rounds_decremented(
+        state: &mut TournamentState,
+        event: PenaltyRoundsDecremented,
+    ) {
+        apply_penalty_rounds_decremented(state, event);
+    }
+
+    #[applies(PlayerDisqualified)]
+    fn apply_player_disqualified(state: &mut TournamentState, event: PlayerDisqualified) {
+        apply_player_disqualified(state, event);
+    }
+
+    #[applies(BountyAwarded)]
+    fn apply_bounty_awarded(state: &mut TournamentState, event: BountyAwarded) {
+        apply_bounty_awarded(state, event);
+    }
+
+    #[applies(NoShowDetected)]
+    fn apply_no_show_detected(state: &mut TournamentState, event: NoShowDetected) {
+        apply_no_show_detected(state, event);
     }
 }
 
@@ -645,7 +977,13 @@ mod handler_tests {
             duration_minutes: 20,
         });
         let book = agg
-            .on_advance_blind(AdvanceBlindLevel { ..Default::default() }, &state, 5)
+            .on_advance_blind(
+                AdvanceBlindLevel {
+                    ..Default::default()
+                },
+                &state,
+                5,
+            )
             .expect("handler should succeed");
         assert_eq!(book.pages.len(), 1);
     }

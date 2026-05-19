@@ -1,9 +1,7 @@
 //! Integration tests for the Player -> Table saga router.
 
 use angzarr_client::proto::page_header::SequenceType;
-use angzarr_client::proto::{
-    event_page, Cover, EventBook, EventPage, SagaHandleRequest, Uuid,
-};
+use angzarr_client::proto::{event_page, Cover, EventBook, EventPage, SagaHandleRequest, Uuid};
 use angzarr_client::router::{Built, Handler, HandlerConfig, Router};
 use angzarr_client::{full_type_url, Kind};
 use examples_proto::{PlayerReturningToPlay, PlayerSatIn, PlayerSatOut, PlayerSittingOut};
@@ -102,11 +100,7 @@ fn dispatch_player_sitting_out_emits_player_sat_out_fact_to_table() {
         "fact targets the table aggregate by table_root"
     );
 
-    let payload = match fact.pages[0]
-        .payload
-        .as_ref()
-        .expect("page payload")
-    {
+    let payload = match fact.pages[0].payload.as_ref().expect("page payload") {
         event_page::Payload::Event(any) => any,
         _ => panic!("expected inline event payload"),
     };
@@ -139,7 +133,10 @@ fn dispatch_player_returning_to_play_emits_player_sat_in_fact_to_table() {
         table_root: table_root.clone(),
         sat_in_at: None,
     };
-    let any = pack(&event, "angzarr_client.proto.examples.PlayerReturningToPlay");
+    let any = pack(
+        &event,
+        "angzarr_client.proto.examples.PlayerReturningToPlay",
+    );
     let resp = router
         .dispatch(saga_request(any, player_root.clone()))
         .expect("dispatch ok");
@@ -152,11 +149,7 @@ fn dispatch_player_returning_to_play_emits_player_sat_in_fact_to_table() {
     assert_eq!(cover.domain, "table");
     assert_eq!(cover.root.as_ref().expect("root set").value, table_root);
 
-    let payload = match fact.pages[0]
-        .payload
-        .as_ref()
-        .expect("page payload")
-    {
+    let payload = match fact.pages[0].payload.as_ref().expect("page payload") {
         event_page::Payload::Event(any) => any,
         _ => panic!("expected inline event payload"),
     };

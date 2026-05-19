@@ -334,12 +334,7 @@ fn given_action_on(world: &mut PMWorld, pos: i32) {
 /// (it must equal the seat count). Used by EU-0445/0446/0447 multi-seat
 /// scenarios where the canned 2-player init isn't expressive enough.
 #[given(regex = r"^dealer is at position (\d+) and (\d+) players seated at positions ([\d, ]+)$")]
-fn given_dealer_and_seats(
-    world: &mut PMWorld,
-    dealer: i32,
-    _count: i32,
-    positions_csv: String,
-) {
+fn given_dealer_and_seats(world: &mut PMWorld, dealer: i32, _count: i32, positions_csv: String) {
     let positions: Vec<i32> = positions_csv
         .split(',')
         .map(|s| s.trim())
@@ -363,9 +358,7 @@ fn given_dealer_and_seats(
 /// records the blind amounts, sets current_bet to the BB amount, and
 /// flags both blinds posted. Mirrors the post-blind state the hand
 /// aggregate would have produced before betting opens.
-#[given(
-    regex = r"^blinds posted: SB position (\d+) amount (\d+), BB position (\d+) amount (\d+)$"
-)]
+#[given(regex = r"^blinds posted: SB position (\d+) amount (\d+), BB position (\d+) amount (\d+)$")]
 fn given_blinds_posted_positions(
     world: &mut PMWorld,
     sb_pos: i32,
@@ -817,19 +810,25 @@ fn then_betting_not_complete(world: &mut PMWorld) {
         process
             .players
             .values()
-            .map(|p| (p.position, p.has_acted, p.bet_this_round, p.has_folded, p.is_all_in))
+            .map(|p| (
+                p.position,
+                p.has_acted,
+                p.bet_this_round,
+                p.has_folded,
+                p.is_all_in
+            ))
             .collect::<Vec<_>>()
     );
 }
 
 #[then(expr = "action_on is position {int}")]
 fn then_action_on_is(world: &mut PMWorld, pos: i32) {
-    let actual = world.process.as_ref().expect("process must exist").action_on;
-    assert_eq!(
-        actual, pos,
-        "Expected action_on={}, got {}",
-        pos, actual
-    );
+    let actual = world
+        .process
+        .as_ref()
+        .expect("process must exist")
+        .action_on;
+    assert_eq!(actual, pos, "Expected action_on={}, got {}", pos, actual);
 }
 
 #[then(expr = "betting_phase is set to {word}")]

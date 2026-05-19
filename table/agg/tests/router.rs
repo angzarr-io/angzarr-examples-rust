@@ -175,7 +175,12 @@ fn dispatch_leave_table_arm() {
 
 #[test]
 fn dispatch_start_hand_arm() {
-    let ctx = contextual(StartHand { ..Default::default() }, vec![table_created_event()]);
+    let ctx = contextual(
+        StartHand {
+            ..Default::default()
+        },
+        vec![table_created_event()],
+    );
     let _ = run(ctx);
 }
 

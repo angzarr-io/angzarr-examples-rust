@@ -1071,7 +1071,11 @@ fn then_player_specific_cards(world: &mut HandWorld, player_id: String, seed: St
         .unwrap_or_else(|| panic!("no cards for player {:?}", player_id));
 
     assert_eq!(player_cards.cards.len(), 2, "expected 2 hole cards");
-    let actual: Vec<(i32, i32)> = player_cards.cards.iter().map(|c| (c.suit, c.rank)).collect();
+    let actual: Vec<(i32, i32)> = player_cards
+        .cards
+        .iter()
+        .map(|c| (c.suit, c.rank))
+        .collect();
     assert_eq!(
         actual,
         vec![c0, c1],

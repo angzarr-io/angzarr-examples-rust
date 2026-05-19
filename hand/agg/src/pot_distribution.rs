@@ -108,8 +108,7 @@ pub fn split_pot_clockwise_from_button(
         .collect();
     indexed.sort_by_key(|&(_, d)| d);
 
-    let mut extra_recipients: std::collections::HashSet<usize> =
-        std::collections::HashSet::new();
+    let mut extra_recipients: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for &(idx, _) in indexed.iter().take(odd_chips as usize) {
         extra_recipients.insert(idx);
     }
@@ -160,8 +159,7 @@ pub fn split_pot_by_suit(
         indexed.sort_by(|a, b| a.1.cmp(&b.1));
     }
 
-    let mut extra_recipients: std::collections::HashSet<usize> =
-        std::collections::HashSet::new();
+    let mut extra_recipients: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for &(idx, _) in indexed.iter().take(odd_chips as usize) {
         extra_recipients.insert(idx);
     }
@@ -246,11 +244,7 @@ mod tests {
 
     #[test]
     fn three_way_tie_with_one_odd_chip_goes_clockwise() {
-        let winners = vec![
-            winner("Alice", 1),
-            winner("Bob", 2),
-            winner("Carol", 3),
-        ];
+        let winners = vec![winner("Alice", 1), winner("Bob", 2), winner("Carol", 3)];
         let awards = split_pot_clockwise_from_button(100, &winners, 0, 9).unwrap();
         let bp = by_player(&awards);
         assert_eq!(bp.get("Alice"), Some(&34));
@@ -260,11 +254,7 @@ mod tests {
 
     #[test]
     fn three_way_tie_with_two_odd_chips_continues_clockwise() {
-        let winners = vec![
-            winner("Alice", 1),
-            winner("Bob", 2),
-            winner("Carol", 3),
-        ];
+        let winners = vec![winner("Alice", 1), winner("Bob", 2), winner("Carol", 3)];
         let awards = split_pot_clockwise_from_button(101, &winners, 0, 9).unwrap();
         let bp = by_player(&awards);
         assert_eq!(bp.get("Alice"), Some(&34));
@@ -359,13 +349,9 @@ mod tests {
     #[test]
     fn distance_is_modular_via_max_seats() {
         let winners = vec![winner("Alice", 0), winner("Bob", 4)];
-        let bp_9 = by_player(
-            &split_pot_clockwise_from_button(101, &winners, 8, 9).unwrap(),
-        );
+        let bp_9 = by_player(&split_pot_clockwise_from_button(101, &winners, 8, 9).unwrap());
         assert_eq!(bp_9.get("Alice"), Some(&51));
-        let bp_10 = by_player(
-            &split_pot_clockwise_from_button(101, &winners, 8, 10).unwrap(),
-        );
+        let bp_10 = by_player(&split_pot_clockwise_from_button(101, &winners, 8, 10).unwrap());
         assert_eq!(bp_10.get("Alice"), Some(&51));
     }
 

@@ -2,9 +2,14 @@
 target/
 *.rs.bk
 
-# Buf-exported protos (run `just proto-gen` to fetch)
+# Buf-exported protos (run `just generate-proto` to fetch)
 examples-proto/
 angzarr-proto/
+
+# Generated Rust code — emitted by `just generate-proto`. Never committed.
+# See project_proto_generation_model.md.
+proto/src/generated/*.rs
+!proto/src/generated/.gitkeep
 
 # Binaries
 */*/agg-*
@@ -29,3 +34,5 @@ Thumbs.db
 # cargo-mutants
 mutants.out/
 mutants.out.old/
+# Ephemeral mutation build cache (compiled artifacts only, never mutated source)
+.mutants-cache/

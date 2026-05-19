@@ -533,8 +533,7 @@ mod tests {
         // current_bet = 10, pot = 15. SB and BB have bet_this_round set;
         // BB has has_acted=false (option still open).
         let mut p = HandProcess::new();
-        p.players
-            .insert(0, PlayerState::new(0, "p1".into(), 1000));
+        p.players.insert(0, PlayerState::new(0, "p1".into(), 1000));
         let mut sb = PlayerState::new(1, "p2".into(), 995);
         sb.bet_this_round = 5;
         p.players.insert(1, sb);
@@ -582,8 +581,7 @@ mod tests {
         // Heads-up after one folds: only one active seat, round trivially
         // complete (the remaining player wins by default).
         let mut p = HandProcess::new();
-        p.players
-            .insert(0, PlayerState::new(0, "p1".into(), 500));
+        p.players.insert(0, PlayerState::new(0, "p1".into(), 500));
         let mut p2 = PlayerState::new(1, "p2".into(), 500);
         p2.has_folded = true;
         p.players.insert(1, p2);
@@ -622,13 +620,11 @@ mod tests {
     #[test]
     fn advance_action_on_wraps_and_skips_folded() {
         let mut p = HandProcess::new();
-        p.players
-            .insert(0, PlayerState::new(0, "p1".into(), 500));
+        p.players.insert(0, PlayerState::new(0, "p1".into(), 500));
         let mut p2 = PlayerState::new(1, "p2".into(), 500);
         p2.has_folded = true;
         p.players.insert(1, p2);
-        p.players
-            .insert(2, PlayerState::new(2, "p3".into(), 500));
+        p.players.insert(2, PlayerState::new(2, "p3".into(), 500));
         p.action_on = 0;
         p.advance_action_on();
         assert_eq!(p.action_on, 2, "must skip folded seat 1");
@@ -640,10 +636,8 @@ mod tests {
     fn advance_action_on_handles_sparse_seats() {
         // Seats 0 and 3 only — `len() % seat_max` would silently mis-walk.
         let mut p = HandProcess::new();
-        p.players
-            .insert(0, PlayerState::new(0, "p1".into(), 500));
-        p.players
-            .insert(3, PlayerState::new(3, "p2".into(), 500));
+        p.players.insert(0, PlayerState::new(0, "p1".into(), 500));
+        p.players.insert(3, PlayerState::new(3, "p2".into(), 500));
         p.action_on = 0;
         p.advance_action_on();
         assert_eq!(p.action_on, 3);

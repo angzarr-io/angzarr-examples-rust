@@ -9,15 +9,67 @@ ROOT := `git rev-parse --show-toplevel`
 default:
     @just --list
 
-# Export proto definitions from angzarr-project submodule.
+# =============================================================================
+# Proto generation (in-container) — see project_proto_generation_model
+# =============================================================================
+# Two-stage pipeline:
+#   1. `buf export` lands the `.proto` sources at `examples-proto/` and
+#      `angzarr-proto/` in the source tree (flat layout matches what the
+#      build.rs prost include path expects).
+#   2. `GENERATE_PROTOS=1 cargo check -p examples-proto` flips the proto crate's
+#      build.rs out of no-op mode and emits the `.rs` bindings into
+#      `proto/src/generated/`. Subsequent `cargo build` calls skip codegen
+#      and consume the pre-emitted file via `include!` in proto/src/lib.rs.
 #
-# `examples-proto/examples/*.proto` carries a flat layout the rust build.rs
-# expects. The canonical protos declare `package angzarr_client.proto.examples`,
-# so buf export lands them at `_proto_export/angzarr_client/proto/examples/`.
-# Copy from there and rewrite the deep `angzarr_client/proto/examples/X.proto`
-# imports to the flat `examples/X.proto` form so protoc can resolve them
-# against the flat include root.
-proto-gen:
+# `generate-proto-force` is the unconditional regen path. `generate-proto`
+# wraps it with the mtime guard so it's safe to use as a recipe-dependency
+# of build/test/lint. The `proto-gen` alias preserved below maps the
+# pre-model name to the new entrypoint.
+
+# Idempotent — skips when bindings are fresher than the newest .proto.
+generate-proto:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src_dir="{{ROOT}}/angzarr-project/proto"
+    out_dir="{{ROOT}}/proto/src/generated"
+    if [ ! -d "$src_dir" ]; then
+        echo "[generate-proto] $src_dir missing — submodule not initialized?" >&2
+        exit 1
+    fi
+    newest_proto=$(find "$src_dir" -name '*.proto' -printf '%T@\n' 2>/dev/null \
+                    | sort -n | tail -1)
+    if [ -d "$out_dir" ]; then
+        oldest_pb=$(find "$out_dir" -name '*.rs' -printf '%T@\n' 2>/dev/null \
+                        | sort -n | head -1)
+    else
+        oldest_pb=""
+    fi
+    if [ -n "$newest_proto" ] && [ -n "$oldest_pb" ] \
+        && awk -v p="$newest_proto" -v b="$oldest_pb" 'BEGIN{exit !(b>p)}'; then
+        echo "[generate-proto] bindings up-to-date, skipping"
+        exit 0
+    fi
+    just generate-proto-force
+
+generate-proto-force:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src_dir="{{ROOT}}/angzarr-project/proto"
+    if [ ! -d "$src_dir" ]; then
+        echo "[generate-proto] $src_dir missing — submodule not initialized?" >&2
+        exit 1
+    fi
+    # Stage 1: buf export → flat-layout proto sources in tree
+    #
+    # `examples-proto/examples/*.proto` carries the flat layout the proto
+    # crate's build.rs include path expects. The canonical protos declare
+    # `package angzarr_client.proto.examples`, so buf export lands them at
+    # `_proto_export/angzarr_client/proto/examples/`. Copy from there and
+    # rewrite the deep `angzarr_client/proto/examples/X.proto` imports to the
+    # flat `examples/X.proto` form so protoc can resolve them against the
+    # flat include root.
+    cd "{{ROOT}}"
+    rm -rf _proto_export
     buf export angzarr-project/proto -o _proto_export
     rm -rf angzarr-proto examples-proto
     cp -r _proto_export angzarr-proto
@@ -25,33 +77,45 @@ proto-gen:
     cp _proto_export/angzarr_client/proto/examples/*.proto examples-proto/examples/
     sed -i 's|angzarr_client/proto/examples/|examples/|g' examples-proto/examples/*.proto
     rm -rf _proto_export
+    # Stage 2: codegen → .rs bindings in proto/src/generated/
+    mkdir -p proto/src/generated
+    # Force the proto crate's build script to re-run even when cargo's
+    # incremental cache thinks the inputs are unchanged. Bumping its mtime
+    # is the cheapest invalidation — `cargo clean -p` would force a full
+    # rebuild.
+    touch proto/build.rs
+    GENERATE_PROTOS=1 cargo check -p examples-proto
+    echo "[generate-proto] emitted to proto/src/generated/"
+
+# Back-compat alias.
+proto-gen: generate-proto
 
 # Build all workspace crates
-build: proto-gen
+build: generate-proto
     cargo build --workspace
 
 # Build release binaries
-build-release:
+build-release: generate-proto
     cargo build --workspace --release
 
 # Run all tests
-test:
+test: generate-proto
     cargo test --workspace
 
 # Run clippy linter
-lint:
+lint: generate-proto
     cargo clippy --workspace -- -D warnings
 
 # Check formatting (use fmt-fix to auto-format)
-fmt:
+fmt: generate-proto
     cargo fmt --check
 
 # Auto-format code
-fmt-fix:
+fmt-fix: generate-proto
     cargo fmt
 
 # Check code compiles
-check:
+check: generate-proto
     cargo check --workspace
 
 # Run all checks (build + test + lint + fmt)
@@ -65,18 +129,18 @@ clean:
 # === Additional Targets ===
 
 # Build debug binaries
-build-dev:
+build-dev: generate-proto
     cargo build --workspace
 
 # Run unit tests only (cargo --lib; equivalent to Python's `test-pytest`)
-test-unit:
+test-unit: generate-proto
     cargo test --workspace --lib
 
 # Cucumber unit-level: poker handler logic, direct invocation, no infra.
 # Mirrors Python's `test-example-unit` (behave on features/example/unit/).
 # These run the per-domain BDD test binaries under tests/tests/, excluding
 # the e2e `acceptance` binary.
-test-example-unit:
+test-example-unit: generate-proto
     cargo test --workspace \
         --test betting_round --test game_rules --test hand \
         --test orchestration --test player --test poker_game_unit \
@@ -86,7 +150,7 @@ test-example-unit:
 # Cucumber acceptance-level: poker E2E via CommandClient (gRPC).
 # Mirrors Python's `test-example-acceptance` (behave on features/example/acceptance/).
 # Coordinator endpoints picked up from PLAYER_URL/TABLE_URL/HAND_URL/STREAM_URL.
-test-example-acceptance:
+test-example-acceptance: generate-proto
     cargo test --workspace --test acceptance
 
 # Back-compat alias: pre-split target ran both BDD unit and acceptance.
@@ -101,7 +165,7 @@ run: build-release
         -- --config examples/rust/standalone.yaml
 
 # Run mutation tests on aggregate packages (70% threshold over viable mutants)
-mutation-test:
+mutation-test: generate-proto
     #!/usr/bin/env bash
     set -uo pipefail
     # Per-mutant workspace copies are multi-GB and cargo-mutants must copy the

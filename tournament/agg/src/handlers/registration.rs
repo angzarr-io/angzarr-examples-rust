@@ -6,8 +6,7 @@ use examples_proto::{CloseRegistration, OpenRegistration, RegistrationClosed, Re
 use examples_utils::{event_page, pack_event, reject};
 
 use crate::errors::{
-    CannotOpenRegistrationRunning, RegistrationAlreadyOpen, RegistrationNotOpen,
-    TournamentNotFound,
+    CannotOpenRegistrationRunning, RegistrationAlreadyOpen, RegistrationNotOpen, TournamentNotFound,
 };
 use crate::state::TournamentState;
 

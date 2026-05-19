@@ -1,10 +1,14 @@
 //! Tournament aggregate state and event appliers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use examples_proto::{
-    BlindLevel, BlindLevelAdvanced, GameVariant, PlayerEliminated, RebuyConfig, RebuyDenied,
-    RebuyProcessed, RegistrationClosed, RegistrationOpened, TournamentCompleted, TournamentCreated,
+    BagAndTagComplete, BlindLevel, BlindLevelAdvanced, BountyAwarded, ColorUpCompleted,
+    GameVariant, HandForHandEnded, HandForHandRoundComplete, HandForHandStarted,
+    MixedGameVariantRotated, NewHandsHalted, NoShowDetected, PenaltyIssued,
+    PenaltyRoundsDecremented, PenaltySeverity, PlayerDisqualified, PlayerEliminated,
+    PlayerMovedTables, PlayerReEntered, RebuyConfig, RebuyDenied, RebuyProcessed,
+    RegistrationClosed, RegistrationOpened, TournamentCompleted, TournamentCreated,
     TournamentEnrollmentRejected, TournamentPaused, TournamentPlayerEnrolled, TournamentResumed,
     TournamentStarted, TournamentStatus,
 };
@@ -36,6 +40,43 @@ pub struct TournamentState {
     pub registered_players: HashMap<String, PlayerRegistration>,
     pub players_remaining: i32,
     pub total_prize_pool: i64,
+    // Hand-for-hand (TDA Rule 12) — bubble synchronisation state.
+    pub hand_for_hand: bool,
+    pub hand_for_hand_round: i32,
+    pub hand_for_hand_pending_tables: HashSet<Vec<u8>>,
+    pub hand_for_hand_active_tables: HashSet<Vec<u8>>,
+    // Chip economy — total chips currently in play (TDA Rule 24A/24C
+    // conservation). Updated by color-up, re-entry, no-show, and
+    // disqualification appliers so audits can trace the chip ledger.
+    pub total_chips_in_play: i64,
+    // Penalty register — players currently serving a TDA Rule 71
+    // penalty. Strings keyed by player_root_hex; values are the
+    // remaining rounds (for MISSED_ROUND) or 1 (for MISSED_HAND).
+    pub active_penalties: HashMap<String, i32>,
+    pub penalty_severity: HashMap<String, PenaltySeverity>,
+    // Bounty register — eliminator player_root_hex → cumulative chip
+    // bounty paid (RP-22 / WSOP Rule 39).
+    pub bounty_totals: HashMap<String, i64>,
+    // Bag-and-tag snapshots — per-player end-of-day state (WSOP Rule
+    // 122). Populated by BagAndTagComplete; consulted on resume.
+    pub bag_snapshots: HashMap<String, BagSnapshot>,
+    // No-show register — players ruled no-show after the first-break
+    // deadline (WSOP Rule 16). Their chips have been removed from
+    // total_chips_in_play; buy-in is held externally for refund.
+    pub no_show_players: HashSet<String>,
+    // New-hand halt — operator-issued stop (WSOP Rule 125). When set,
+    // tables block subsequent StartHand commands.
+    pub new_hands_halted: bool,
+    // Mixed-game rotation index — TDA RP-18 / HORSE cycle position.
+    // Cycles through GameVariant variants on RotateMixedGameVariant.
+    pub mixed_game_index: i32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BagSnapshot {
+    pub stack: i64,
+    pub table_root: Vec<u8>,
+    pub seat: i32,
 }
 
 impl TournamentState {
@@ -57,6 +98,22 @@ impl TournamentState {
 
     pub fn is_player_registered(&self, player_root_hex: &str) -> bool {
         self.registered_players.contains_key(player_root_hex)
+    }
+
+    pub fn is_hand_for_hand(&self) -> bool {
+        self.hand_for_hand
+    }
+
+    pub fn is_new_hands_halted(&self) -> bool {
+        self.new_hands_halted
+    }
+
+    pub fn is_no_show(&self, player_root_hex: &str) -> bool {
+        self.no_show_players.contains(player_root_hex)
+    }
+
+    pub fn is_on_penalty(&self, player_root_hex: &str) -> bool {
+        self.active_penalties.contains_key(player_root_hex)
     }
 
     pub fn can_rebuy(&self, player_root_hex: &str) -> bool {
@@ -168,6 +225,166 @@ pub fn apply_completed(state: &mut TournamentState, _event: TournamentCompleted)
 
 pub fn apply_started(state: &mut TournamentState, _event: TournamentStarted) {
     state.status = TournamentStatus::TournamentRunning;
+    // Seed total_chips_in_play from registered stacks at start. Subsequent
+    // appliers (color-up, re-entry, no-show, disqualification) adjust
+    // the ledger; the conservation invariant is checked in tests.
+    state.total_chips_in_play = state
+        .registered_players
+        .values()
+        .map(|reg| reg.starting_stack)
+        .sum();
+}
+
+pub fn apply_color_up_completed(state: &mut TournamentState, event: ColorUpCompleted) {
+    // Conservation invariant (TDA Rule 24A/24C): total chips moves by
+    // the rescue gain minus the race loss leftover. Mirrors the Python
+    // applier semantics in `tournament/agg/handlers.py:apply_color_up_completed`.
+    state.total_chips_in_play += event.chips_added_by_rescue - event.chips_removed_by_race;
+}
+
+pub fn apply_hand_for_hand_started(state: &mut TournamentState, event: HandForHandStarted) {
+    state.hand_for_hand = true;
+    state.hand_for_hand_round = 0;
+    state.hand_for_hand_pending_tables = event.active_table_roots.iter().cloned().collect();
+    state.hand_for_hand_active_tables = event.active_table_roots.into_iter().collect();
+}
+
+pub fn apply_player_moved_tables(state: &mut TournamentState, event: PlayerMovedTables) {
+    // While in hand-for-hand the tournament emits `PlayerMovedTables`
+    // with only `from_table_root` set as a per-table progress receipt
+    // for `RecordTableHandComplete` (see `handle_record_table_hand_complete`).
+    // Discard that table from the per-round pending set so the next
+    // command's state replay sees the prior table's removal. Mirrors
+    // the cpp `apply_player_moved_tables` in
+    // `examples-cpp/.../tournament_state.cpp` which also performs the
+    // discard. Outside hand-for-hand mode (e.g. seat-redraw rebalance)
+    // the pending set is empty and the discard is a no-op.
+    if !event.from_table_root.is_empty() {
+        state
+            .hand_for_hand_pending_tables
+            .remove(&event.from_table_root);
+    }
+}
+
+pub fn apply_hand_for_hand_round_complete(
+    state: &mut TournamentState,
+    event: HandForHandRoundComplete,
+) {
+    state.hand_for_hand_round = event.round_number;
+    // Re-seed the pending set from active tables so the next
+    // synchronised round can be tracked independently. Mirrors Python's
+    // `apply_hand_for_hand_round_complete`.
+    state.hand_for_hand_pending_tables = state.hand_for_hand_active_tables.clone();
+}
+
+pub fn apply_hand_for_hand_ended(state: &mut TournamentState, _event: HandForHandEnded) {
+    state.hand_for_hand = false;
+    state.hand_for_hand_pending_tables.clear();
+    state.hand_for_hand_active_tables.clear();
+}
+
+pub fn apply_penalty_issued(state: &mut TournamentState, event: PenaltyIssued) {
+    let key = hex::encode(&event.player_root);
+    let severity = match event.r#type.as_str() {
+        "MISSED_ROUND" => PenaltySeverity::MissedRound,
+        "MISSED_HAND" => PenaltySeverity::MissedHand,
+        "DISQUALIFIED" => PenaltySeverity::Disqualification,
+        _ => PenaltySeverity::VerbalWarning,
+    };
+    state.penalty_severity.insert(key.clone(), severity);
+    // Track round-counter only for non-verbal/non-DQ penalties; the
+    // decrement saga ticks this down as rounds elapse.
+    if matches!(
+        severity,
+        PenaltySeverity::MissedHand | PenaltySeverity::MissedRound
+    ) {
+        let rounds = if event.rounds > 0 { event.rounds } else { 1 };
+        state.active_penalties.insert(key, rounds);
+    }
+}
+
+pub fn apply_penalty_rounds_decremented(
+    state: &mut TournamentState,
+    event: PenaltyRoundsDecremented,
+) {
+    let key = hex::encode(&event.player_root);
+    if event.rounds_remaining <= 0 {
+        state.active_penalties.remove(&key);
+        state.penalty_severity.remove(&key);
+    } else {
+        state.active_penalties.insert(key, event.rounds_remaining);
+    }
+}
+
+pub fn apply_player_disqualified(state: &mut TournamentState, event: PlayerDisqualified) {
+    let key = hex::encode(&event.player_root);
+    state.registered_players.remove(&key);
+    state.active_penalties.remove(&key);
+    state.penalty_severity.remove(&key);
+    state.players_remaining = state.registered_players.len() as i32;
+    // DQ chips are removed from total_chips_in_play (Rule 71D).
+    state.total_chips_in_play -= event.chips_removed;
+}
+
+pub fn apply_player_re_entered(state: &mut TournamentState, event: PlayerReEntered) {
+    // Re-entry (TDA Rule 8B): forfeited chips removed, fresh stack
+    // added. Mirrors Python applier behavior.
+    let key = hex::encode(&event.player_root);
+    state.total_chips_in_play -= event.chips_forfeited;
+    state.total_chips_in_play += event.chips_added;
+    // Restore registration with the fresh starting stack.
+    state.registered_players.insert(
+        key,
+        PlayerRegistration {
+            player_root: event.player_root,
+            fee_paid: state.buy_in,
+            starting_stack: event.chips_added,
+            rebuys_used: 0,
+            addon_taken: false,
+            table_assignment: 0,
+            seat_assignment: 0,
+        },
+    );
+    state.players_remaining = state.registered_players.len() as i32;
+}
+
+pub fn apply_bounty_awarded(state: &mut TournamentState, event: BountyAwarded) {
+    let key = hex::encode(&event.eliminator_root);
+    *state.bounty_totals.entry(key).or_insert(0) += event.amount;
+}
+
+pub fn apply_no_show_detected(state: &mut TournamentState, event: NoShowDetected) {
+    let key = hex::encode(&event.player_root);
+    state.no_show_players.insert(key.clone());
+    state.registered_players.remove(&key);
+    state.players_remaining = state.registered_players.len() as i32;
+    // Chips removed (WSOP Rule 16); buy-in held externally.
+    state.total_chips_in_play -= event.chips_removed;
+}
+
+pub fn apply_new_hands_halted(state: &mut TournamentState, _event: NewHandsHalted) {
+    state.new_hands_halted = true;
+}
+
+pub fn apply_bag_and_tag_complete(state: &mut TournamentState, event: BagAndTagComplete) {
+    for snapshot in event.snapshots {
+        state.bag_snapshots.insert(
+            hex::encode(&snapshot.player_root),
+            BagSnapshot {
+                stack: snapshot.stack,
+                table_root: snapshot.table_root,
+                seat: snapshot.seat,
+            },
+        );
+    }
+}
+
+pub fn apply_mixed_game_variant_rotated(
+    state: &mut TournamentState,
+    event: MixedGameVariantRotated,
+) {
+    state.game_variant = GameVariant::try_from(event.to_variant).unwrap_or_default();
+    state.mixed_game_index += 1;
 }
 
 #[cfg(test)]
@@ -285,5 +502,57 @@ mod tests {
         let hex_key = enroll(&mut state, vec![0x11], 500);
         // status is TournamentCreated after apply_created
         assert!(!state.can_rebuy(&hex_key));
+    }
+
+    #[test]
+    fn apply_player_moved_tables_discards_from_h4h_pending_set() {
+        // `PlayerMovedTables` doubles as the per-table progress receipt
+        // for `RecordTableHandComplete` while in hand-for-hand. The
+        // applier must remove `from_table_root` from the pending set
+        // so the next replay sees the prior table's discard.
+        let mut state = created_state(None);
+        apply_hand_for_hand_started(
+            &mut state,
+            HandForHandStarted {
+                started_at: None,
+                active_table_roots: vec![vec![0xaa], vec![0xbb]],
+            },
+        );
+        assert_eq!(state.hand_for_hand_pending_tables.len(), 2);
+        apply_player_moved_tables(
+            &mut state,
+            PlayerMovedTables {
+                from_table_root: vec![0xaa],
+                ..Default::default()
+            },
+        );
+        assert_eq!(state.hand_for_hand_pending_tables.len(), 1);
+        assert!(!state.hand_for_hand_pending_tables.contains(&vec![0xaa]));
+        assert!(state.hand_for_hand_pending_tables.contains(&vec![0xbb]));
+    }
+
+    #[test]
+    fn apply_player_moved_tables_with_empty_from_table_root_is_noop_for_pending() {
+        // Saga-side rebalance emits may carry an empty `from_table_root`
+        // when the bytes are not yet stamped; the applier must not
+        // accidentally erase the empty-vec key from the pending set
+        // (HashSet `remove` would treat empty Vec as a valid key).
+        let mut state = created_state(None);
+        apply_hand_for_hand_started(
+            &mut state,
+            HandForHandStarted {
+                started_at: None,
+                active_table_roots: vec![vec![0xaa]],
+            },
+        );
+        apply_player_moved_tables(
+            &mut state,
+            PlayerMovedTables {
+                from_table_root: vec![],
+                ..Default::default()
+            },
+        );
+        assert_eq!(state.hand_for_hand_pending_tables.len(), 1);
+        assert!(state.hand_for_hand_pending_tables.contains(&vec![0xaa]));
     }
 }

@@ -14,15 +14,28 @@ pub use state::{HandState, PlayerHandState, PotState};
 use angzarr_client::proto::EventBook;
 use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
-    ActionTaken, AwardPot, BettingRoundComplete, BlindPosted, CardsDealt, CommunityCardsDealt,
-    DealCards, DealCommunityCards, DrawCompleted, HandComplete, PlayerAction, PostBlind,
-    PotAwarded, RequestDraw, RevealCards, ShowdownStarted,
+    ActionClockStarted, ActionTaken, AwardPot, BettingRoundComplete, BlindPosted, BringInCorrected,
+    ButtonCardReplaced, CardsDealt, CommunityCardsDealt, CorrectBringIn, CorrectIllegalBet,
+    DealCards, DealCommunityCards, DealStudCommunityCard, DealStudStreet, DeclareAction,
+    DeclareMisdeal, DrawCompleted, FouledDeckDetected, HandComplete, HandRedealt, MisdealDeclared,
+    PlayerAction, PostBlind, PotAwarded, PrematureFlopDetected, PrematureRiverDetected,
+    PrematureStudCardDetected, PrematureTurnDetected, PriorChipPulledBack, PullBackPriorChip,
+    RedealHand, ReplaceButtonCard, ReplaceSeventhStreetCard, ReportExposedStudDowncard,
+    ReportFouledDeck, ReportPrematureFlop, ReportPrematureRiver, ReportPrematureStudCard,
+    ReportPrematureTurn, RequestDraw, RevealCards, ScrambleAllDownCards, SeventhStreetCardReplaced,
+    ShowdownStarted, StartActionClock, StudCommunityCardDealt, StudDoorCardSelected,
+    StudDownCardConverted, StudStreetDealt, UnderbetCorrected,
 };
 
 use crate::state::{
-    apply_action_taken, apply_betting_round_complete, apply_blind_posted, apply_cards_dealt,
-    apply_community_cards_dealt, apply_draw_completed, apply_hand_complete, apply_pot_awarded,
-    apply_showdown_started, new_hand_state,
+    apply_action_taken, apply_betting_round_complete, apply_blind_posted, apply_bring_in_corrected,
+    apply_button_card_replaced, apply_cards_dealt, apply_community_cards_dealt,
+    apply_draw_completed, apply_fouled_deck_detected, apply_hand_complete, apply_hand_redealt,
+    apply_misdeal_declared, apply_pot_awarded, apply_premature_flop_detected,
+    apply_premature_river_detected, apply_premature_stud_card_detected,
+    apply_premature_turn_detected, apply_seventh_street_card_replaced, apply_showdown_started,
+    apply_stud_community_card_dealt, apply_stud_door_card_selected, apply_stud_down_card_converted,
+    apply_stud_street_dealt, new_hand_state,
 };
 
 pub struct HandAggregate;
@@ -101,6 +114,188 @@ impl HandAggregate {
         handlers::handle_award_pot(cmd, state, seq)
     }
 
+    #[handles(StartActionClock)]
+    fn on_start_action_clock(
+        &self,
+        cmd: StartActionClock,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_start_action_clock(cmd, state, seq)
+    }
+
+    #[handles(DeclareAction)]
+    fn on_declare_action(
+        &self,
+        cmd: DeclareAction,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_declare_action(cmd, state, seq)
+    }
+
+    #[handles(PullBackPriorChip)]
+    fn on_pull_back_prior_chip(
+        &self,
+        cmd: PullBackPriorChip,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_pull_back_prior_chip(cmd, state, seq)
+    }
+
+    #[handles(CorrectIllegalBet)]
+    fn on_correct_illegal_bet(
+        &self,
+        cmd: CorrectIllegalBet,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_correct_illegal_bet(cmd, state, seq)
+    }
+
+    // --- PR #12 cascade handlers (14 new commands) ----------------------
+
+    #[handles(DeclareMisdeal)]
+    fn on_declare_misdeal(
+        &self,
+        cmd: DeclareMisdeal,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_declare_misdeal(cmd, state, seq)
+    }
+
+    #[handles(ReportFouledDeck)]
+    fn on_report_fouled_deck(
+        &self,
+        cmd: ReportFouledDeck,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_report_fouled_deck(cmd, state, seq)
+    }
+
+    #[handles(RedealHand)]
+    fn on_redeal_hand(
+        &self,
+        cmd: RedealHand,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_redeal_hand(cmd, state, seq)
+    }
+
+    #[handles(ReplaceButtonCard)]
+    fn on_replace_button_card(
+        &self,
+        cmd: ReplaceButtonCard,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_replace_button_card(cmd, state, seq)
+    }
+
+    #[handles(ReportPrematureFlop)]
+    fn on_report_premature_flop(
+        &self,
+        cmd: ReportPrematureFlop,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_report_premature_flop(cmd, state, seq)
+    }
+
+    #[handles(ReportPrematureTurn)]
+    fn on_report_premature_turn(
+        &self,
+        cmd: ReportPrematureTurn,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_report_premature_turn(cmd, state, seq)
+    }
+
+    #[handles(ReportPrematureRiver)]
+    fn on_report_premature_river(
+        &self,
+        cmd: ReportPrematureRiver,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_report_premature_river(cmd, state, seq)
+    }
+
+    #[handles(DealStudStreet)]
+    fn on_deal_stud_street(
+        &self,
+        cmd: DealStudStreet,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_deal_stud_street(cmd, state, seq)
+    }
+
+    #[handles(DealStudCommunityCard)]
+    fn on_deal_stud_community_card(
+        &self,
+        cmd: DealStudCommunityCard,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_deal_stud_community_card(cmd, state, seq)
+    }
+
+    #[handles(ScrambleAllDownCards)]
+    fn on_scramble_all_down_cards(
+        &self,
+        cmd: ScrambleAllDownCards,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_scramble_all_down_cards(cmd, state, seq)
+    }
+
+    #[handles(ReportExposedStudDowncard)]
+    fn on_report_exposed_stud_downcard(
+        &self,
+        cmd: ReportExposedStudDowncard,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_report_exposed_stud_downcard(cmd, state, seq)
+    }
+
+    #[handles(ReplaceSeventhStreetCard)]
+    fn on_replace_seventh_street_card(
+        &self,
+        cmd: ReplaceSeventhStreetCard,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_replace_seventh_street_card(cmd, state, seq)
+    }
+
+    #[handles(CorrectBringIn)]
+    fn on_correct_bring_in(
+        &self,
+        cmd: CorrectBringIn,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_correct_bring_in(cmd, state, seq)
+    }
+
+    #[handles(ReportPrematureStudCard)]
+    fn on_report_premature_stud_card(
+        &self,
+        cmd: ReportPrematureStudCard,
+        state: &HandState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_report_premature_stud_card(cmd, state, seq)
+    }
+
     // --- Event appliers ---
 
     #[applies(CardsDealt)]
@@ -146,6 +341,114 @@ impl HandAggregate {
     #[applies(HandComplete)]
     fn apply_hand_complete(state: &mut HandState, event: HandComplete) {
         apply_hand_complete(state, event);
+    }
+
+    // --- Advanced (TDA) event appliers ---
+
+    #[applies(ActionClockStarted)]
+    fn apply_action_clock_started(state: &mut HandState, event: ActionClockStarted) {
+        // Pin action_on_position to the named player's position so
+        // subsequent commands have an explicit "whose turn it is"
+        // record (TDA Rule 29). Idempotent if the position is already
+        // pinned.
+        if let Some(player) = state.get_player(&event.player_root) {
+            state.action_on_position = player.position;
+        }
+    }
+
+    #[applies(PriorChipPulledBack)]
+    fn apply_prior_chip_pulled_back(_state: &mut HandState, _event: PriorChipPulledBack) {
+        // TDA Rule 46B: the binding-to-call constraint is enforced
+        // in handle_player_action; the event is recorded for audit
+        // but doesn't mutate persistent aggregate state in this
+        // implementation. A future iteration may extend PlayerHandState
+        // with a `bound_to_call: bool` flag and toggle it here.
+    }
+
+    #[applies(UnderbetCorrected)]
+    fn apply_underbet_corrected(state: &mut HandState, event: UnderbetCorrected) {
+        // Refund each adjustment to the player's stack and reduce
+        // their `bet_this_round` contribution. The pot is recomputed
+        // by total_pot() callers (which sum across pots), so we
+        // only need to mutate per-player state here.
+        for adj in event.adjustments {
+            if let Some(player) = state.get_player_mut(&adj.player_root) {
+                player.bet_this_round = adj.new_contribution;
+                player.stack += adj.refund_to_stack;
+            }
+        }
+    }
+
+    // --- PR #12 cascade event appliers (14 new events) ------------------
+
+    #[applies(MisdealDeclared)]
+    fn apply_misdeal_declared(state: &mut HandState, event: MisdealDeclared) {
+        apply_misdeal_declared(state, event);
+    }
+
+    #[applies(FouledDeckDetected)]
+    fn apply_fouled_deck_detected(state: &mut HandState, event: FouledDeckDetected) {
+        apply_fouled_deck_detected(state, event);
+    }
+
+    #[applies(HandRedealt)]
+    fn apply_hand_redealt(state: &mut HandState, event: HandRedealt) {
+        apply_hand_redealt(state, event);
+    }
+
+    #[applies(ButtonCardReplaced)]
+    fn apply_button_card_replaced(state: &mut HandState, event: ButtonCardReplaced) {
+        apply_button_card_replaced(state, event);
+    }
+
+    #[applies(PrematureFlopDetected)]
+    fn apply_premature_flop_detected(state: &mut HandState, event: PrematureFlopDetected) {
+        apply_premature_flop_detected(state, event);
+    }
+
+    #[applies(PrematureTurnDetected)]
+    fn apply_premature_turn_detected(state: &mut HandState, event: PrematureTurnDetected) {
+        apply_premature_turn_detected(state, event);
+    }
+
+    #[applies(PrematureRiverDetected)]
+    fn apply_premature_river_detected(state: &mut HandState, event: PrematureRiverDetected) {
+        apply_premature_river_detected(state, event);
+    }
+
+    #[applies(StudStreetDealt)]
+    fn apply_stud_street_dealt(state: &mut HandState, event: StudStreetDealt) {
+        apply_stud_street_dealt(state, event);
+    }
+
+    #[applies(StudCommunityCardDealt)]
+    fn apply_stud_community_card_dealt(state: &mut HandState, event: StudCommunityCardDealt) {
+        apply_stud_community_card_dealt(state, event);
+    }
+
+    #[applies(StudDoorCardSelected)]
+    fn apply_stud_door_card_selected(state: &mut HandState, event: StudDoorCardSelected) {
+        apply_stud_door_card_selected(state, event);
+    }
+
+    #[applies(StudDownCardConverted)]
+    fn apply_stud_down_card_converted(state: &mut HandState, event: StudDownCardConverted) {
+        apply_stud_down_card_converted(state, event);
+    }
+
+    #[applies(SeventhStreetCardReplaced)]
+    fn apply_seventh_street_card_replaced(state: &mut HandState, event: SeventhStreetCardReplaced) {
+        apply_seventh_street_card_replaced(state, event);
+    }
+
+    #[applies(BringInCorrected)]
+    fn apply_bring_in_corrected(state: &mut HandState, event: BringInCorrected) {
+        apply_bring_in_corrected(state, event);
+    }
+
+    #[applies(PrematureStudCardDetected)]
+    fn apply_premature_stud_card_detected(state: &mut HandState, event: PrematureStudCardDetected) {
+        apply_premature_stud_card_detected(state, event);
     }
 }
 

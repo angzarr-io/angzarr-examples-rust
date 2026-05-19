@@ -115,13 +115,9 @@ pub struct MinPlayersExceedsMax {
 impl CommandError for MinPlayersExceedsMax {
     const CODE: &'static str = "MIN_PLAYERS_EXCEEDS_MAX";
     const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
-    const TEMPLATE: &'static str =
-        "min_players ({lhs}) cannot exceed max_players ({rhs})";
+    const TEMPLATE: &'static str = "min_players ({lhs}) cannot exceed max_players ({rhs})";
     fn fields(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("lhs", self.lhs.to_string()),
-            ("rhs", self.rhs.to_string()),
-        ]
+        vec![("lhs", self.lhs.to_string()), ("rhs", self.rhs.to_string())]
     }
 }
 impl PreconditionError for MinPlayersExceedsMax {}
@@ -294,6 +290,127 @@ impl CommandError for TournamentNotRunningOrPaused {
 impl PreconditionError for TournamentNotRunningOrPaused {}
 impl StateMismatch for TournamentNotRunningOrPaused {}
 
+pub struct AlreadyInHandForHand;
+impl CommandError for AlreadyInHandForHand {
+    const CODE: &'static str = "ALREADY_IN_HAND_FOR_HAND";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "Tournament is already in hand-for-hand mode";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl PreconditionError for AlreadyInHandForHand {}
+impl StateAlreadyEntered for AlreadyInHandForHand {}
+
+pub struct NotInHandForHand;
+impl CommandError for NotInHandForHand {
+    const CODE: &'static str = "NOT_IN_HAND_FOR_HAND";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "Tournament is not in hand-for-hand mode";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl PreconditionError for NotInHandForHand {}
+impl StateMismatch for NotInHandForHand {}
+
+pub struct TableNotActiveInHandForHand {
+    pub table_root_hex: String,
+}
+impl CommandError for TableNotActiveInHandForHand {
+    const CODE: &'static str = "TABLE_NOT_ACTIVE_IN_HAND_FOR_HAND";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str =
+        "Table {table_root_hex} is not active in the current hand-for-hand round";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        vec![("table_root_hex", self.table_root_hex.clone())]
+    }
+}
+impl PreconditionError for TableNotActiveInHandForHand {}
+impl EntityNotInContainer for TableNotActiveInHandForHand {}
+
+pub struct PlayerRootsRequired;
+impl CommandError for PlayerRootsRequired {
+    const CODE: &'static str = "PLAYER_ROOTS_REQUIRED";
+    const STATUS: ErrorStatus = ErrorStatus::InvalidArgument;
+    const TEMPLATE: &'static str = "at least one player_root is required";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl ValidationError for PlayerRootsRequired {}
+impl FieldRequired for PlayerRootsRequired {}
+
+pub struct AmountMustBePositive {
+    pub value: i64,
+}
+impl CommandError for AmountMustBePositive {
+    const CODE: &'static str = "AMOUNT_MUST_BE_POSITIVE";
+    const STATUS: ErrorStatus = ErrorStatus::InvalidArgument;
+    const TEMPLATE: &'static str = "amount must be positive, got {value}";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        vec![("value", self.value.to_string())]
+    }
+}
+impl ValidationError for AmountMustBePositive {}
+impl MustBePositive for AmountMustBePositive {
+    fn value(&self) -> i64 {
+        self.value
+    }
+}
+
+pub struct InvalidPenaltyType {
+    pub value: String,
+}
+impl CommandError for InvalidPenaltyType {
+    const CODE: &'static str = "INVALID_PENALTY_TYPE";
+    const STATUS: ErrorStatus = ErrorStatus::InvalidArgument;
+    const TEMPLATE: &'static str =
+        "Penalty type {value} is not one of VERBAL_WARNING/MISSED_HAND/MISSED_ROUND/DISQUALIFIED";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        vec![("value", self.value.clone())]
+    }
+}
+impl ValidationError for InvalidPenaltyType {}
+
+pub struct PlayerNotOnPenalty {
+    pub player_root_hex: String,
+}
+impl CommandError for PlayerNotOnPenalty {
+    const CODE: &'static str = "PLAYER_NOT_ON_PENALTY";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "Player {player_root_hex} is not currently on penalty";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        vec![("player_root_hex", self.player_root_hex.clone())]
+    }
+}
+impl PreconditionError for PlayerNotOnPenalty {}
+impl StateMismatch for PlayerNotOnPenalty {}
+
+pub struct NewHandsAlreadyHalted;
+impl CommandError for NewHandsAlreadyHalted {
+    const CODE: &'static str = "NEW_HANDS_ALREADY_HALTED";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "New hands are already halted";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl PreconditionError for NewHandsAlreadyHalted {}
+impl StateAlreadyEntered for NewHandsAlreadyHalted {}
+
+pub struct NewHandsNotHalted;
+impl CommandError for NewHandsNotHalted {
+    const CODE: &'static str = "NEW_HANDS_NOT_HALTED";
+    const STATUS: ErrorStatus = ErrorStatus::PreconditionFailed;
+    const TEMPLATE: &'static str = "Bag-and-tag requires new hands to be halted first";
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+}
+impl PreconditionError for NewHandsNotHalted {}
+impl StateMismatch for NewHandsNotHalted {}
+
 pub struct BlindStructureExhausted {
     pub current: i32,
     pub max_value: i32,
@@ -336,10 +453,7 @@ mod tests {
 
     #[test]
     fn min_exceeds_max_renders_both_fields() {
-        let err = MinPlayersExceedsMax {
-            lhs: 5,
-            rhs: 4,
-        };
+        let err = MinPlayersExceedsMax { lhs: 5, rhs: 4 };
         assert_eq!(
             err.render(),
             "min_players (5) cannot exceed max_players (4)"
@@ -367,9 +481,15 @@ mod tests {
 
     #[test]
     fn empty_field_errors_render_template_unchanged() {
-        assert_eq!(TournamentAlreadyExists.render(), "Tournament already exists");
+        assert_eq!(
+            TournamentAlreadyExists.render(),
+            "Tournament already exists"
+        );
         assert_eq!(TournamentNotFound.render(), "Tournament does not exist");
-        let nepts = NotEnoughPlayersToStart { requested: 2, available: 1 };
+        let nepts = NotEnoughPlayersToStart {
+            requested: 2,
+            available: 1,
+        };
         assert_eq!(
             nepts.render(),
             "Not enough players to start: requested 2, available 1"

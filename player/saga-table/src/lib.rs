@@ -160,7 +160,10 @@ mod tests {
         let header = resp.events[0].pages[0].header.as_ref().expect("header");
         match header.sequence_type.as_ref().expect("seq type") {
             SequenceType::ExternalDeferred(ext) => {
-                assert_eq!(ext.external_id, format!("sitout-{}", hex::encode(&player_root)));
+                assert_eq!(
+                    ext.external_id,
+                    format!("sitout-{}", hex::encode(&player_root))
+                );
             }
             other => panic!("expected ExternalDeferred, got {:?}", other),
         }

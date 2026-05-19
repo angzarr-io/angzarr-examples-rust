@@ -231,7 +231,10 @@ mod tests {
 
     #[test]
     fn bound_violation_accessors_return_struct_fields() {
-        let err = SampleBoundViolation { got: 50, bound: 200 };
+        let err = SampleBoundViolation {
+            got: 50,
+            bound: 200,
+        };
         let (got, bound, kind) = read_bound(&err);
         assert_eq!(got, 50);
         assert_eq!(bound, 200);

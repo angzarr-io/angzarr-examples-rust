@@ -9,15 +9,19 @@ pub use state::{SeatState, TableState};
 use angzarr_client::proto::EventBook;
 use angzarr_client::{command_handler, CommandResult};
 use examples_proto::{
-    AddRebuyChips, ChipsAdded, CreateTable, EndHand, HandEnded, HandStarted, JoinTable, LeaveTable,
-    PlayerJoined, PlayerLeft, PlayerSatIn, PlayerSatOut, PlayerSeated, RebuyChipsAdded, SeatPlayer,
-    SeatingRejected, StartHand, TableCreated,
+    AddRebuyChips, BlindDodgePenalty, ChangeSeats, ChipsAdded, CreateTable, EndHand,
+    EndTableHandForHand, EnterTableHandForHand, HandEnded, HandStarted, JoinTable, LeaveTable,
+    MarkTableHandForHandHandComplete, PlayerJoined, PlayerLeft, PlayerSatIn, PlayerSatOut,
+    PlayerSeated, RebuyChipsAdded, SeatPlayer, SeatingRejected, StartHand, TableCreated,
+    TableHandForHandEnded, TableHandForHandRoundComplete, TableHandForHandWaiting,
 };
 
 use crate::state::{
-    apply_chips_added, apply_hand_ended, apply_hand_started, apply_player_joined,
-    apply_player_left, apply_player_sat_in, apply_player_sat_out, apply_player_seated,
-    apply_rebuy_chips_added, apply_seating_rejected, apply_table_created,
+    apply_blind_dodge_penalty, apply_chips_added, apply_hand_ended, apply_hand_started,
+    apply_player_joined, apply_player_left, apply_player_sat_in, apply_player_sat_out,
+    apply_player_seated, apply_rebuy_chips_added, apply_seating_rejected, apply_table_created,
+    apply_table_hand_for_hand_ended, apply_table_hand_for_hand_entered,
+    apply_table_hand_for_hand_hand_completed,
 };
 
 pub struct TableAggregate;
@@ -91,6 +95,48 @@ impl TableAggregate {
         handlers::handle_add_rebuy_chips(cmd, state, seq)
     }
 
+    #[handles(EnterTableHandForHand)]
+    fn on_enter_table_hand_for_hand(
+        &self,
+        cmd: EnterTableHandForHand,
+        state: &TableState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_enter_table_hand_for_hand(cmd, state, seq)
+    }
+
+    #[handles(MarkTableHandForHandHandComplete)]
+    fn on_mark_table_h4h_hand_complete(
+        &self,
+        cmd: MarkTableHandForHandHandComplete,
+        state: &TableState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_mark_h4h_hand_complete(cmd, state, seq)
+    }
+
+    #[handles(EndTableHandForHand)]
+    fn on_end_table_hand_for_hand(
+        &self,
+        cmd: EndTableHandForHand,
+        state: &TableState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_end_table_hand_for_hand(cmd, state, seq)
+    }
+
+    // --- PR #12 cascade — ChangeSeats handler ---------------------------
+
+    #[handles(ChangeSeats)]
+    fn on_change_seats(
+        &self,
+        cmd: ChangeSeats,
+        state: &TableState,
+        seq: u32,
+    ) -> CommandResult<EventBook> {
+        handlers::handle_change_seats(cmd, state, seq)
+    }
+
     // --- Event appliers ---
 
     #[applies(TableCreated)]
@@ -146,6 +192,33 @@ impl TableAggregate {
     #[applies(RebuyChipsAdded)]
     fn apply_rebuy_chips_added(state: &mut TableState, event: RebuyChipsAdded) {
         apply_rebuy_chips_added(state, event);
+    }
+
+    // --- Hand-for-hand appliers ---
+
+    #[applies(TableHandForHandWaiting)]
+    fn apply_table_hand_for_hand_entered(state: &mut TableState, event: TableHandForHandWaiting) {
+        apply_table_hand_for_hand_entered(state, event);
+    }
+
+    #[applies(TableHandForHandRoundComplete)]
+    fn apply_table_hand_for_hand_hand_completed(
+        state: &mut TableState,
+        event: TableHandForHandRoundComplete,
+    ) {
+        apply_table_hand_for_hand_hand_completed(state, event);
+    }
+
+    #[applies(TableHandForHandEnded)]
+    fn apply_table_hand_for_hand_ended(state: &mut TableState, event: TableHandForHandEnded) {
+        apply_table_hand_for_hand_ended(state, event);
+    }
+
+    // --- PR #12 cascade — BlindDodgePenalty applier ---------------------
+
+    #[applies(BlindDodgePenalty)]
+    fn apply_blind_dodge_penalty(state: &mut TableState, event: BlindDodgePenalty) {
+        apply_blind_dodge_penalty(state, event);
     }
 }
 
@@ -560,7 +633,13 @@ mod handler_tests {
             },
         );
         let book = agg
-            .on_start_hand(StartHand { ..Default::default() }, &state, 3)
+            .on_start_hand(
+                StartHand {
+                    ..Default::default()
+                },
+                &state,
+                3,
+            )
             .expect("handler should succeed");
         assert_eq!(book.pages.len(), 1);
     }

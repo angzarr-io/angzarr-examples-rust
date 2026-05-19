@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use examples_proto::{
-    ChipsAdded, GameVariant, HandEnded, HandStarted, PlayerJoined, PlayerLeft, PlayerSatIn,
-    PlayerSatOut, PlayerSeated, RebuyChipsAdded, SeatingRejected, TableCreated,
+    BlindDodgePenalty, ChipsAdded, GameVariant, HandEnded, HandStarted, PlayerJoined, PlayerLeft,
+    PlayerSatIn, PlayerSatOut, PlayerSeated, RebuyChipsAdded, SeatingRejected, TableCreated,
+    TableHandForHandEnded, TableHandForHandRoundComplete, TableHandForHandWaiting,
 };
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,14 @@ pub struct TableState {
     pub hand_count: i64,
     pub current_hand_root: Vec<u8>,
     pub status: String,
+    /// TDA Rule 12 — tournament hand-for-hand sync. While true the
+    /// table blocks new `StartHand` commands until the tournament
+    /// fans out a fresh `EnterTableHandForHand`. Toggled by
+    /// `apply_table_hand_for_hand_entered` / `apply_table_hand_for_hand_ended`.
+    pub hand_for_hand: bool,
+    /// PR #12 / EU-1185 — running missed-round penalty count per player,
+    /// updated by `apply_blind_dodge_penalty`. Key is player_root.
+    pub missed_round_count_by_player: HashMap<Vec<u8>, i32>,
 }
 
 impl TableState {
@@ -168,5 +177,38 @@ pub fn apply_seating_rejected(_state: &mut TableState, _event: SeatingRejected) 
 pub fn apply_rebuy_chips_added(state: &mut TableState, event: RebuyChipsAdded) {
     if let Some(seat) = state.seats.get_mut(&event.seat) {
         seat.stack = event.new_stack;
+    }
+}
+
+pub fn apply_table_hand_for_hand_entered(state: &mut TableState, _event: TableHandForHandWaiting) {
+    state.hand_for_hand = true;
+}
+
+pub fn apply_table_hand_for_hand_hand_completed(
+    _state: &mut TableState,
+    _event: TableHandForHandRoundComplete,
+) {
+    // Tournament aggregate tracks per-table progress via
+    // RecordTableHandComplete. The per-table aggregate has nothing
+    // additional to store here.
+}
+
+pub fn apply_table_hand_for_hand_ended(state: &mut TableState, _event: TableHandForHandEnded) {
+    state.hand_for_hand = false;
+}
+
+// PR #12 / EU-1185 — record the chip forfeit + missed-round increment.
+// Mirrors Python `apply_blind_dodge_penalty` in `table.py:1196`.
+pub fn apply_blind_dodge_penalty(state: &mut TableState, event: BlindDodgePenalty) {
+    let key = event.player_root.clone();
+    let prior = *state.missed_round_count_by_player.get(&key).unwrap_or(&0);
+    state
+        .missed_round_count_by_player
+        .insert(key, prior + event.missed_round_count);
+    for seat in state.seats.values_mut() {
+        if seat.player_root == event.player_root {
+            seat.stack = (seat.stack - event.chips_forfeited).max(0);
+            break;
+        }
     }
 }

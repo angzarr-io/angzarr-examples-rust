@@ -37,8 +37,8 @@ use std::collections::HashMap;
 use angzarr_client::proto::command_page::Payload as CommandPayload;
 use angzarr_client::proto::{
     event_page::Payload as EventPayload, page_header::SequenceType, CommandBook, CommandPage,
-    Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse,
-    SyncMode, Uuid as ProtoUuid,
+    Cover, EventBook, EventPage, MergeStrategy, PageHeader, ProcessManagerHandleResponse, SyncMode,
+    Uuid as ProtoUuid,
 };
 use angzarr_client::{process_manager, type_url, CommandResult};
 use examples_proto::{
@@ -126,10 +126,7 @@ impl HandFlowState {
         if n == 0 {
             return -1;
         }
-        let start = positions
-            .iter()
-            .position(|p| *p > after)
-            .unwrap_or(0);
+        let start = positions.iter().position(|p| *p > after).unwrap_or(0);
         for i in 0..n {
             let idx = (start + i) % n;
             let pos = positions[idx];
@@ -451,7 +448,8 @@ impl HandFlowPm {
             if let Some(p) = state.players.get_mut(&pos) {
                 p.stack = event.player_stack;
                 p.has_acted = true;
-                let action = ActionType::try_from(event.action).unwrap_or(ActionType::ActionUnspecified);
+                let action =
+                    ActionType::try_from(event.action).unwrap_or(ActionType::ActionUnspecified);
                 match action {
                     ActionType::Fold => p.has_folded = true,
                     ActionType::AllIn => {
@@ -579,11 +577,8 @@ fn make_command<M: Message>(
 /// evenly with the remainder going to the lowest-position survivor —
 /// matches python `_build_auto_award_command` (`hand_process.py:660`).
 fn make_award_pot_command(state: &HandFlowState) -> CommandBook {
-    let mut survivors: Vec<&PMPlayerState> = state
-        .players
-        .values()
-        .filter(|p| !p.has_folded)
-        .collect();
+    let mut survivors: Vec<&PMPlayerState> =
+        state.players.values().filter(|p| !p.has_folded).collect();
     survivors.sort_by_key(|p| p.position);
     let n = survivors.len() as i64;
     let split = if n > 0 { state.pot_total / n } else { 0 };
@@ -671,7 +666,10 @@ mod tests {
             .on_hand_started(event.clone(), &HandFlowState::default())
             .unwrap();
 
-        assert!(resp.commands.is_empty(), "PM no longer emits DealCards on HandStarted (saga emits)");
+        assert!(
+            resp.commands.is_empty(),
+            "PM no longer emits DealCards on HandStarted (saga emits)"
+        );
         let pm_book = resp
             .process_events
             .into_iter()

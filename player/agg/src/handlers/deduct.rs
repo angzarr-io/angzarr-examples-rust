@@ -9,7 +9,9 @@ use angzarr_client::CommandResult;
 use examples_proto::{Currency, DeductReservedFunds, FundsDeducted};
 use examples_utils::{event_page, pack_event, reject};
 
-use crate::errors::{AmountExceedsReservedFunds, AmountMustBePositive, KeyRequired, PlayerNotFound};
+use crate::errors::{
+    AmountExceedsReservedFunds, AmountMustBePositive, KeyRequired, PlayerNotFound,
+};
 use crate::state::PlayerState;
 
 fn deduct_guard(state: &PlayerState) -> CommandResult<()> {

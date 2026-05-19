@@ -205,7 +205,12 @@ fn dispatch_process_rebuy_arm() {
 
 #[test]
 fn dispatch_advance_blind_level_arm() {
-    let ctx = contextual(AdvanceBlindLevel { ..Default::default() }, vec![tournament_created_event()]);
+    let ctx = contextual(
+        AdvanceBlindLevel {
+            ..Default::default()
+        },
+        vec![tournament_created_event()],
+    );
     let _ = run(ctx);
 }
 

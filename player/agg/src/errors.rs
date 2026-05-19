@@ -235,16 +235,19 @@ mod tests {
 
     #[test]
     fn each_no_field_error_publishes_code_status_and_renders() {
-        let cases: &[(&dyn Fn() -> (String, &'static str, &'static str, String), &str, &str, &str)] = &[];
+        let cases: &[(
+            &dyn Fn() -> (String, &'static str, &'static str, String),
+            &str,
+            &str,
+            &str,
+        )] = &[];
         let _ = cases; // prevent unused-binding warning if list is empty
 
-        for (code, status, render) in [
-            (
-                "PLAYER_ALREADY_EXISTS",
-                "FAILED_PRECONDITION",
-                "Player already exists",
-            ),
-        ] {
+        for (code, status, render) in [(
+            "PLAYER_ALREADY_EXISTS",
+            "FAILED_PRECONDITION",
+            "Player already exists",
+        )] {
             let r = reject(PlayerAlreadyExists);
             assert_eq!(r.code, code);
             assert_eq!(r.status_code, status);
@@ -288,7 +291,10 @@ mod tests {
             requested: 200,
             available: 50,
         };
-        assert_eq!(err.render(), "Insufficient funds: requested 200, available 50");
+        assert_eq!(
+            err.render(),
+            "Insufficient funds: requested 200, available 50"
+        );
         assert_eq!(InsufficientFunds::CODE, "INSUFFICIENT_FUNDS");
     }
 
@@ -340,7 +346,10 @@ mod tests {
         assert_eq!(DisplayNameRequired.render(), "display_name is required");
         assert_eq!(EmailRequired.render(), "email is required");
         assert_eq!(PlayerNotFound.render(), "Player does not exist");
-        assert_eq!(AmountMustBeNonZero { value: 0 }.render(), "Amount must be non-zero");
+        assert_eq!(
+            AmountMustBeNonZero { value: 0 }.render(),
+            "Amount must be non-zero"
+        );
         assert_eq!(TableRootRequired.render(), "table_root is required");
         assert_eq!(KeyRequired.render(), "key is required");
     }

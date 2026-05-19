@@ -540,9 +540,7 @@ fn then_rules_class(world: &mut RulesWorld, cls: String) {
 /// Used by EU-0729..0732 to pin same-rank ordering (e.g. A-high straight
 /// > K-high straight) so a buggy comparator can't slip past with the
 /// same rank label.
-#[when(
-    regex = r#"^I evaluate hand (\w+) with hole "([^"]*)" and community "([^"]*)"$"#
-)]
+#[when(regex = r#"^I evaluate hand (\w+) with hole "([^"]*)" and community "([^"]*)"$"#)]
 fn when_evaluate_labelled_hand(
     world: &mut RulesWorld,
     label: String,

@@ -6,20 +6,13 @@ set -euo pipefail
 
 echo "=== Local Environment Setup ==="
 
-# 1. Stop Podman services
-echo "Stopping Podman services..."
-systemctl --user stop podman.socket podman.service 2>/dev/null || true
-pkill -u "$(whoami)" podman 2>/dev/null || true
+# 1. Ensure DOCKER_HOST points at the rootless daemon socket
+: "${DOCKER_HOST:=unix:///run/user/$(id -u)/docker.sock}"
+export DOCKER_HOST
 
-# 2. Ensure DOCKER_HOST is not set (use real Docker)
-unset DOCKER_HOST
-if grep -q "DOCKER_HOST" ~/.bashrc ~/.zshrc 2>/dev/null; then
-    echo "WARNING: DOCKER_HOST is set in shell config. Please remove it."
-fi
-
-# 3. Check Docker is running
+# 2. Check Docker is running
 if ! docker info >/dev/null 2>&1; then
-    echo "ERROR: Docker is not running. Start it with: sudo systemctl start docker"
+    echo "ERROR: Docker is not running. Start it with: systemctl --user start docker"
     exit 1
 fi
 

@@ -170,10 +170,7 @@ mod tests {
 
     #[test]
     fn render_returns_template_unchanged_when_no_fields() {
-        assert_eq!(
-            NoFields.render(),
-            "Generic failure with no runtime context"
-        );
+        assert_eq!(NoFields.render(), "Generic failure with no runtime context");
     }
 
     #[test]

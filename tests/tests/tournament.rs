@@ -513,7 +513,13 @@ fn when_start_tournament(world: &mut TournamentWorld) {
 
 #[when("I handle an AdvanceBlindLevel command")]
 fn when_advance_blind_level(world: &mut TournamentWorld) {
-    dispatch!(world, handle_advance_blind_level, AdvanceBlindLevel { ..Default::default() });
+    dispatch!(
+        world,
+        handle_advance_blind_level,
+        AdvanceBlindLevel {
+            ..Default::default()
+        }
+    );
 }
 
 #[when(expr = "I handle an EliminatePlayer command for player {string} with hand_root {string}")]
@@ -611,9 +617,10 @@ fn then_rejection_cover_has(world: &mut TournamentWorld, spec: String) {
     }
 }
 
-fn rejection_cover_or_fail_tournament(world: &mut TournamentWorld) -> &angzarr_client::proto::Cover {
-    if let (Some(rej), Some(cover)) = (world.last_error.as_mut(), world.command_cover.as_ref())
-    {
+fn rejection_cover_or_fail_tournament(
+    world: &mut TournamentWorld,
+) -> &angzarr_client::proto::Cover {
+    if let (Some(rej), Some(cover)) = (world.last_error.as_mut(), world.command_cover.as_ref()) {
         if rej.cover.is_none() {
             rej.cover = Some(cover.clone());
         }

@@ -1,0 +1,19 @@
+[package]
+name = "saga-table-tournament-h4h"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+examples-proto.workspace = true
+examples-utils.workspace = true
+angzarr-client = { workspace = true }
+tokio = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[bin]]
+name = "saga-table-tournament-h4h"
+path = "src/main.rs"

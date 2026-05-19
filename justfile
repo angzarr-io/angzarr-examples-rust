@@ -17,6 +17,10 @@
 
 set shell := ["bash", "-c"]
 
+# Reusable submodule-protection recipes (install-submodule-hooks,
+# check-submodules-clean). Source of truth: angzarr-project/submodule.just.
+import? 'angzarr-project/submodule.just'
+
 ROOT := `git rev-parse --show-toplevel`
 IMAGE := "angzarr-examples-rust-dev"
 
@@ -40,49 +44,205 @@ _container +ARGS: _build-image
             {{IMAGE}} just {{ARGS}}
     fi
 
+# Run a mutation-testing target with the workspace mounted READ-ONLY.
+#
+# WHY:
+#   cargo-mutants --in-place writes mutated source into the working tree, and
+#   even with copy-mode it materialises per-mutant trees in TMPDIR. If the
+#   workspace is bind-mounted RW (as `_container` does) and the container
+#   dies mid-run, those mutated files can be left on the host. This helper
+#   closes that hole: source is mounted at /src:ro, a tar-piped copy lands
+#   in /work inside the container's WRITABLE OVERLAY LAYER, and per-mutant
+#   scratch (TMPDIR) is also pinned inside /work, so `--rm` destroys
+#   everything mutated on every exit.
+#
+# WHAT TOUCHES THE HOST:
+#   - {{ROOT}}/.mutants-cache/cargo-{home,target} — compiled artifacts and
+#     dep registry only. NEVER contains mutated source files. Gitignored.
+#     Delete the dir to purge the cache.
+#   - {{ROOT}}/mutants.out/outcomes.json — copied out at the end of a
+#     successful run so external tooling can read it.
+#
+# WHAT NEVER TOUCHES THE HOST:
+#   - Mutated source trees (live in /work, container overlay, --rm wipes).
+#   - Per-mutant workspace copies (TMPDIR=/work/.scratch, also overlay).
+[private]
+_container-ephemeral +ARGS: _build-image
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "${DEVCONTAINER:-}" = "true" ]; then
+        # Already inside a devcontainer — that container IS the ephemeral
+        # boundary. Run directly; the outer just wrapper ensures --rm.
+        just --justfile "{{ROOT}}/justfile.container" {{ARGS}}
+        exit 0
+    fi
+    mkdir -p "{{ROOT}}/mutants.out" \
+             "{{ROOT}}/.mutants-cache/cargo-home" \
+             "{{ROOT}}/.mutants-cache/cargo-target"
+    docker run --rm \
+        -v "{{ROOT}}:/src:ro" \
+        -v "{{ROOT}}/mutants.out:/out" \
+        -v "{{ROOT}}/.mutants-cache/cargo-home:/cargo-home" \
+        -v "{{ROOT}}/.mutants-cache/cargo-target:/cargo-target" \
+        -v "{{ROOT}}/justfile.container:/etc/angzarr-justfile:ro" \
+        -e CARGO_HOME=/cargo-home \
+        -e CARGO_TARGET_DIR=/cargo-target \
+        -e CARGO_MUTANTS_TMPDIR=/work/.scratch \
+        -e MUTANTS_EPHEMERAL=1 \
+        -e MUTANTS_OUT_DIR=/out \
+        -w /work \
+        {{IMAGE}} bash -eu -o pipefail -c '
+            # Self-heal: install cargo-mutants on demand if the image
+            # does not ship it. Cached in /cargo-home across runs.
+            if ! command -v cargo-mutants >/dev/null; then
+                echo "[ephemeral] cargo-mutants missing from image; installing to cached CARGO_HOME"
+                cargo install cargo-mutants --locked
+            fi
+            echo "[ephemeral] copying /src -> /work (container overlay)"
+            mkdir -p /work /work/.scratch
+            # tar|tar: excludes mirror what rsync would skip — build
+            # artifacts, prior mutation output, host-side cargo caches,
+            # buf-exported protos (regenerated below), and the mutants
+            # cache itself.
+            tar -C /src \
+                --exclude=./target \
+                --exclude=./.cargo-container \
+                --exclude=./.mutants-cache \
+                --exclude=./mutants.out \
+                --exclude=./mutants.out.old \
+                --exclude=./mutants.out.old.2 \
+                -cf - . \
+                | tar -C /work -xf -
+            # Mount the container-side justfile into the copy so `just` finds
+            # it (the original /src is read-only, but /work is writable).
+            cp /etc/angzarr-justfile /work/justfile
+            cd /work
+            just {{ARGS}}
+            # Persist ONLY outcomes.json back to host. Mutated source trees,
+            # per-mutant scratch copies, and intermediate working dirs die
+            # with the container.
+            if [ -f /work/mutants.out/outcomes.json ]; then
+                cp /work/mutants.out/outcomes.json /out/outcomes.json
+                echo "[ephemeral] outcomes.json copied to host mutants.out/"
+            fi
+        '
+
 # Default: list available commands
 [no-exit-message]
 default:
     @just --list
 
+# =============================================================================
+# Proto generation — cross-language model (project_proto_generation_model)
+# =============================================================================
+# `.proto` sources live in the angzarr-project submodule. Bindings are NEVER
+# committed (see .gitignore: examples-proto/, angzarr-proto/,
+# proto/src/generated/*.rs). Regenerated:
+#   1. on `post-checkout` / `post-merge` via lefthook
+#   2. transparently as a recipe dependency of build/test/lint/check
+# Idempotent: mtime guard short-circuits when bindings are newer than the
+# newest .proto source.
+#
+# Runs in the same devcontainer image as build/test/mutation so the
+# buf + protoc + tonic_prost_build toolchain is fixed. Rootless docker
+# requires -u 0:0 per feedback_docker_rootless.
+#
+# Build-tool integration (proto/build.rs) is intentionally NOT the regen
+# trigger: build.rs only runs codegen when GENERATE_PROTOS=1 is set, which
+# this recipe sets. Plain `cargo build` consumes the pre-emitted
+# proto/src/generated/*.rs file via `include!` in proto/src/lib.rs.
+
+PROTO_SRC_DIR := ROOT + "/angzarr-project/proto"
+PROTO_OUT_DIR := ROOT + "/proto/src/generated"
+
+# Public entry point. Idempotent.
+generate-proto:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src_dir="{{PROTO_SRC_DIR}}"
+    out_dir="{{PROTO_OUT_DIR}}"
+    if [ ! -d "$src_dir" ]; then
+        echo "[generate-proto] $src_dir missing — initialize angzarr-project submodule" >&2
+        exit 1
+    fi
+    newest_proto=$(find "$src_dir" -name '*.proto' -printf '%T@\n' 2>/dev/null \
+                    | sort -n | tail -1)
+    if [ -d "$out_dir" ]; then
+        oldest_pb=$(find "$out_dir" -name '*.rs' -printf '%T@\n' 2>/dev/null \
+                        | sort -n | head -1)
+    else
+        oldest_pb=""
+    fi
+    if [ -n "$newest_proto" ] && [ -n "$oldest_pb" ] \
+        && awk -v p="$newest_proto" -v b="$oldest_pb" 'BEGIN{exit !(b>p)}'; then
+        echo "[generate-proto] bindings up-to-date, skipping (use generate-proto-force to override)"
+        exit 0
+    fi
+    just generate-proto-force
+
+# Force regeneration. Uses the devcontainer image directly because
+# feedback_docker_rootless mandates `-u 0:0` for rootless writes to bind
+# mounts; _container's default UID/GID only works rootful.
+generate-proto-force: _build-image
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "${DEVCONTAINER:-}" = "true" ]; then
+        just --justfile "{{ROOT}}/justfile.container" generate-proto-force
+        exit 0
+    fi
+    # Detect rootless vs rootful per feedback_docker_rootless.
+    if docker info --format '{{{{.SecurityOptions}}}}' 2>/dev/null | grep -q rootless; then
+        USER_FLAG="-u 0:0"
+    else
+        USER_FLAG="-u $(id -u):$(id -g)"
+    fi
+    docker run --rm \
+        $USER_FLAG \
+        -v "{{ROOT}}:/workspace" \
+        -v "{{ROOT}}/justfile.container:/workspace/justfile:ro" \
+        -e CARGO_HOME=/workspace/.cargo-container \
+        -e DEVCONTAINER=true \
+        -w /workspace \
+        {{IMAGE}} just generate-proto-force
+
 # Build all poker aggregates (release)
-build:
+build: generate-proto
     just _container build
 
 # Build all poker aggregates (debug)
-build-dev:
+build-dev: generate-proto
     just _container build-dev
 
 # Run unit tests (cargo --lib; mirrors Python's `test-pytest`)
-test-unit:
+test-unit: generate-proto
     just _container test-unit
 
 # Cucumber unit-level BDD tests (mirrors Python's `test-example-unit`)
-test-example-unit:
+test-example-unit: generate-proto
     just _container test-example-unit
 
 # Cucumber acceptance-level BDD tests (mirrors Python's `test-example-acceptance`)
-test-example-acceptance:
+test-example-acceptance: generate-proto
     just _container test-example-acceptance
 
 # Back-compat alias for the pre-split BDD target
-test-acceptance:
+test-acceptance: generate-proto
     just _container test-acceptance
 
 # Run all tests (unit + acceptance)
-test:
+test: generate-proto
     just _container test
 
 # Check code compiles
-check:
+check: generate-proto
     just _container check
 
 # Format code
-fmt:
+fmt: generate-proto
     just _container fmt
 
 # Lint code
-lint:
+lint: generate-proto
     just _container lint
 
 # Clean build artifacts
@@ -90,11 +250,11 @@ clean:
     just _container clean
 
 # Run poker in standalone mode (player:50001, table:50002, hand:50003)
-run:
+run: generate-proto
     just _container run
 
 # Run poker in standalone mode (debug build)
-run-dev:
+run-dev: generate-proto
     just _container run-dev
 
 # =============================================================================
@@ -393,10 +553,23 @@ kind-status:
     kubectl get svc -n angzarr-test 2>/dev/null || echo "Namespace not found"
 # Trigger CI
 
-# Run mutation tests
-mutation-test:
-    just _container mutation-test
+# =============================================================================
+# Mutation Testing
+# =============================================================================
+# `mutation-test` routes through `_container-ephemeral` so the mutated source
+# lives in the container's writable overlay layer and is destroyed with
+# `--rm`. Running cargo-mutants on the host is FORBIDDEN.
+# =============================================================================
+
+# Run mutation tests (ephemeral; no source touches host).
+mutation-test: generate-proto
+    just _container-ephemeral mutation-test
+
+# Purge local mutation build cache (compiled artifacts only; no mutated source)
+mutants-purge-cache:
+    rm -rf "{{ROOT}}/.mutants-cache"
+    @echo "Removed {{ROOT}}/.mutants-cache"
 
 # Auto-format code
-fmt-fix:
+fmt-fix: generate-proto
     just _container fmt-fix

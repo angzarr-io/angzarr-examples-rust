@@ -3,9 +3,15 @@
 use std::collections::HashMap;
 
 use examples_proto::{
-    ActionTaken, ActionType, BettingPhase, BettingRoundComplete, BlindPosted, Card, CardsDealt,
-    CommunityCardsDealt, DrawCompleted, GameVariant, HandComplete, PotAwarded, ShowdownStarted,
+    ActionTaken, ActionType, BettingPhase, BettingRoundComplete, BlindPosted, BringInCorrected,
+    ButtonCardReplaced, Card, CardsDealt, CommunityCardsDealt, DrawCompleted, FouledDeckDetected,
+    GameVariant, HandComplete, HandRedealt, MisdealDeclared, PotAwarded, PrematureFlopDetected,
+    PrematureRiverDetected, PrematureStudCardDetected, PrematureTurnDetected,
+    SeventhStreetCardReplaced, ShowdownStarted, StudCommunityCardDealt, StudDoorCardSelected,
+    StudDownCardConverted, StudStreet, StudStreetDealt,
 };
+
+use crate::substantial_action::is_substantial_action;
 
 #[derive(Debug, Clone, Default)]
 pub struct PlayerHandState {
@@ -18,6 +24,10 @@ pub struct PlayerHandState {
     pub has_acted: bool,
     pub has_folded: bool,
     pub is_all_in: bool,
+    /// Stud variants — per-player face-up cards accumulated across
+    /// streets. Used by `apply_seventh_street_card_replaced` to burn the
+    /// exposed-original.
+    pub up_cards: Vec<Card>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -51,6 +61,45 @@ pub struct HandState {
     pub big_blind: i64,
 
     pub status: String,
+
+    // --- TDA Rule 36 — substantial-action tracking (mirrors Python
+    //     `_HandState.substantial_action_occurred`) -----------------------
+    /// Post-blind actions on the current street, recorded by
+    /// `apply_action_taken`. Recomputed (cleared) by
+    /// `apply_betting_round_complete` and the community-cards applier.
+    pub current_street_actions: Vec<ActionType>,
+    /// Once true, stays true for the rest of the hand. Misdeal calls
+    /// after this point are rejected per TDA Rule 35-D.
+    pub substantial_action_occurred: bool,
+
+    // --- Stud street tracking (mirrors Python `_HandState.current_stud_street`)
+    /// Updated by `apply_stud_street_dealt`. `StudStreet::Unspecified`
+    /// means the hand is not on a stud street yet (or game is not stud).
+    pub current_stud_street: StudStreet,
+
+    // --- Bring-in correction window (mirrors Python
+    //     `_HandState.bring_in_correction_window_open`) -------------------
+    /// Open by default once the bring-in is posted; closed once the
+    /// next-to-act player has acted (which currently triggers via
+    /// `apply_action_taken` post-bring-in).
+    pub bring_in_correction_window_open: bool,
+    pub bring_in_corrected: bool,
+    pub bring_in_current_player: Vec<u8>,
+
+    // --- Misdeal / fouled-deck / premature-street status -----------------
+    pub misdeal_declared: bool,
+    pub misdeal_reason: String,
+    pub fouled_deck: bool,
+    pub fouled_deck_duplicate: String,
+    pub premature_flop: bool,
+    pub premature_turn: bool,
+    pub premature_river: bool,
+    pub premature_stud: bool,
+    pub button_card_replaced: bool,
+
+    // --- Redeal / blind-level tracking (PR #12 decision 1) ----------------
+    pub redeal_count: i64,
+    pub current_blind_level: i64,
 }
 
 impl HandState {
@@ -149,17 +198,25 @@ pub fn apply_blind_posted(state: &mut HandState, event: BlindPosted) {
     match event.blind_type.as_str() {
         "small" => state.small_blind = event.amount,
         "big" => state.big_blind = event.amount,
+        "bring_in" => {
+            // WSOP §SC Stud #5 / Robert's #5 — bring-in post opens the
+            // correction window; the very next action closes it (see
+            // `apply_action_taken`).
+            state.bring_in_correction_window_open = true;
+            state.bring_in_current_player = event.player_root.clone();
+        }
         _ => {}
     }
 }
 
 pub fn apply_action_taken(state: &mut HandState, event: ActionTaken) {
+    let action = ActionType::try_from(event.action).unwrap_or_default();
     let key = hex::encode(&event.player_root);
     if let Some(player) = state.players.get_mut(&key) {
         player.stack = event.player_stack;
         player.has_acted = true;
 
-        match ActionType::try_from(event.action).unwrap_or_default() {
+        match action {
             ActionType::Fold => {
                 player.has_folded = true;
             }
@@ -179,6 +236,24 @@ pub fn apply_action_taken(state: &mut HandState, event: ActionTaken) {
         pot.amount = event.pot_total;
     }
     state.current_bet = event.amount_to_call;
+
+    // TDA Rule 36 substantial-action tracking: posted blinds are NOT in
+    // the action stream (they have their own event). Only `ActionTaken`
+    // post-blind actions count. Once SA fires, it stays true for the
+    // rest of the hand (the flag is sticky).
+    state.current_street_actions.push(action);
+    if !state.substantial_action_occurred && is_substantial_action(&state.current_street_actions) {
+        state.substantial_action_occurred = true;
+    }
+
+    // WSOP §SC Stud #5 / Robert's #5 — the bring-in correction window
+    // closes the moment the next-to-act player acts. A single
+    // `ActionTaken` event after the bring-in post is enough to close
+    // it; the window is opened by `apply_blind_posted` for the
+    // bring-in (kind="bring_in").
+    if state.bring_in_correction_window_open {
+        state.bring_in_correction_window_open = false;
+    }
 }
 
 pub fn apply_betting_round_complete(state: &mut HandState, event: BettingRoundComplete) {
@@ -187,6 +262,9 @@ pub fn apply_betting_round_complete(state: &mut HandState, event: BettingRoundCo
         player.has_acted = false;
     }
     state.current_bet = 0;
+    // Clear per-street action history; substantial_action_occurred is
+    // sticky for the hand so we DON'T reset it here.
+    state.current_street_actions.clear();
 
     for snap in &event.stacks {
         let key = hex::encode(&snap.player_root);
@@ -217,6 +295,7 @@ pub fn apply_community_cards_dealt(state: &mut HandState, event: CommunityCardsD
         player.has_acted = false;
     }
     state.current_bet = 0;
+    state.current_street_actions.clear();
 }
 
 pub fn apply_draw_completed(state: &mut HandState, event: DrawCompleted) {
@@ -251,4 +330,134 @@ pub fn apply_hand_complete(state: &mut HandState, event: HandComplete) {
             player.stack = snap.stack;
         }
     }
+}
+
+// --- PR #12 cascade event appliers (mirror Python `apply_*` in
+//     hand.py:1884-2396). All idempotent — re-applying yields the same
+//     state. --------------------------------------------------------------
+
+pub fn apply_misdeal_declared(state: &mut HandState, event: MisdealDeclared) {
+    state.misdeal_declared = true;
+    state.misdeal_reason = event.reason;
+}
+
+pub fn apply_fouled_deck_detected(state: &mut HandState, event: FouledDeckDetected) {
+    state.fouled_deck = true;
+    state.fouled_deck_duplicate = event.duplicate_card;
+}
+
+pub fn apply_hand_redealt(state: &mut HandState, event: HandRedealt) {
+    state.redeal_count += 1;
+    state.current_blind_level = event.level;
+    state.table_root = event.table_root;
+    state.hand_number = event.hand_number;
+    state.dealer_position = event.dealer_position;
+    state.small_blind = event.small_blind;
+    state.big_blind = event.big_blind;
+    // The redeal IS the recovery — reset misdeal/fouled/premature
+    // flags so the next CardsDealt starts from a clean ledger.
+    state.misdeal_declared = false;
+    state.misdeal_reason.clear();
+    state.fouled_deck = false;
+    state.fouled_deck_duplicate.clear();
+    state.premature_flop = false;
+    state.premature_turn = false;
+    state.premature_river = false;
+    state.premature_stud = false;
+}
+
+pub fn apply_button_card_replaced(state: &mut HandState, _event: ButtonCardReplaced) {
+    state.button_card_replaced = true;
+}
+
+pub fn apply_premature_flop_detected(state: &mut HandState, _event: PrematureFlopDetected) {
+    state.premature_flop = true;
+}
+
+pub fn apply_premature_turn_detected(state: &mut HandState, _event: PrematureTurnDetected) {
+    state.premature_turn = true;
+}
+
+pub fn apply_premature_river_detected(state: &mut HandState, _event: PrematureRiverDetected) {
+    state.premature_river = true;
+}
+
+pub fn apply_stud_street_dealt(state: &mut HandState, event: StudStreetDealt) {
+    state.current_stud_street = StudStreet::try_from(event.street).unwrap_or_default();
+    // Push each player's new upcards into their accumulated up_cards.
+    for up in event.up_cards {
+        let key = hex::encode(&up.player_root);
+        if let Some(player) = state.players.get_mut(&key) {
+            player.up_cards.extend(up.up_cards);
+        }
+    }
+}
+
+pub fn apply_stud_community_card_dealt(state: &mut HandState, event: StudCommunityCardDealt) {
+    state.current_stud_street = StudStreet::try_from(event.street).unwrap_or_default();
+    if let Some(card) = event.card {
+        state.community_cards.push(card);
+    }
+}
+
+pub fn apply_stud_door_card_selected(state: &mut HandState, event: StudDoorCardSelected) {
+    let key = hex::encode(&event.player_root);
+    if let (Some(player), Some(card)) = (state.players.get_mut(&key), event.door_card) {
+        // Promote the door card from face-down to face-up: the chosen
+        // card is removed from hole_cards (kept face-down) and pushed
+        // onto up_cards.
+        if let Some(idx) = player
+            .hole_cards
+            .iter()
+            .position(|c| c.suit == card.suit && c.rank == card.rank)
+        {
+            player.hole_cards.remove(idx);
+        }
+        player.up_cards.push(card);
+    }
+}
+
+pub fn apply_stud_down_card_converted(state: &mut HandState, event: StudDownCardConverted) {
+    let key = hex::encode(&event.player_root);
+    if let (Some(player), Some(card)) = (state.players.get_mut(&key), event.exposed_card) {
+        if let Some(idx) = player
+            .hole_cards
+            .iter()
+            .position(|c| c.suit == card.suit && c.rank == card.rank)
+        {
+            player.hole_cards.remove(idx);
+        }
+        player.up_cards.push(card);
+    }
+}
+
+pub fn apply_seventh_street_card_replaced(state: &mut HandState, event: SeventhStreetCardReplaced) {
+    let key = hex::encode(&event.player_root);
+    if let Some(player) = state.players.get_mut(&key) {
+        if let Some(orig) = event.original_card {
+            // Burn the exposed-original from the player's up_cards.
+            player
+                .up_cards
+                .retain(|c| !(c.suit == orig.suit && c.rank == orig.rank));
+        }
+    }
+}
+
+pub fn apply_bring_in_corrected(state: &mut HandState, event: BringInCorrected) {
+    state.bring_in_corrected = true;
+    state.bring_in_current_player = event.correct_root.clone();
+    state.bring_in_correction_window_open = false;
+    let key = hex::encode(&event.incorrect_root);
+    if let Some(player) = state.players.get_mut(&key) {
+        player.stack += event.returned_amount;
+        player.bet_this_round = (player.bet_this_round - event.returned_amount).max(0);
+        player.total_invested = (player.total_invested - event.returned_amount).max(0);
+    }
+}
+
+pub fn apply_premature_stud_card_detected(
+    state: &mut HandState,
+    _event: PrematureStudCardDetected,
+) {
+    state.premature_stud = true;
 }

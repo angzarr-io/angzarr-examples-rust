@@ -1,6 +1,19 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Example protos root - from buf export
-    // Run: buf export buf.build/angzarr/examples -o examples-proto
+    // Proto generation moved out of build.rs per project_proto_generation_model
+    // (cross-language pattern: pre-build trigger lives in `just generate-proto`,
+    // never in build-tool integration). build.rs only emits bindings when
+    // explicitly opted in via `GENERATE_PROTOS=1` (the `just generate-proto`
+    // recipe sets this when it needs to refresh the source-tree bindings).
+    //
+    // Normal `cargo build` paths skip codegen and consume the pre-emitted
+    // `src/generated/*.rs` file via `include!` in `src/lib.rs`. That file is
+    // gitignored; lefthook fires `just generate-proto` on post-checkout /
+    // post-merge so fresh clones get it automatically.
+    println!("cargo:rerun-if-env-changed=GENERATE_PROTOS");
+    if std::env::var("GENERATE_PROTOS").is_err() {
+        return Ok(());
+    }
+
     // Build scripts run from crate dir, so we go up to workspace root
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let workspace_root = std::path::Path::new(&manifest_dir)
@@ -30,12 +43,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}/examples/rebuy.proto", proto_root),
     ];
 
+    let out_dir = std::env::var("ANGZARR_PROTO_OUT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(&manifest_dir)
+                .join("src")
+                .join("generated")
+        });
+    std::fs::create_dir_all(&out_dir)?;
+
     let mut prost_config = prost_build::Config::new();
     prost_config.enable_type_names();
 
     tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
+        .out_dir(&out_dir)
         .compile_with_config(prost_config, &protos, &[proto_root])?;
 
     Ok(())

@@ -1766,6 +1766,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "saga-table-tournament-h4h"
+version = "0.1.0"
+dependencies = [
+ "angzarr-client",
+ "examples-proto",
+ "examples-utils",
+ "prost",
+ "prost-types",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -907,8 +907,7 @@ fn rejection_cover_or_fail_player(world: &mut PlayerWorld) -> &angzarr_client::p
     // Late-stamp from world's command_cover before reading. Mirrors what
     // the production router's dispatch boundary does; needed here because
     // unit-tier `When` steps call handlers directly.
-    if let (Some(rej), Some(cover)) = (world.last_error.as_mut(), world.command_cover.as_ref())
-    {
+    if let (Some(rej), Some(cover)) = (world.last_error.as_mut(), world.command_cover.as_ref()) {
         if rej.cover.is_none() {
             rej.cover = Some(cover.clone());
         }
