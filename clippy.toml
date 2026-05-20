@@ -1,0 +1,10 @@
+# Clippy workspace config.
+#
+# `result_large_err` defaults to flagging Err-variants above 128 bytes.
+# Every saga / command handler in this workspace returns
+# `CommandResult<T>`, whose Err is `angzarr_client::CommandRejectedError`
+# at ~192 bytes (packed `google.rpc.Status` + the details map). Boxing
+# it framework-side is the right long-term fix; the threshold bump
+# keeps CI's `-D warnings` gate green in the meantime without
+# scattering `#[allow(clippy::result_large_err)]` across every crate.
+large-error-threshold = 256

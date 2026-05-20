@@ -59,7 +59,7 @@ fn pick_door_card(hole_cards: &[Card], seed: &[u8]) -> Option<Card> {
     let hash = Sha256::digest(seed);
     let n = hole_cards.len() as u64;
     let idx = (u64::from_be_bytes(hash[..8].try_into().unwrap()) % n) as usize;
-    Some(hole_cards[idx].clone())
+    Some(hole_cards[idx])
 }
 
 pub fn handle_scramble_all_down_cards(
