@@ -74,7 +74,7 @@ pub fn handle_bag_and_tag(
         })
         .collect();
     // Deterministic order: lexicographic by player_root_hex.
-    snapshots.sort_by(|a, b| hex::encode(&a.player_root).cmp(&hex::encode(&b.player_root)));
+    snapshots.sort_by_key(|s| hex::encode(&s.player_root));
 
     let event = BagAndTagComplete {
         snapshots,

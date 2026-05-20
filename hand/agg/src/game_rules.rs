@@ -376,7 +376,8 @@ fn evaluate_five(cards: &[Card]) -> HandRank {
 
     // Sort rank keys by (count desc, rank desc).
     let mut sorted_by_count: Vec<(i32, i32)> = rank_counts.iter().map(|(&r, &c)| (r, c)).collect();
-    sorted_by_count.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.cmp(&a.0)));
+    sorted_by_count
+        .sort_by_key(|&(rank, count)| (std::cmp::Reverse(count), std::cmp::Reverse(rank)));
     let counts: Vec<i32> = sorted_by_count.iter().map(|(_, c)| *c).collect();
 
     if is_straight && is_flush {
