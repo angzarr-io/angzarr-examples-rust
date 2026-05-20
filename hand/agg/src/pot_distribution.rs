@@ -154,9 +154,9 @@ pub fn split_pot_by_suit(
         .map(|(i, w)| (i, w.suit_rank))
         .collect();
     if high_wins {
-        indexed.sort_by(|a, b| b.1.cmp(&a.1));
+        indexed.sort_by_key(|&(_, sr)| std::cmp::Reverse(sr));
     } else {
-        indexed.sort_by(|a, b| a.1.cmp(&b.1));
+        indexed.sort_by_key(|&(_, sr)| sr);
     }
 
     let mut extra_recipients: std::collections::HashSet<usize> = std::collections::HashSet::new();

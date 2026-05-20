@@ -64,7 +64,7 @@ pub fn handle_correct_illegal_bet(
     // Build adjustments — iterate by player_root for deterministic
     // output ordering (HashMap iteration order is not stable).
     let mut players: Vec<_> = state.players.values().collect();
-    players.sort_by(|a, b| hex::encode(&a.player_root).cmp(&hex::encode(&b.player_root)));
+    players.sort_by_key(|p| hex::encode(&p.player_root));
     let adjustments: Vec<UnderbetAdjustment> = players
         .into_iter()
         .filter(|p| !p.has_folded)

@@ -369,7 +369,7 @@ fn evaluate_five(cards: &[Card]) -> HandRank {
         ranks.push(card.rank);
         *rank_counts.entry(card.rank).or_insert(0) += 1;
     }
-    ranks.sort_by(|a, b| b.cmp(a)); // descending
+    ranks.sort_by_key(|&r| std::cmp::Reverse(r)); // descending
 
     let is_flush = suits.iter().all(|&s| s == suits[0]);
     let is_straight = is_straight(&ranks);
