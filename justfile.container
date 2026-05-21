@@ -74,8 +74,8 @@ generate-proto-force:
     rm -rf angzarr-proto examples-proto
     cp -r _proto_export angzarr-proto
     mkdir -p examples-proto/examples
-    cp _proto_export/angzarr_client/proto/examples/*.proto examples-proto/examples/
-    sed -i 's|angzarr_client/proto/examples/|examples/|g' examples-proto/examples/*.proto
+    cp _proto_export/angzarr_client/proto/examples/v1/*.proto examples-proto/examples/
+    sed -i 's|angzarr_client/proto/examples/v1/|examples/|g' examples-proto/examples/*.proto
     rm -rf _proto_export
     # Stage 2: codegen → .rs bindings in proto/src/generated/
     mkdir -p proto/src/generated
