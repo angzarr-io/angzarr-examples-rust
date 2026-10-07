@@ -2,7 +2,7 @@
 # https://github.com/evilmartians/lefthook
 #
 # Setup: lefthook install
-# Bypass: git commit --no-verify (or LEFTHOOK=0 git commit)
+# Bypass: none — fix the finding instead.
 
 post-checkout:
   commands:
@@ -21,6 +21,13 @@ pre-commit:
       # git exports GIT_DIR/GIT_INDEX_FILE to hooks in linked worktrees,
       # which would make `git -C <submodule>` inspect the parent instead.
       run: env -u GIT_DIR -u GIT_INDEX_FILE just check-submodules-clean
+    # Refuse commits whose staged files contain secrets (gitleaks).
+    scan-secrets:
+      run: just scan-secrets
+    # Module-level layer rules (archlint.toml) over the Rust workspace.
+    archlint:
+      glob: "*.{rs,toml}"
+      run: just archlint
     fmt:
       glob: "*.rs"
       run: just fmt-fix

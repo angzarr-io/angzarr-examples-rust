@@ -2,12 +2,14 @@
 # This file is mounted as 'justfile' inside the container
 # Also used directly in CI
 #
-# Cargo recipes are no-ops until the workspace has a Cargo.toml (the
-# blackjack example port adds one).
+# Cargo recipes skip when the checkout has no Cargo.toml.
 
 set shell := ["bash", "-c"]
 
-ROOT := `git rev-parse --show-toplevel`
+# The checkout root: this file sits at the top (mounted over `justfile` in the
+# container, read in place in CI). Independent of git, so a git worktree whose
+# .git points outside the mount works too.
+ROOT := justfile_directory()
 
 default:
     @just --list
@@ -43,6 +45,12 @@ fmt-fix: (_cargo "fmt")
 
 # Check code compiles
 check: (_cargo "check" "--workspace")
+
+# Architecture lint: check the workspace's module dependency graph against
+# the layer rules in archlint.toml (tools/archlint). `cargo run -p archlint --
+# --edges` prints the model the rules are checked against.
+archlint:
+    cargo run --manifest-path {{ROOT}}/Cargo.toml --quiet -p archlint -- --rules {{ROOT}}/archlint.toml --manifest-path {{ROOT}}/Cargo.toml
 
 # Run all checks (build + test + lint + fmt)
 check-all: build test lint fmt

@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+# The example crates join this workspace as they are ported; tools/archlint
+# checks their module layering (archlint.toml).
+members = ["tools/archlint"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause"

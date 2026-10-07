@@ -90,6 +90,9 @@ jobs:
       - name: Format check
         run: just -f justfile.container fmt
 
+      - name: Architecture lint
+        run: just -f justfile.container archlint
+
   summary:
     name: Summary
     runs-on: ubuntu-latest

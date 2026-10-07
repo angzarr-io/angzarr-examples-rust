@@ -24,6 +24,12 @@ import? 'angzarr-project/submodule.just'
 ROOT := `git rev-parse --show-toplevel`
 IMAGE := "angzarr-examples-rust-dev"
 
+# Rootless docker maps container uid 0 to the host user, so `-u 0:0` is what
+# makes bind-mounted writes (target/, .cargo-container/) land as the host
+# user; the image's default user maps to an unowned subuid there. Rootful
+# docker keeps the image default.
+DOCKER_USER := if `docker info 2>/dev/null | grep -q rootless && echo yes || echo no` == "yes" { "-u 0:0" } else { "" }
+
 # Build the devcontainer image
 [private]
 _build-image:
@@ -39,7 +45,7 @@ _container +ARGS: _build-image
         # Mount the shared git dir at its host path so linked worktrees
         # (whose .git file points there) resolve inside the container.
         git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
-        docker run --rm \
+        docker run --rm {{DOCKER_USER}} \
             -v "{{ROOT}}:/workspace" \
             -v "${git_common}:${git_common}" \
             -v "{{ROOT}}/justfile.container:/workspace/justfile:ro" \
@@ -79,6 +85,10 @@ test:
 # Check code compiles
 check:
     just _container check
+
+# Architecture lint: module-level layer rules (archlint.toml)
+archlint:
+    just _container archlint
 
 # Format code
 fmt:
