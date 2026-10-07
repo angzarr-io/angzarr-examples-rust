@@ -1,0 +1,16 @@
+# Architecture rules for angzarr-examples-rust, checked by `just archlint`
+# (tools/archlint; pattern syntax and rule semantics in
+# tools/archlint/src/rules.rs). `cargo run -p archlint -- --edges` prints the
+# module graph these rules are checked against.
+#
+# The workspace currently holds only the linter itself. Each example crate
+# brings its own layer rules when it joins the workspace; a rule whose
+# `from` matches no module is reported as stale, so rules are added with the
+# code they constrain.
+
+[[rule]]
+name = "tooling-is-self-contained"
+why = "the architecture linter reads example code from disk; it never links an example crate, the client, or a submodule checkout"
+from = ["archlint::**"]
+allow = ["archlint::**"]
+deny = ["angzarr_client::**", "path:angzarr-client-rust/**", "path:angzarr-project/**"]

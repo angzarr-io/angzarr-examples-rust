@@ -66,7 +66,7 @@ jobs:
           setup_only: true
 
       - name: Update client dependency (on dispatch)
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' && hashFiles('Cargo.toml') != ''
         run: cargo update angzarr-client
 
       - name: Cache cargo registry
@@ -90,215 +90,13 @@ jobs:
       - name: Format check
         run: just -f justfile.container fmt
 
-      # Mutation testing runs on a schedule (.github/workflows/mutation.yml)
-      # against main rather than per-PR. See the blog post on CI gates for
-      # the rationale: cargo-mutants --test-workspace × 523 cucumber
-      # scenarios per mutant does not fit the 2-vCPU free-runner time cap.
-
-  build-images:
-    name: Build & Push Images
-    runs-on: ubuntu-latest
-    needs: test
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        target:
-          - agg-player
-          - agg-table
-          - agg-hand
-          - saga-table-hand
-          - saga-table-player
-          - saga-hand-table
-          - saga-hand-player
-          - pmg-hand-flow
-          - pmg-buy-in
-          - pmg-registration
-          - pmg-rebuy
-          - prj-output
-          - upc-player
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false  # fetched manually below without --depth=1
-
-      - name: Fetch submodules (unshallow; avoids HTTP 500 direct-fetch path)
-        run: git submodule update --init
-
-      - name: Init nested angzarr-project submodule (non-recursive)
-        run: git -C angzarr-client-rust submodule update --init angzarr-project
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install versionator
-        # Pinned by sha256 digest; matches the supply-chain rule from
-        # the container-versioning blog post. The tarball ships the
-        # binary as `versionator-linux-amd64`; rename on install.
-        run: |
-          curl -fsSL -o /tmp/versionator.tgz \
-            https://github.com/benjaminabbitt/versionator/releases/download/v0.1.1/versionator-linux-amd64.tar.gz
-          echo "66ed07135eaeaa72d9ece6fa5c2814d239738d61e134b9b5dcbad0a4d07d458b  /tmp/versionator.tgz" | sha256sum -c -
-          tar -xz -f /tmp/versionator.tgz -C /tmp versionator-linux-amd64
-          sudo install -m 0755 /tmp/versionator-linux-amd64 /usr/local/bin/versionator
-          versionator output version
-
-      - name: Compute version variables
-        id: version
-        run: versionator output ci --format=github
-
-      - name: Generate image tags
-        id: tags
-        # Tagging policy (matches angzarr/core's release workflow):
-        #   * pull_request         → pr-<N>-<short-sha>
-        #   * push to main         → v<semver>-dev.<short-sha>, dev
-        #   * tag push v*.*.*      → v<semver>, v<major>.<minor>, v<major>
-        # No :latest ever. See blog/container-versioning-no-latest.
-        run: |
-          REPO="${{ env.IMAGE_PREFIX }}-${{ matrix.target }}"
-          V="${VERSION}"               # e.g. 0.2.0
-          MAJ="${VERSION_MAJOR}"       # e.g. 0
-          MIN="${VERSION_MAJOR}.${VERSION_MINOR}"  # e.g. 0.2
-          SHORT="${GIT_SHA_SHORT}"     # versionator-provided
-          tags=""
-          append() { tags="${tags:+$tags,}$1"; }
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PR_NUM="${{ github.event.pull_request.number }}"
-            append "$REPO:pr-${PR_NUM}-${SHORT}"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            # Release tag push. Require a clean semver match with VERSION file.
-            TAG_V="${GITHUB_REF#refs/tags/v}"
-            if [ "$TAG_V" != "$V" ]; then
-              echo "::error::Tag v$TAG_V does not match VERSION file ($V). Bump VERSION before tagging."
-              exit 1
-            fi
-            append "$REPO:v$V"
-            append "$REPO:v$MIN"
-            append "$REPO:v$MAJ"
-          else
-            # Push to main (or other non-tag branch).
-            append "$REPO:v${V}-dev.${SHORT}"
-            append "$REPO:dev"
-          fi
-          echo "Computed tags: $tags"
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Containerfile
-          target: ${{ matrix.target }}
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Export image for acceptance tests
-        if: github.event_name == 'pull_request'
-        run: docker save -o /tmp/${{ matrix.target }}.tar "${{ steps.tags.outputs.tags }}"
-
-      - name: Upload image artifact
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-${{ matrix.target }}
-          path: /tmp/${{ matrix.target }}.tar
-          retention-days: 1
-
-  # Compute image tag for acceptance tests.
-  # Must match the primary tag emitted by the build-images step.
-  compute-tag:
-    name: Compute Image Tag
-    runs-on: ubuntu-latest
-    needs: build-images
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      images-json: ${{ steps.images.outputs.json }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install versionator
-        run: |
-          curl -fsSL -o /tmp/versionator.tgz \
-            https://github.com/benjaminabbitt/versionator/releases/download/v0.1.1/versionator-linux-amd64.tar.gz
-          echo "66ed07135eaeaa72d9ece6fa5c2814d239738d61e134b9b5dcbad0a4d07d458b  /tmp/versionator.tgz" | sha256sum -c -
-          tar -xz -f /tmp/versionator.tgz -C /tmp versionator-linux-amd64
-          sudo install -m 0755 /tmp/versionator-linux-amd64 /usr/local/bin/versionator
-
-      - name: Compute version variables
-        run: versionator output ci --format=github
-
-      - name: Generate image tag
-        id: tag
-        # Keep in lockstep with build-images: use the primary tag each
-        # event emits (see that step for the full rationale).
-        run: |
-          SHORT="${GIT_SHA_SHORT}"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PR_NUM="${{ github.event.pull_request.number }}"
-            echo "tag=pr-${PR_NUM}-${SHORT}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=v${VERSION}-dev.${SHORT}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build images JSON
-        id: images
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          PREFIX: ${{ env.IMAGE_PREFIX }}
-        run: |
-          # Build JSON object of all example images
-          JSON=$(cat <<EOF
-          {
-            "agg-player": "${PREFIX}-agg-player:${TAG}",
-            "agg-table": "${PREFIX}-agg-table:${TAG}",
-            "agg-hand": "${PREFIX}-agg-hand:${TAG}",
-            "saga-table-hand": "${PREFIX}-saga-table-hand:${TAG}",
-            "saga-table-player": "${PREFIX}-saga-table-player:${TAG}",
-            "saga-hand-table": "${PREFIX}-saga-hand-table:${TAG}",
-            "saga-hand-player": "${PREFIX}-saga-hand-player:${TAG}",
-            "pmg-hand-flow": "${PREFIX}-pmg-hand-flow:${TAG}",
-            "pmg-buy-in": "${PREFIX}-pmg-buy-in:${TAG}",
-            "pmg-registration": "${PREFIX}-pmg-registration:${TAG}",
-            "pmg-rebuy": "${PREFIX}-pmg-rebuy:${TAG}",
-            "prj-output": "${PREFIX}-prj-output:${TAG}",
-            "upc-player": "${PREFIX}-upc-player:${TAG}"
-          }
-          EOF
-          )
-          echo "json=$(echo "$JSON" | jq -c '.')" >> $GITHUB_OUTPUT
-
-  # Call reusable acceptance test workflow
-  acceptance-test:
-    name: Acceptance Tests
-    needs: [build-images, compute-tag]
-    uses: ./.github/workflows/acceptance-callable.yml
-    with:
-      # Use just-pushed example images
-      example-images: ${{ needs.compute-tag.outputs.images-json }}
-      # Coordinator image refs are digest-pinned in acceptance-callable.yml;
-      # this input remains for signature compat but is a no-op.
-      coordinator-version: ""
-      examples-ref: ${{ github.ref }}
-    secrets: inherit
+      - name: Architecture lint
+        run: just -f justfile.container archlint
 
   summary:
     name: Summary
     runs-on: ubuntu-latest
-    needs: [test, build-images, acceptance-test]
+    needs: [test]
     if: always()
     steps:
       - name: Check results
@@ -308,13 +106,9 @@ jobs:
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Images | ${{ needs.build-images.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Acceptance Tests | ${{ needs.acceptance-test.result }} |" >> $GITHUB_STEP_SUMMARY
 
           # All jobs must pass to merge
-          if [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.build-images.result }}" != "success" ] || \
-             [ "${{ needs.acceptance-test.result }}" != "success" ]; then
+          if [ "${{ needs.test.result }}" != "success" ]; then
             echo "One or more required jobs failed"
             exit 1
           fi

@@ -29,3 +29,6 @@ Thumbs.db
 # cargo-mutants
 mutants.out/
 mutants.out.old/
+
+# Container-side cargo home (justfile `_container` sets CARGO_HOME here)
+.cargo-container/
