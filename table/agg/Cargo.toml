@@ -1,0 +1,10 @@
+[package]
+name = "agg-table"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The blackjack table aggregate's domain logic: the deterministic shoe and the table's decisions and state, as pure functions"
+
+[dependencies]
+examples-proto.workspace = true

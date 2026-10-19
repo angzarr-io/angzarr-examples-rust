@@ -21,3 +21,17 @@ why = "examples-proto is generated wire types only: every component links it, so
 from = ["examples_proto::**"]
 allow = ["examples_proto::**"]
 deny = ["angzarr_client::**"]
+
+[[rule]]
+name = "table-domain-is-framework-free"
+why = "the table's decisions and appliers are pure functions over the generated types, so any handler framework can wire them without the domain linking it"
+from = ["agg_table::**"]
+allow = ["agg_table::**", "examples_proto::**"]
+deny = ["angzarr_client::**", "tonic::**"]
+
+[[rule]]
+name = "the-shoe-knows-only-cards"
+why = "the shoe is the cards.proto algorithm alone; the table's state and decisions build on it, never the reverse"
+from = ["agg_table::shoe"]
+allow = ["examples_proto::**"]
+scope = "lib"

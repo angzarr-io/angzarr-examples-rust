@@ -2,7 +2,7 @@
 resolver = "2"
 # The example crates join this workspace as they are ported; tools/archlint
 # checks their module layering (archlint.toml).
-members = ["proto", "tools/archlint"]
+members = ["proto", "table/agg", "tools/archlint"]
 
 [workspace.package]
 version = "0.1.0"
