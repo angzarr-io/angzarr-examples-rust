@@ -14,3 +14,10 @@ why = "the architecture linter reads example code from disk; it never links an e
 from = ["archlint::**"]
 allow = ["archlint::**"]
 deny = ["angzarr_client::**", "path:angzarr-client-rust/**", "path:angzarr-project/**"]
+
+[[rule]]
+name = "generated-types-are-a-leaf"
+why = "examples-proto is generated wire types only: every component links it, so it links no example crate and no framework client"
+from = ["examples_proto::**"]
+allow = ["examples_proto::**"]
+deny = ["angzarr_client::**"]
