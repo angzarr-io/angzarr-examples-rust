@@ -90,6 +90,10 @@ check:
 archlint:
     just _container archlint
 
+# Mutation-test the aggregates (cargo-mutants, 70% threshold)
+mutation-test:
+    just _container mutation-test
+
 # Format code
 fmt:
     just _container fmt
