@@ -40,7 +40,12 @@ _build-image:
 _container +ARGS: _build-image
     #!/usr/bin/env bash
     if [ "${DEVCONTAINER:-}" = "true" ]; then
-        just {{ARGS}}
+        # Name the container justfile explicitly. A bare `just {{ARGS}}`
+        # resolves to THIS (host) justfile, whose recipes call `_container`
+        # again: build -> _container build -> just build -> ... with no
+        # limit. The same recursion in client-rust exhausted the cgroup's
+        # task cap and killed the session running it (2026-10-26).
+        just --justfile "{{ROOT}}/justfile.container" {{ARGS}}
     else
         # Mount the shared git dir at its host path so linked worktrees
         # (whose .git file points there) resolve inside the container.
