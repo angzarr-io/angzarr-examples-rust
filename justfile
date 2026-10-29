@@ -126,6 +126,10 @@ mutation-test:
 mutation-push remote *lefthook:
     #!/usr/bin/env bash
     set -euo pipefail
+    # git exports repository-locating variables (GIT_DIR, ...) into a hook;
+    # with them, a git -C the push tree or a submodule would act on this
+    # checkout instead.
+    unset $(git rev-parse --local-env-vars)
     top='{{ROOT}}'
     remote=$1
     default=$(git -C "$top" symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null) && default=${default#"$remote"/} || default=main
