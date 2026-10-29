@@ -1908,6 +1908,106 @@ fn eu_1461_a_cash_out_is_identified_by_the_table_and_its_position_in_the_history
     assert_eq!(cashed.cashout_id[..], cashout_id(5)[..]);
 }
 
+/// The kind of a table event, by its message name.
+fn kind(event: &Ev) -> String {
+    type_name(&event.to_any().type_url)
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[test]
+fn eu_1461_every_kind_of_table_event_moves_the_cash_out_position_by_one() {
+    // A history holding every table event, recorded as commands record
+    // it: a hold released, a player cashed out, and two rounds played
+    // (a hit then a stand; a double). Each event counts once towards the
+    // position the next cash-out is identified by.
+    const CAROL: u8 = 0xca;
+    const B3: u8 = 0x03;
+    let mut table = given(background("2♣ 9♦ 4♣ 7♠ 3♥ 5♥ 5♣ 10♦ 6♦ 8♠ K♥"));
+    let mut recorded: Vec<Ev> = table
+        .stream
+        .events()
+        .iter()
+        .map(|e| Ev::from_any(&e.event().to_any()))
+        .collect();
+    let mut record = |table: &mut Harness, then: Then| {
+        recorded.extend(then.expect("accepted"));
+        assert_eq!(
+            head(table),
+            recorded.len() as u64,
+            "the stream holds what was recorded"
+        );
+    };
+
+    let then = table.when(request(CAROL, 2, 500, B3));
+    record(&mut table, then);
+    let then = table.when(v1::ReleaseSeat {
+        buy_in_id: bytes(B3).into(),
+        reason: "funds were refused".into(),
+    });
+    record(&mut table, then);
+    let bob_at = head(&table);
+    let then = table.when(v1::LeaveTable { seat: 1 });
+    record(&mut table, then);
+    for command in [
+        Box::new(|t: &mut Harness| t.when(place(0, 20))) as Box<dyn Fn(&mut Harness) -> Then>,
+        Box::new(|t| t.when(v1::DealRound {})),
+        Box::new(|t| t.when(v1::Hit { seat: 0 })),
+        Box::new(|t| t.when(v1::Stand { seat: 0 })),
+        Box::new(|t| t.when(place(0, 20))),
+        Box::new(|t| t.when(v1::DealRound {})),
+        Box::new(|t| t.when(v1::DoubleDown { seat: 0 })),
+    ] {
+        let then = command(&mut table);
+        record(&mut table, then);
+    }
+    let alice_at = head(&table);
+    let left = table.when(v1::LeaveTable { seat: 0 }).expect("left");
+
+    let mut kinds: Vec<String> = recorded.iter().map(kind).collect();
+    kinds.sort();
+    kinds.dedup();
+    let mut every: Vec<String> = [
+        "TableCreated",
+        "ShoeShuffled",
+        "SeatHeld",
+        "SeatReleased",
+        "PlayerSeated",
+        "PlayerCashedOut",
+        "BetPlaced",
+        "RoundDealt",
+        "TurnStarted",
+        "CardDealt",
+        "HandStood",
+        "HandDoubled",
+        "DealerPlayed",
+        "RoundSettled",
+    ]
+    .map(String::from)
+    .to_vec();
+    every.sort();
+    assert_eq!(kinds, every, "the history holds every table event");
+    let Ev::PlayerCashedOut(bob) = &recorded[bob_at as usize] else {
+        panic!(
+            "expected Bob's PlayerCashedOut, got {:?}",
+            recorded[bob_at as usize]
+        );
+    };
+    assert_eq!(
+        bob.cashout_id[..],
+        agg_table::cashout::cashout_id(&[0x7a; 16], bob_at)
+    );
+    let [Ev::PlayerCashedOut(alice)] = &left[..] else {
+        panic!("expected Alice's PlayerCashedOut, got {left:?}");
+    };
+    assert_eq!(
+        alice.cashout_id[..],
+        agg_table::cashout::cashout_id(&[0x7a; 16], alice_at)
+    );
+}
+
 #[test]
 fn eu_1462_a_player_with_a_bet_in_play_cannot_leave() {
     let mut events = alice_seated(500);
@@ -2027,5 +2127,127 @@ fn ea_0024_two_hits_for_one_hand_at_the_same_moment_deal_exactly_one_card() {
     assert!(
         matches!(second, Err(Failure::Kernel(KernelError::Stale { .. }))),
         "refused as stale: {second:?}"
+    );
+}
+
+// ================================================================ the limits' edges
+
+#[test]
+fn eu_1447_a_buy_in_at_either_end_of_the_tables_range_is_held() {
+    for amount in [100, 1000] {
+        let mut table = given(main_table());
+
+        assert_eq!(
+            table.when(request(ALICE, 0, amount, B1)).expect("held"),
+            vec![held(B1, ALICE, 0, amount)],
+            "buy-in {amount}"
+        );
+    }
+}
+
+#[test]
+fn eu_1471_a_bet_at_either_table_limit_is_taken() {
+    for amount in [10, 100] {
+        let mut table = given(background("2♣"));
+
+        assert_eq!(
+            table.when(place(0, amount)).expect("bet"),
+            vec![bet(0, amount, 500 - amount)],
+            "bet {amount}"
+        );
+    }
+}
+
+#[test]
+fn eu_1473_a_bet_of_the_whole_stack_is_taken() {
+    let mut table = given(background_with("2♣", (500, 40)));
+
+    assert_eq!(table.when(place(1, 40)).expect("bet"), vec![bet(1, 40, 0)]);
+}
+
+#[test]
+fn eu_1488_a_stack_exactly_the_wager_covers_a_double() {
+    let mut table = given(dealt_round(
+        "5♣ 9♦ 6♣ 7♠ K♥",
+        (500, 40),
+        &[1],
+        dealt(vec![hand(1, "5♣ 6♣", 11, false, false)], "9♦", "7♠", 1),
+    ));
+
+    let events = table.when(v1::DoubleDown { seat: 1 }).expect("doubled");
+
+    let Some(Ev::HandDoubled(doubled)) = events.first() else {
+        panic!("expected HandDoubled first, got {events:?}");
+    };
+    assert_eq!((doubled.added, doubled.stack_after), (20, 0));
+}
+
+// ================================================================ no seat on turn
+
+#[test]
+fn between_rounds_no_seat_is_on_turn() {
+    let mut table = given(vec![]);
+    table.when(create_main(42)).expect("created");
+    assert_eq!(table.state().turn, -1, "after the table is created");
+
+    let mut table = alice_alone(
+        "10♣ A♦ 9♥ 6♠",
+        hand(0, "10♣ 9♥", 19, false, false),
+        "A♦",
+        "6♠",
+    );
+    table.when(v1::Stand { seat: 0 }).expect("stood");
+    assert_eq!(table.state().phase(), Phase::Idle);
+    assert_eq!(table.state().turn, -1, "after the round settles");
+}
+
+// ================================================================ the refusals as diagnostics
+
+/// A refusal's report: its code and its English.
+#[track_caller]
+fn report_of(then: Then) -> (String, String) {
+    match then {
+        Err(Failure::Rejected(rejected)) => (
+            rejected.report().code().to_string(),
+            rejected.report().to_string(),
+        ),
+        other => panic!("expected the table to refuse, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_table_refusal_is_reported_by_its_code_and_its_message() {
+    let mut table = given(background("2♣"));
+
+    assert_eq!(
+        report_of(table.when(place(0, 102))),
+        (
+            "examples-table-bet-out-of-range".to_string(),
+            "the bet is outside 10 to 100".to_string()
+        )
+    );
+}
+
+#[test]
+fn a_seat_not_confirmable_is_reported_by_its_code_message_and_reason() {
+    let mut table = given(main_table());
+
+    let then = table.when(confirm(B1));
+    let Err(Failure::Rejected(rejected)) = &then else {
+        panic!("expected SeatNotConfirmable, got {then:?}");
+    };
+    let report = rejected.report();
+    let reason = not_confirmable(then.clone());
+    assert_eq!(report.code(), "examples-table-seat-not-confirmable");
+    assert_eq!(
+        report.to_string(),
+        format!("the seat cannot be confirmed: {reason}")
+    );
+    assert!(
+        report
+            .args()
+            .into_iter()
+            .any(|(name, arg)| name == "reason" && matches!(arg, Arg::Str(r) if r == reason)),
+        "its reason travels as an arg: {report:?}"
     );
 }
