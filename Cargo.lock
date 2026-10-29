@@ -28,7 +28,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "angzarr-embedded"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=169b79b21cd977cccdc198351a73d2d51531f3e9#169b79b21cd977cccdc198351a73d2d51531f3e9"
 dependencies = [
  "angzarr-embedded-diagnostic",
  "angzarr-ports",
@@ -41,12 +41,12 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=169b79b21cd977cccdc198351a73d2d51531f3e9#169b79b21cd977cccdc198351a73d2d51531f3e9"
 
 [[package]]
 name = "angzarr-embedded-host"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=169b79b21cd977cccdc198351a73d2d51531f3e9#169b79b21cd977cccdc198351a73d2d51531f3e9"
 dependencies = [
  "angzarr-embedded",
  "angzarr-embedded-diagnostic",
@@ -63,13 +63,14 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tonic-prost",
+ "tonic-types",
  "tower",
 ]
 
 [[package]]
 name = "angzarr-embedded-macros"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=169b79b21cd977cccdc198351a73d2d51531f3e9#169b79b21cd977cccdc198351a73d2d51531f3e9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -101,7 +102,7 @@ dependencies = [
 [[package]]
 name = "angzarr-router"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-router?rev=6be9159962b4d3beffa3936855a55b6469ca0cc7#6be9159962b4d3beffa3936855a55b6469ca0cc7"
+source = "git+https://github.com/angzarr-io/angzarr-router?rev=bc870aa2fd2bc3592d4e999d314a0f8cb30ad9c2#bc870aa2fd2bc3592d4e999d314a0f8cb30ad9c2"
 dependencies = [
  "angzarr-proto",
  "heck 0.5.0",
@@ -114,7 +115,7 @@ dependencies = [
 [[package]]
 name = "angzarr-store-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=169b79b21cd977cccdc198351a73d2d51531f3e9#169b79b21cd977cccdc198351a73d2d51531f3e9"
 dependencies = [
  "angzarr-ports",
  "prost",
@@ -2085,6 +2086,17 @@ checksum = "f63c616ffaa648f7c5dd5657e97d9a285fcb44ff3b70da761d436f5a13ff7be6"
 dependencies = [
  "bytes",
  "prost",
+ "tonic",
+]
+
+[[package]]
+name = "tonic-types"
+version = "0.14.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7673cdf53817d382bad8ecb56507b4595a2adb07ef16bf0dd965ef48c1fced"
+dependencies = [
+ "prost",
+ "prost-types",
  "tonic",
 ]
 

@@ -5,6 +5,7 @@
 use angzarr_embedded::next::markup::PolicyContext;
 use angzarr_embedded::next::v1::{Cover, EventRef, Uuid};
 use angzarr_embedded::next::{pack, Any, Timestamp};
+use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 use examples_proto::v1::{self, MoveAction, Suit};
 
 use super::PlayerTablePolicy;
@@ -63,6 +64,7 @@ fn decided(action: MoveAction) -> MoveDecided {
 fn table_command(action: MoveAction) -> Vec<(Uuid, Any)> {
     PlayerTablePolicy
         .move_decided(&decided(action), &context("player", ALICE))
+        .expect("a move")
         .orders()
         .to_vec()
 }
@@ -104,7 +106,9 @@ fn eu_1603_the_command_names_the_seat_and_table_the_decision_names() {
         dealer_up: Some(card(9, Suit::Clubs)),
     });
 
-    let commands = PlayerTablePolicy.move_decided(&decision, &context("player", ALICE));
+    let commands = PlayerTablePolicy
+        .move_decided(&decision, &context("player", ALICE))
+        .expect("a move");
 
     assert_eq!(
         commands.orders(),
@@ -113,9 +117,17 @@ fn eu_1603_the_command_names_the_seat_and_table_the_decision_names() {
 }
 
 #[test]
-fn eu_1604_a_decision_with_no_action_sends_no_command() {
-    // The spec: a player bug, dead-lettered and alerted. A markup policy
-    // handler is infallible, so what it can pin is that nothing is sent;
-    // the dead letter is an open question for angzarr-embedded.
-    assert_eq!(table_command(MoveAction::Unspecified), []);
+fn eu_1604_a_decision_with_no_action_is_the_policys_error() {
+    // The spec: a player bug, dead-lettered and alerted. The handler's
+    // error is what angzarr-embedded dead-letters, by its code and args.
+    let error = PlayerTablePolicy
+        .move_decided(&decided(MoveAction::Unspecified), &context("player", ALICE))
+        .err()
+        .expect("no move is a bug, not an empty answer");
+    assert_eq!(error.code(), "policy-player-table-unknown-action");
+    let args = error.args();
+    assert!(
+        matches!(args.as_slice(), [("action", Arg::Int(0))]),
+        "the action it decided, MOVE_ACTION_UNSPECIFIED: {args:?}"
+    );
 }

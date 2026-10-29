@@ -5,6 +5,8 @@
 //! A thin adapter over table-player-policies' [`TablePlayer`]; each hand
 //! edit to the scaffold's output is marked `HAND-EDIT`.
 
+use std::convert::Infallible;
+
 use angzarr_embedded::next::markup::{Commands, PolicyContext};
 use angzarr_embedded::next::v1::Uuid;
 use angzarr_embedded_macros::{on_event, policy};
@@ -21,7 +23,11 @@ pub struct TablePlayerPolicy;
 #[policy(name = "policy-table-player", source = TableAggregate, target = PlayerAggregate)]
 impl TablePlayerPolicy {
     #[on_event(TurnStarted)]
-    fn turn_started(&self, event: &TurnStarted, ctx: &PolicyContext) -> Commands<PlayerAggregate> {
+    fn turn_started(
+        &self,
+        event: &TurnStarted,
+        ctx: &PolicyContext,
+    ) -> Result<Commands<PlayerAggregate>, Infallible> {
         // HAND-EDIT: the body. The table root is the trigger's own stream's.
         let table_root = ctx
             .trigger()
@@ -31,12 +37,12 @@ impl TablePlayerPolicy {
             .map(|root| root.value.to_vec())
             .unwrap_or_default();
         let ask = Policies.turn_started(&table_root, &event.0);
-        Commands::none().to(
+        Ok(Commands::none().to(
             Uuid {
                 value: ask.root.into(),
             },
             DecideMove(ask.command),
-        )
+        ))
     }
 }
 

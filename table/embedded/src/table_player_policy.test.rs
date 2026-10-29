@@ -63,7 +63,7 @@ fn alices_turn() -> v1::TurnStarted {
 
 #[test]
 fn eu_1601_the_table_to_player_translator_asks_the_seats_player_to_decide() {
-    let commands =
+    let Ok(commands) =
         TablePlayerPolicy.turn_started(&TurnStarted(alices_turn()), &context("table", TABLE));
 
     let decide = v1::DecideMove {
@@ -102,7 +102,7 @@ fn eu_1601_the_request_follows_the_turn_field_for_field() {
         wager: 30,
     };
 
-    let commands = TablePlayerPolicy.turn_started(&TurnStarted(turn), &context("table", 0x7b));
+    let Ok(commands) = TablePlayerPolicy.turn_started(&TurnStarted(turn), &context("table", 0x7b));
 
     let decide = v1::DecideMove {
         table_root: vec![0x7b; 16].into(),

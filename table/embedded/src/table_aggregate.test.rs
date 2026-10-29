@@ -21,7 +21,9 @@
 
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards};
-use angzarr_embedded::next::markup::{assert_step_idempotent, Context, MARKUP_RULES_VERSION};
+use angzarr_embedded::next::markup::{
+    assert_step_idempotent, CommandContext, Context, MARKUP_RULES_VERSION,
+};
 use angzarr_embedded::next::v1::event_meta::Causation;
 use angzarr_embedded::next::v1::{
     command_page, Command, CommandBook, CommandPage, ConflictResolution, Cover, EventMeta,
@@ -1746,15 +1748,16 @@ fn eu_1504_every_round_keeps_the_tables_chips_in_balance() {
 // ================================================================ continuation steps
 
 fn step_context() -> Context {
-    Context::new(
-        Timestamp {
-            seconds: 1_000,
-            nanos: 0,
-        },
-        cover(),
-        id(99),
-        id(99),
-    )
+    Context::new(Timestamp {
+        seconds: 1_000,
+        nanos: 0,
+    })
+    .with_command(CommandContext {
+        cover: Some(cover()),
+        command_id: Some(id(99)),
+        correlation_id: Some(id(99)),
+        ..CommandContext::default()
+    })
 }
 
 /// The background with Alice and Bob's bets, from a shoe beginning `shoe`.
@@ -2046,14 +2049,9 @@ fn leaving_a_table_that_does_not_exist_is_refused() {
 // both commands are prepared from the same head (the same expected
 // sequence) and sent one after the other, so the second always meets the
 // first's events. table.proto: PlaceBet is sent with AGGREGATE_HANDLES,
-// the turn actions with STRICT.
-//
-// The AGGREGATE_HANDLES pair is ignored, not deleted: a marked-up
-// aggregate's handler cannot reach the kernel's `Tx`, and the expansion
-// never calls `resolve_conflicts`, so angzarr-embedded (b3e3f20, and still dfe1cf1 through angzarr-router) refuses
-// even the first bet as Unresolved and dead-letters it. The table decides
-// against its full history already; un-ignore them once the markup
-// acknowledges the window.
+// the turn actions with STRICT. The table's PlaceBet handler acknowledges
+// the window it reads from its context (`ctx.command.conflict`) and decides
+// against its full history.
 
 /// Sent as prepared from the table at `head`, under `resolution`.
 fn prepared(head: u64, resolution: ConflictResolution) -> Option<Handling> {
@@ -2068,7 +2066,6 @@ fn head(table: &Harness) -> u64 {
 }
 
 #[test]
-#[ignore = "angzarr-embedded gap: its markup never acknowledges an AGGREGATE_HANDLES window (Tx::resolve_conflicts), so every such command fails Unresolved"]
 fn ea_0022_a_second_bet_for_the_same_seat_is_refused_by_the_table_itself() {
     let mut table = given(background("2♣"));
     let at = head(&table);
@@ -2083,7 +2080,6 @@ fn ea_0022_a_second_bet_for_the_same_seat_is_refused_by_the_table_itself() {
 }
 
 #[test]
-#[ignore = "angzarr-embedded gap: its markup never acknowledges an AGGREGATE_HANDLES window (Tx::resolve_conflicts), so every such command fails Unresolved"]
 fn ea_0023_bets_for_different_seats_prepared_at_the_same_moment_both_land() {
     let mut table = given(background("2♣"));
     let at = head(&table);

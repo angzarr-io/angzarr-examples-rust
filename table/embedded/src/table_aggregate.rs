@@ -85,9 +85,10 @@ impl TableAggregate {
         // HAND-EDIT: the table root, for the cash-out id. The kernel only
         // runs a handler for a well-formed root (16 bytes).
         let root: [u8; 16] = ctx
-            .stream()
-            .root
+            .command
+            .cover
             .as_ref()
+            .and_then(|cover| cover.root.as_ref())
             .and_then(|root| root.value[..].try_into().ok())
             .unwrap_or_default();
         Ok(PlayerCashedOut(self.table.leave_table(&cmd.0, &root)?))
@@ -95,7 +96,13 @@ impl TableAggregate {
 
     #[handles_cmd(PlaceBet)]
     fn place_bet(&self, cmd: PlaceBet, ctx: &Context) -> Result<BetPlaced, TableRefused> {
-        let _ = ctx;
+        // HAND-EDIT: PlaceBet is sent with AGGREGATE_HANDLES (table.proto).
+        // The table decides against its full history, the window the bet
+        // did not see included, so a second bet on the seat is its own
+        // ALREADY_BET; it acknowledges the window it was handed.
+        if let Some(conflict) = &ctx.command.conflict {
+            conflict.resolve_conflicts(conflict.window(), conflict.nonce());
+        }
         Ok(BetPlaced(self.table.place_bet(&cmd.0)?))
     }
 
