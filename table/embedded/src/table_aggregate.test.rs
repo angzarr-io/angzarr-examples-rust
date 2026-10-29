@@ -115,6 +115,7 @@ struct Harness {
     registry: Registry,
     stream: Stream<TableAggregate>,
     commands: u32,
+    dead_letters: MemoryDeadLetters,
 }
 
 /// The table after `events`, replayed as stored pages (recorded before any
@@ -144,6 +145,7 @@ fn given(events: Vec<Ev>) -> Harness {
         registry,
         stream,
         commands: 0,
+        dead_letters: MemoryDeadLetters::new(),
     }
 }
 
@@ -179,10 +181,9 @@ impl Harness {
             },
             command_id: id(n),
         };
-        let dead_letters = MemoryDeadLetters::new();
         match self
             .stream
-            .execute(book, &self.registry, &sampled, &dead_letters, &mut [])?
+            .execute(book, &self.registry, &sampled, &self.dead_letters, &mut [])?
         {
             Executed::Applied(events) => Ok(events
                 .iter()
@@ -1553,6 +1554,45 @@ fn eu_1500_the_last_action_plays_the_dealer_and_settles_in_the_same_step() {
     assert_eq!(state.round, 1);
     assert!(state.seated.values().all(|s| s.wager == 0), "no wager left");
     assert_ledger_balances(state);
+}
+
+/// A shoe the dealer runs out of is a bug, never a business answer: a
+/// round never runs the shoe out (AHR-4: DealRound replaces a shoe that
+/// could). The step that settles fails the whole decision as a keyed bug,
+/// UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out` as its cause,
+/// dead-lettered, and nothing is recorded.
+#[test]
+fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
+    // Exactly the four cards dealt: Alice's 10 9, the dealer's 5 up and 6
+    // in the hole, 11, who must draw from an empty shoe.
+    let mut events = dealt_round(
+        "10♣ 5♦ 9♥ 6♠",
+        (500, 500),
+        &[0],
+        dealt(vec![hand(0, "10♣ 9♥", 19, false, false)], "5♦", "6♠", 0),
+    );
+    events[1] = shoe_one(cards("10♣ 5♦ 9♥ 6♠"));
+    let mut table = given(events);
+    let before = table.state().clone();
+
+    let failure = table.when(v1::Stand { seat: 0 }).expect_err("a bug");
+
+    assert!(
+        matches!(
+            &failure,
+            Failure::Kernel(KernelError::Router(e)) if e.code == "UNHANDLED_HANDLER_ERROR"
+        ),
+        "a bug, not a refusal: {failure:?}"
+    );
+    let lines = table.dead_letters.lines();
+    assert_eq!(lines.len(), 1, "dead-lettered once: {lines:?}");
+    assert!(
+        lines[0]
+            .contains("UNHANDLED_HANDLER_ERROR cause=examples-table-shoe-ran-out cause.round=1"),
+        "keyed, its round the arg: {}",
+        lines[0]
+    );
+    assert_eq!(table.state(), &before, "nothing recorded");
 }
 
 // ================================================================ decision points (TurnStarted)
