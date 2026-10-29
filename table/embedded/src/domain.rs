@@ -61,9 +61,9 @@ domain_messages!(
     Stand,
     /// The seat on turn doubles its wager and draws exactly one card.
     DoubleDown,
-    /// Cash out and free the seat (scaffolded; not implemented tonight).
+    /// Cash out the whole stack and free the seat.
     LeaveTable,
-    /// Free a held seat (scaffolded; not implemented tonight).
+    /// Free a held seat.
     ReleaseSeat,
     PlayerCashedOut,
     SeatReleased,

@@ -51,6 +51,7 @@ impl Diagnostic for TableRefused {
             RejectionCode::BuyInOutOfRange => "examples-table-buy-in-out-of-range",
             RejectionCode::BetOutOfRange => "examples-table-bet-out-of-range",
             RejectionCode::BetNotEven => "examples-table-bet-not-even",
+            RejectionCode::WagerInPlay => "examples-table-wager-in-play",
         }
     }
 

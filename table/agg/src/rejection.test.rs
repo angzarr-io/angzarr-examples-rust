@@ -36,6 +36,7 @@ fn every_reason_is_the_one_table_proto_lists_with_its_status() {
         ("BUY_IN_OUT_OF_RANGE", Ia),
         ("BET_OUT_OF_RANGE", Ia),
         ("BET_NOT_EVEN", Ia),
+        ("WAGER_IN_PLAY", Fp),
     ];
     let actual: Vec<_> = RejectionCode::ALL
         .iter()

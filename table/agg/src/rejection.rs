@@ -47,11 +47,13 @@ pub enum RejectionCode {
     BetOutOfRange,
     /// An odd bet (EU-1471).
     BetNotEven,
+    /// LeaveTable while the seat has a wager in the round (EU-1462).
+    WagerInPlay,
 }
 
 impl RejectionCode {
     /// Every code, for exhaustive checks.
-    pub const ALL: [RejectionCode; 17] = [
+    pub const ALL: [RejectionCode; 18] = [
         Self::TableAlreadyExists,
         Self::InvalidTableConfig,
         Self::TableNotFound,
@@ -69,6 +71,7 @@ impl RejectionCode {
         Self::BuyInOutOfRange,
         Self::BetOutOfRange,
         Self::BetNotEven,
+        Self::WagerInPlay,
     ];
 }
 
@@ -93,6 +96,7 @@ impl RejectionCode {
             Self::BuyInOutOfRange => "BUY_IN_OUT_OF_RANGE",
             Self::BetOutOfRange => "BET_OUT_OF_RANGE",
             Self::BetNotEven => "BET_NOT_EVEN",
+            Self::WagerInPlay => "WAGER_IN_PLAY",
         }
     }
 
@@ -115,7 +119,8 @@ impl RejectionCode {
             | Self::NoBets
             | Self::NoRoundInProgress
             | Self::NotYourTurn
-            | Self::DoubleNotAllowed => StatusCode::FailedPrecondition,
+            | Self::DoubleNotAllowed
+            | Self::WagerInPlay => StatusCode::FailedPrecondition,
         }
     }
 }

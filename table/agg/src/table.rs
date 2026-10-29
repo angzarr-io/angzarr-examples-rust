@@ -11,11 +11,13 @@ use examples_proto::v1::seat_outcome::Outcome;
 use examples_proto::v1::table_state::Phase;
 use examples_proto::v1::{
     BetPlaced, Card, CardDealt, ConfirmSeat, CreateTable, DealRound, DealerPlayed, DoubleDown,
-    HandDoubled, HandStood, Hit, PlaceBet, PlayerSeated, RequestSeat, RoundDealt, RoundSettled,
-    SeatHand, SeatHeld, SeatNotConfirmable, SeatOutcome, ShoeShuffled, Stand, TableCreated,
-    TableSeat, TableSeatHold, TableState, TurnStarted,
+    HandDoubled, HandStood, Hit, LeaveTable, PlaceBet, PlayerCashedOut, PlayerSeated, ReleaseSeat,
+    RequestSeat, RoundDealt, RoundSettled, SeatHand, SeatHeld, SeatNotConfirmable, SeatOutcome,
+    SeatReleased, ShoeShuffled, Stand, TableCreated, TableSeat, TableSeatHold, TableState,
+    TurnStarted,
 };
 
+use crate::cashout::cashout_id;
 use crate::hand::{value, Value};
 use crate::rejection::{Rejection, RejectionCode};
 use crate::shoe;
@@ -52,6 +54,15 @@ pub trait TableLogic {
     /// ConfirmSeat: the player seated, or nothing when this buy-in already
     /// seated them; refused with the typed SeatNotConfirmable.
     fn confirm_seat(&self, cmd: &ConfirmSeat) -> Result<Option<PlayerSeated>, SeatNotConfirmable>;
+    /// ReleaseSeat: the hold freed, or nothing when it no longer exists.
+    fn release_seat(&self, cmd: &ReleaseSeat) -> Option<SeatReleased>;
+    /// LeaveTable: the whole stack cashed out, its id derived from
+    /// `table_root` (the table's stream root) and the event's position.
+    fn leave_table(
+        &self,
+        cmd: &LeaveTable,
+        table_root: &[u8; 16],
+    ) -> Result<PlayerCashedOut, Rejection>;
     /// PlaceBet: the bet.
     fn place_bet(&self, cmd: &PlaceBet) -> Result<BetPlaced, Rejection>;
     /// DealRound: whether it can be dealt, and the new shoe first when the
@@ -72,7 +83,9 @@ pub trait TableLogic {
     fn apply_table_created(&mut self, event: &TableCreated);
     fn apply_shoe_shuffled(&mut self, event: &ShoeShuffled);
     fn apply_seat_held(&mut self, event: &SeatHeld);
+    fn apply_seat_released(&mut self, event: &SeatReleased);
     fn apply_player_seated(&mut self, event: &PlayerSeated);
+    fn apply_player_cashed_out(&mut self, event: &PlayerCashedOut);
     fn apply_bet_placed(&mut self, event: &BetPlaced);
     fn apply_round_dealt(&mut self, event: &RoundDealt);
     fn apply_turn_started(&mut self, event: &TurnStarted);
@@ -92,6 +105,9 @@ pub struct Table {
     /// it is folded from TurnStarted, cleared by every event that moves the
     /// turn.
     turn_announced: bool,
+    /// The events folded so far: the sequence the next one is recorded at,
+    /// which the cash-out id is derived from.
+    events: u64,
 }
 
 impl Table {
@@ -363,6 +379,42 @@ impl TableLogic for Table {
         }))
     }
 
+    fn release_seat(&self, cmd: &ReleaseSeat) -> Option<SeatReleased> {
+        let hold = self.state.seat_holds.get(&hex(&cmd.buy_in_id))?;
+        Some(SeatReleased {
+            buy_in_id: cmd.buy_in_id.clone(),
+            player_root: hold.player_root.clone(),
+            seat: hold.seat,
+            reason: cmd.reason.clone(),
+        })
+    }
+
+    fn leave_table(
+        &self,
+        cmd: &LeaveTable,
+        table_root: &[u8; 16],
+    ) -> Result<PlayerCashedOut, Rejection> {
+        self.exists()?;
+        let seat = self.state.seated.get(&cmd.seat).ok_or_else(|| {
+            refuse(
+                RejectionCode::NotSeated,
+                format!("seat {} is not occupied", cmd.seat),
+            )
+        })?;
+        if seat.wager > 0 {
+            return Err(refuse(
+                RejectionCode::WagerInPlay,
+                format!("seat {} has a wager in play", cmd.seat),
+            ));
+        }
+        Ok(PlayerCashedOut {
+            cashout_id: cashout_id(table_root, self.events).to_vec().into(),
+            player_root: seat.player_root.clone(),
+            seat: cmd.seat,
+            amount: seat.stack,
+        })
+    }
+
     fn place_bet(&self, cmd: &PlaceBet) -> Result<BetPlaced, Rejection> {
         self.exists()?;
         let state = &self.state;
@@ -535,15 +587,18 @@ impl TableLogic for Table {
     }
 
     fn apply_table_created(&mut self, event: &TableCreated) {
+        self.events += 1;
         crate::apply_table_created(&mut self.state, event);
         self.state.turn = -1;
     }
 
     fn apply_shoe_shuffled(&mut self, event: &ShoeShuffled) {
+        self.events += 1;
         crate::apply_shoe_shuffled(&mut self.state, event);
     }
 
     fn apply_seat_held(&mut self, event: &SeatHeld) {
+        self.events += 1;
         self.state.seat_holds.insert(
             hex(&event.buy_in_id),
             TableSeatHold {
@@ -554,7 +609,19 @@ impl TableLogic for Table {
         );
     }
 
+    fn apply_seat_released(&mut self, event: &SeatReleased) {
+        self.events += 1;
+        self.state.seat_holds.remove(&hex(&event.buy_in_id));
+    }
+
+    fn apply_player_cashed_out(&mut self, event: &PlayerCashedOut) {
+        self.events += 1;
+        self.state.seated.remove(&event.seat);
+        self.state.chips_out += event.amount;
+    }
+
     fn apply_player_seated(&mut self, event: &PlayerSeated) {
+        self.events += 1;
         let key = hex(&event.buy_in_id);
         self.state.seat_holds.remove(&key);
         self.state.confirmed_buy_ins.push(key);
@@ -570,6 +637,7 @@ impl TableLogic for Table {
     }
 
     fn apply_bet_placed(&mut self, event: &BetPlaced) {
+        self.events += 1;
         if let Some(seat) = self.state.seated.get_mut(&event.seat) {
             seat.wager = event.amount;
             seat.stack = event.stack_after;
@@ -578,6 +646,7 @@ impl TableLogic for Table {
     }
 
     fn apply_round_dealt(&mut self, event: &RoundDealt) {
+        self.events += 1;
         let state = &mut self.state;
         state.round = event.round;
         state.shoe.drain(..2 * event.hands.len() + 2);
@@ -598,10 +667,12 @@ impl TableLogic for Table {
     }
 
     fn apply_turn_started(&mut self, _event: &TurnStarted) {
+        self.events += 1;
         self.turn_announced = true;
     }
 
     fn apply_card_dealt(&mut self, event: &CardDealt) {
+        self.events += 1;
         let state = &mut self.state;
         state.shoe.remove(0);
         if let Some(seat) = state.seated.get_mut(&event.seat) {
@@ -617,6 +688,7 @@ impl TableLogic for Table {
     }
 
     fn apply_hand_stood(&mut self, event: &HandStood) {
+        self.events += 1;
         if let Some(seat) = self.state.seated.get_mut(&event.seat) {
             seat.finished = true;
         }
@@ -625,6 +697,7 @@ impl TableLogic for Table {
     }
 
     fn apply_hand_doubled(&mut self, event: &HandDoubled) {
+        self.events += 1;
         let state = &mut self.state;
         state.shoe.remove(0);
         if let Some(seat) = state.seated.get_mut(&event.seat) {
@@ -643,12 +716,14 @@ impl TableLogic for Table {
     }
 
     fn apply_dealer_played(&mut self, event: &DealerPlayed) {
+        self.events += 1;
         let state = &mut self.state;
         state.shoe.drain(..event.drawn.len());
         state.dealer_cards.extend(event.drawn.iter().copied());
     }
 
     fn apply_round_settled(&mut self, event: &RoundSettled) {
+        self.events += 1;
         let state = &mut self.state;
         for outcome in &event.outcomes {
             if let Some(seat) = state.seated.get_mut(&outcome.seat) {

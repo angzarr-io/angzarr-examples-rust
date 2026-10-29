@@ -82,8 +82,15 @@ impl TableAggregate {
 
     #[handles_cmd(LeaveTable)]
     fn leave_table(&self, cmd: LeaveTable, ctx: &Context) -> Result<PlayerCashedOut, TableRefused> {
-        let _ = (cmd, ctx);
-        todo!("LeaveTable is deferred tonight")
+        // HAND-EDIT: the table root, for the cash-out id. The kernel only
+        // runs a handler for a well-formed root (16 bytes).
+        let root: [u8; 16] = ctx
+            .stream()
+            .root
+            .as_ref()
+            .and_then(|root| root.value[..].try_into().ok())
+            .unwrap_or_default();
+        Ok(PlayerCashedOut(self.table.leave_table(&cmd.0, &root)?))
     }
 
     #[handles_cmd(PlaceBet)]
@@ -130,10 +137,16 @@ impl TableAggregate {
         }
     }
 
+    // HAND-EDIT: `Option`, as a release of a hold that is gone emits
+    // nothing.
     #[handles_cmd(ReleaseSeat)]
-    fn release_seat(&self, cmd: ReleaseSeat, ctx: &Context) -> Result<SeatReleased, TableRefused> {
-        let _ = (cmd, ctx);
-        todo!("ReleaseSeat is deferred tonight")
+    fn release_seat(
+        &self,
+        cmd: ReleaseSeat,
+        ctx: &Context,
+    ) -> Result<Option<SeatReleased>, TableRefused> {
+        let _ = ctx;
+        Ok(self.table.release_seat(&cmd.0).map(SeatReleased))
     }
 
     #[applies(TableCreated)]
@@ -153,8 +166,7 @@ impl TableAggregate {
 
     #[applies(SeatReleased)]
     fn seat_released(&mut self, event: SeatReleased) {
-        let _ = event;
-        todo!("ReleaseSeat is deferred tonight")
+        self.table.apply_seat_released(&event.0);
     }
 
     #[applies(PlayerSeated)]
@@ -164,8 +176,7 @@ impl TableAggregate {
 
     #[applies(PlayerCashedOut)]
     fn player_cashed_out(&mut self, event: PlayerCashedOut) {
-        let _ = event;
-        todo!("LeaveTable is deferred tonight")
+        self.table.apply_player_cashed_out(&event.0);
     }
 
     #[applies(BetPlaced)]
