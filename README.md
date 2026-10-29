@@ -48,6 +48,14 @@ submodule; the submodule pin is the contract this repository implements.
   ```
 
   angzarr-embedded is pinned by hash in the workspace `Cargo.toml`.
+  `tests/remote_player.rs` plays a whole hand against the Python player bot
+  (examples-python), hosted as a child process by angzarr-embedded-host;
+  it is ignored by default (it needs `uv`):
+
+  ```bash
+  ANGZARR_PLAYER_DIR=<examples-python>/player \
+    cargo test -p table-embedded --test remote_player -- --ignored
+  ```
 - `tools/archlint` - the module-layering linter for `archlint.toml`.
 
 ## Development

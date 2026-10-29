@@ -19,3 +19,5 @@ prost.workspace = true
 
 [dev-dependencies]
 agg-table = { workspace = true, features = ["test-support"] }
+# The remote Python player, hosted as a child process (tests/remote_player.rs).
+angzarr-embedded-host.workspace = true

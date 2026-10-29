@@ -2,12 +2,13 @@
 //! `angzarr scaffold rust` and yours from then on: `--missing` adds the
 //! stubs it lacks.
 //!
-//! HAND-NOTE: only the player domain's CONTRACT, so the table's policies
-//! type-check (a policy's source and target are domains, and
-//! `Commands<PlayerAggregate>` holds only commands it decides). The real
-//! player is the Python bot over gRPC; angzarr-embedded's `main` cannot host
-//! an out-of-process domain, so register the remote player, not this, once
-//! it can. Its stubs are the scaffold's and are never meant to run.
+//! HAND-NOTE: only the player domain's CONTRACT, kept because the table's
+//! policies need a type to compile against (a `#[policy]`'s source and
+//! target are domain types, and `Commands<PlayerAggregate>` holds only
+//! commands it decides). It is never registered: the real player is the
+//! Python bot, a child process that angzarr-embedded-host registers as the
+//! "player" domain (tests/remote_player.rs). Its stubs are the scaffold's
+//! and never run.
 
 use std::convert::Infallible;
 

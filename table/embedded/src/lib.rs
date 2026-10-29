@@ -16,11 +16,14 @@
 //!   player bot's DecideMove, and its MoveDecided back to Hit, Stand or
 //!   DoubleDown;
 //! - [`PlayerAggregate`]: the player bot's contract, for the policies to
-//!   type-check against (the bot itself is Python, out of process).
+//!   type-check against; never registered. The bot itself is Python, run
+//!   as a child process by angzarr-embedded-host (`tests/remote_player.rs`
+//!   plays a hand with it).
 //!
 //! Register the table with
 //! `registry.aggregate::<TableAggregate>(TableAggregate::default)` and the
-//! policies with `registry.policy(..)`.
+//! policies with `registry.policy(..)`, beside the remote player
+//! (`angzarr_embedded_host::run(config, register)`).
 
 pub mod domain;
 // The scaffold's stubs name parameters they do not use until written.
