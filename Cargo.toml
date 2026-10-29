@@ -14,8 +14,7 @@ examples-proto = { path = "proto" }
 agg-table = { path = "table/agg" }
 table-player-policies = { path = "table/policies" }
 # angzarr-embedded (angzarr's in-app runtime) and its markup, pinned by hash
-# on its feat/handler-context branch (the router's CommandContext in a
-# handler's Context, fallible policies), not yet on its main. Its angzarr-proto and angzarr-ports pins are the
+# on its main. Its angzarr-proto and angzarr-ports pins are the
 # angzarr-project rev the angzarr-project submodule is checked out at, so one
 # spec is in the graph.
 angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "1b01a5a5ed300ff698554e0672f6307e39376055" }
