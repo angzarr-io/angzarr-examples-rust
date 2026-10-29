@@ -41,9 +41,13 @@ impl TableAggregate {
         })
     }
 
-    /// DealRound's second step: the deal, then the step after it.
+    /// DealRound's second step: the deal, then the step after it; nothing
+    /// once the round is dealt.
     fn deal(&self, _ctx: &Context) -> Result<Emit<Self>, TableRefused> {
-        Ok(Emit::of(RoundDealt(self.table.deal()?)).then(Self::after_action))
+        Ok(match self.table.deal()? {
+            Some(dealt) => Emit::of(RoundDealt(dealt)).then(Self::after_action),
+            None => Emit::of(None::<RoundDealt>),
+        })
     }
 }
 

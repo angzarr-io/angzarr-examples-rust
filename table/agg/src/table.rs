@@ -57,8 +57,9 @@ pub trait TableLogic {
     /// DealRound: whether it can be dealt, and the new shoe first when the
     /// round could run the old one out (AHR-4).
     fn deal_round(&self, cmd: &DealRound) -> Result<Option<ShoeShuffled>, Rejection>;
-    /// DealRound's second step: the opening deal from the current shoe.
-    fn deal(&self) -> Result<RoundDealt, Rejection>;
+    /// DealRound's second step: the opening deal from the current shoe,
+    /// or nothing once the round is dealt (re-run on its own result).
+    fn deal(&self) -> Result<Option<RoundDealt>, Rejection>;
     /// Hit: the card drawn.
     fn hit(&self, cmd: &Hit) -> Result<CardDealt, Rejection>;
     /// Stand: the hand stood.
@@ -433,7 +434,12 @@ impl TableLogic for Table {
         }))
     }
 
-    fn deal(&self) -> Result<RoundDealt, Rejection> {
+    fn deal(&self) -> Result<Option<RoundDealt>, Rejection> {
+        // Only bets wait to be dealt: once dealt the phase is PlayerTurns,
+        // and once settled Idle.
+        if self.state.phase() != Phase::Betting {
+            return Ok(None);
+        }
         // AHR-6: each wagered seat, the up-card, each seat again, the hole.
         let seats = self.wagered();
         let n = seats.len();
@@ -448,13 +454,13 @@ impl TableLogic for Table {
             true => -1,
             false => hands.iter().find(|h| !h.blackjack).map_or(-1, |h| h.seat),
         };
-        Ok(RoundDealt {
+        Ok(Some(RoundDealt {
             round: self.state.round + 1,
             hands,
             dealer_up: Some(up),
             dealer_hole: Some(hole),
             turn,
-        })
+        }))
     }
 
     fn hit(&self, cmd: &Hit) -> Result<CardDealt, Rejection> {
