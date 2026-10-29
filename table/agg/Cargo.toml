@@ -8,6 +8,7 @@ description = "The blackjack table aggregate's domain logic: the deterministic s
 
 [dependencies]
 examples-proto.workspace = true
+uuid.workspace = true
 
 [features]
 # The spec's card notation (`test_support::cards("7♣ 3♥")`) for other crates'

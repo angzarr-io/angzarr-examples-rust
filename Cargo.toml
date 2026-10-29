@@ -24,3 +24,5 @@ angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-emb
 bytes = "1"
 prost = "0.14"
 prost-build = "0.14"
+# Matches the uuid angzarr-proto already brings into the graph.
+uuid = { version = "1.29", default-features = false, features = ["v5"] }

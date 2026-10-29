@@ -5,27 +5,6 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn sha1_matches_the_fips_180_vectors() {
-    assert_eq!(hex(&sha1(b"")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
-    assert_eq!(
-        hex(&sha1(b"abc")),
-        "a9993e364706816aba3e25717850c26c9cd0d89d"
-    );
-    // Two blocks: the padding spills into a second block.
-    assert_eq!(
-        hex(&sha1(
-            b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
-        )),
-        "84983e441c3bd26ebaae4aa1f95129e5e54670f1"
-    );
-    // A million 'a's: many blocks.
-    assert_eq!(
-        hex(&sha1(&vec![b'a'; 1_000_000])),
-        "34aa973cd4c4daa4f61eeb2bdbad27316534016f"
-    );
-}
-
-#[test]
 fn uuid_v5_matches_the_rfc_example_for_the_dns_namespace() {
     // NAMESPACE_DNS, 6ba7b810-9dad-11d1-80b4-00c04fd430c8; Python's
     // uuid.uuid5(NAMESPACE_DNS, "python.org").
