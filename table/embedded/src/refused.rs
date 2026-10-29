@@ -56,6 +56,11 @@ impl Diagnostic for TableRefused {
     }
 
     fn args(&self) -> Vec<(&'static str, Arg)> {
-        vec![("message", self.0.message.as_str().into())]
+        // The reason travels as an arg: through angzarr-router a caller
+        // receives the code and args, not this value.
+        vec![
+            ("reason", self.reason().into()),
+            ("message", self.0.message.as_str().into()),
+        ]
     }
 }

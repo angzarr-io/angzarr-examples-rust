@@ -21,9 +21,7 @@
 
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards};
-use angzarr_embedded::next::markup::{
-    assert_step_idempotent, Context, Rejection, MARKUP_RULES_VERSION,
-};
+use angzarr_embedded::next::markup::{assert_step_idempotent, Context, MARKUP_RULES_VERSION};
 use angzarr_embedded::next::v1::event_meta::Causation;
 use angzarr_embedded::next::v1::{
     command_page, Command, CommandBook, CommandPage, ConflictResolution, Cover, EventMeta,
@@ -31,13 +29,13 @@ use angzarr_embedded::next::v1::{
 };
 use angzarr_embedded::next::{
     pack, type_name, Any, Executed, Failure, KernelError, MemoryDeadLetters, Payload, Registry,
-    Sampled, Stream, Timestamp,
+    Rejected, Sampled, Stream, Timestamp,
 };
 use examples_proto::v1::{self, seat_outcome::Outcome, table_state::Phase, Card, SeatHand};
 use prost::{Message, Name};
 
 use super::TableAggregate;
-use crate::TableRefused;
+use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 // ---------------------------------------------------------------- the events
 
@@ -88,7 +86,7 @@ table_events!(
 
 // ---------------------------------------------------------------- the harness
 
-type Refusal = Failure<Rejection<TableRefused>>;
+type Refusal = Failure<Rejected>;
 type Then = Result<Vec<Ev>, Refusal>;
 
 fn registry() -> Registry {
@@ -197,11 +195,19 @@ impl Harness {
     }
 }
 
-/// The `ErrorInfo.reason` of a message-only refusal.
+/// The `ErrorInfo.reason` of a message-only refusal: its `reason` arg.
 #[track_caller]
-fn refused(then: Then) -> &'static str {
+fn refused(then: Then) -> String {
     match then {
-        Err(Failure::Rejected(Rejection::Message(refused))) => refused.reason(),
+        Err(Failure::Rejected(rejected)) if rejected.refusal_object().is_none() => rejected
+            .report()
+            .args()
+            .into_iter()
+            .find_map(|(name, arg)| match (name, arg) {
+                ("reason", Arg::Str(reason)) => Some(reason),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("a table refusal names its reason: {rejected:?}")),
         other => panic!("expected the table to refuse, got {other:?}"),
     }
 }
@@ -210,8 +216,10 @@ fn refused(then: Then) -> &'static str {
 #[track_caller]
 fn not_confirmable(then: Then) -> String {
     match then {
-        Err(Failure::Rejected(rejection @ Rejection::Typed(_))) => {
-            let any = rejection.refusal().expect("a typed refusal is packed");
+        Err(Failure::Rejected(rejected)) => {
+            let any = rejected
+                .refusal_object()
+                .unwrap_or_else(|| panic!("a typed refusal is packed: {rejected:?}"));
             assert_eq!(
                 type_name(&any.type_url),
                 v1::SeatNotConfirmable::full_name()
@@ -1942,7 +1950,7 @@ fn leaving_a_table_that_does_not_exist_is_refused() {
 //
 // The AGGREGATE_HANDLES pair is ignored, not deleted: a marked-up
 // aggregate's handler cannot reach the kernel's `Tx`, and the expansion
-// never calls `resolve_conflicts`, so angzarr-embedded (b3e3f20) refuses
+// never calls `resolve_conflicts`, so angzarr-embedded (b3e3f20, and still dfe1cf1 through angzarr-router) refuses
 // even the first bet as Unresolved and dead-letters it. The table decides
 // against its full history already; un-ignore them once the markup
 // acknowledges the window.
