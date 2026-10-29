@@ -21,7 +21,9 @@
 
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards};
-use angzarr_embedded::next::markup::{Rejection, MARKUP_RULES_VERSION};
+use angzarr_embedded::next::markup::{
+    assert_step_idempotent, Context, Rejection, MARKUP_RULES_VERSION,
+};
 use angzarr_embedded::next::v1::event_meta::Causation;
 use angzarr_embedded::next::v1::{
     command_page, Command, CommandBook, CommandPage, Cover, EventMeta, EventPage, Uuid,
@@ -1722,4 +1724,69 @@ fn eu_1504_every_round_keeps_the_tables_chips_in_balance() {
         );
         assert_eq!(table.state().phase(), Phase::Idle, "seed {seed}");
     }
+}
+
+// ================================================================ continuation steps
+
+fn step_context() -> Context {
+    Context::new(
+        Timestamp {
+            seconds: 1_000,
+            nanos: 0,
+        },
+        cover(),
+        id(99),
+        id(99),
+    )
+}
+
+/// The background with Alice and Bob's bets, from a shoe beginning `shoe`.
+fn bets_on(shoe: &str) -> TableAggregate {
+    let mut events = background(shoe);
+    events.extend([bet(0, 20, 480), bet(1, 20, 480)]);
+    given(events).stream.state().clone()
+}
+
+#[test]
+fn the_deal_step_does_nothing_when_re_run_on_its_own_result() {
+    let dealt = assert_step_idempotent(
+        bets_on("2♣ 3♣ 9♦ 4♣ 5♣ 7♠"),
+        TableAggregate::deal,
+        &step_context(),
+    );
+    assert_eq!(dealt.state().turn, 0, "the first run dealt");
+}
+
+#[test]
+fn the_deal_step_does_nothing_when_re_run_after_a_dealer_blackjack_settled() {
+    let settled = assert_step_idempotent(
+        bets_on("10♣ 9♣ A♦ 8♥ 9♥ K♠"),
+        TableAggregate::deal,
+        &step_context(),
+    );
+    assert_eq!(
+        settled.state().phase(),
+        Phase::Idle,
+        "the first run settled"
+    );
+}
+
+#[test]
+fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
+    // A turn to announce, then a round to settle.
+    let on_turn = given(two_hands_low("")).stream.state().clone();
+    assert_step_idempotent(on_turn, TableAggregate::after_action, &step_context());
+
+    let mut events = two_hands_low("10♥");
+    events.extend([
+        stood(0, 6, 1),
+        turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
+        stood(1, 8, -1),
+    ]);
+    let settled = assert_step_idempotent(
+        given(events).stream.state().clone(),
+        TableAggregate::after_action,
+        &step_context(),
+    );
+    assert_eq!(settled.state().phase(), Phase::Idle);
 }
