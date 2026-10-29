@@ -70,9 +70,9 @@ test-acceptance: (_cargo "test" "--workspace" "--test" "'*'")
 
 # Mutation kill-rate thresholds, percent, by crate path: a mutant is judged by
 # the longest prefix its file is under, and one under none fails the gate, so a
-# crate added to MUTATED gets a threshold first. 70% is the bar the aggregate
-# has been held to; the policies and the embedded host start at it too.
-MUTATION_THRESHOLDS := "table/agg=70 table/policies=70 table/embedded=70"
+# crate added to MUTATED gets a threshold first. 90% is the owner's bar for
+# every crate (2026-10-29).
+MUTATION_THRESHOLDS := "table/agg=90 table/policies=90 table/embedded=90"
 # The crates mutated: the aggregate, the player policies and the embedded host.
 MUTATED := "--package agg-table --package table-player-policies --package table-embedded"
 

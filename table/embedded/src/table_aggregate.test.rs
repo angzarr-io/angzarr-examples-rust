@@ -1560,7 +1560,7 @@ fn eu_1500_the_last_action_plays_the_dealer_and_settles_in_the_same_step() {
 /// round never runs the shoe out (AHR-4: DealRound replaces a shoe that
 /// could). The step that settles fails the whole decision as a keyed bug,
 /// UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out` as its cause,
-/// dead-lettered, and nothing is recorded.
+/// its English TableBug's, dead-lettered, and nothing is recorded.
 #[test]
 fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
     // Exactly the four cards dealt: Alice's 10 9, the dealer's 5 up and 6
@@ -1583,6 +1583,13 @@ fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
             Failure::Kernel(KernelError::Router(e)) if e.code == "UNHANDLED_HANDLER_ERROR"
         ),
         "a bug, not a refusal: {failure:?}"
+    );
+    assert!(
+        matches!(
+            &failure,
+            Failure::Kernel(KernelError::Router(e)) if e.message == "the shoe ran out in round 1"
+        ),
+        "its English is TableBug's, naming the round: {failure:?}"
     );
     let lines = table.dead_letters.lines();
     assert_eq!(lines.len(), 1, "dead-lettered once: {lines:?}");
