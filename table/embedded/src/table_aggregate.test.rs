@@ -26,11 +26,12 @@ use angzarr_embedded::next::markup::{
 };
 use angzarr_embedded::next::v1::event_meta::Causation;
 use angzarr_embedded::next::v1::{
-    command_page, Command, CommandBook, CommandPage, Cover, EventMeta, EventPage, Uuid,
+    command_page, Command, CommandBook, CommandPage, ConflictResolution, Cover, EventMeta,
+    EventPage, Handling, Uuid,
 };
 use angzarr_embedded::next::{
-    pack, type_name, Any, Executed, Failure, MemoryDeadLetters, Payload, Registry, Sampled, Stream,
-    Timestamp,
+    pack, type_name, Any, Executed, Failure, KernelError, MemoryDeadLetters, Payload, Registry,
+    Sampled, Stream, Timestamp,
 };
 use examples_proto::v1::{self, seat_outcome::Outcome, table_state::Phase, Card, SeatHand};
 use prost::{Message, Name};
@@ -152,6 +153,12 @@ impl Harness {
     /// Send `command` as a client does: the events of its one decision, or
     /// why it was refused.
     fn when<M: Message + Name>(&mut self, command: M) -> Then {
+        self.when_handled(command, None)
+    }
+
+    /// As [`Harness::when`], sent with `handling`: an expected sequence and
+    /// a conflict resolution.
+    fn when_handled<M: Message + Name>(&mut self, command: M, handling: Option<Handling>) -> Then {
         self.commands += 1;
         let n = self.commands;
         let book = CommandBook {
@@ -163,7 +170,7 @@ impl Harness {
                 command_id: Some(id(n)),
                 ..CommandPage::default()
             }),
-            handling: None,
+            handling,
         };
         let sampled = Sampled {
             now: Timestamp {
@@ -1922,5 +1929,95 @@ fn leaving_a_table_that_does_not_exist_is_refused() {
     assert_eq!(
         refused(table.when(v1::LeaveTable { seat: 0 })),
         "TABLE_NOT_FOUND"
+    );
+}
+
+// ================================================================ two callers at once
+//
+// cluster.feature's conflict scenarios (EA-0022..0024), forced in process:
+// both commands are prepared from the same head (the same expected
+// sequence) and sent one after the other, so the second always meets the
+// first's events. table.proto: PlaceBet is sent with AGGREGATE_HANDLES,
+// the turn actions with STRICT.
+//
+// The AGGREGATE_HANDLES pair is ignored, not deleted: a marked-up
+// aggregate's handler cannot reach the kernel's `Tx`, and the expansion
+// never calls `resolve_conflicts`, so angzarr-embedded (b3e3f20) refuses
+// even the first bet as Unresolved and dead-letters it. The table decides
+// against its full history already; un-ignore them once the markup
+// acknowledges the window.
+
+/// Sent as prepared from the table at `head`, under `resolution`.
+fn prepared(head: u64, resolution: ConflictResolution) -> Option<Handling> {
+    Some(Handling {
+        expected_sequence: Some(head),
+        conflict_resolution: resolution.into(),
+    })
+}
+
+fn head(table: &Harness) -> u64 {
+    table.stream.events().len() as u64
+}
+
+#[test]
+#[ignore = "angzarr-embedded gap: its markup never acknowledges an AGGREGATE_HANDLES window (Tx::resolve_conflicts), so every such command fails Unresolved"]
+fn ea_0022_a_second_bet_for_the_same_seat_is_refused_by_the_table_itself() {
+    let mut table = given(background("2♣"));
+    let at = head(&table);
+    let handles = || prepared(at, ConflictResolution::AggregateHandles);
+
+    let first = table.when_handled(place(0, 20), handles());
+    let second = table.when_handled(place(0, 20), handles());
+
+    assert_eq!(first.expect("placed"), vec![bet(0, 20, 480)]);
+    assert_eq!(refused(second), "ALREADY_BET");
+    assert_eq!(table.state().seated[&0].wager, 20);
+}
+
+#[test]
+#[ignore = "angzarr-embedded gap: its markup never acknowledges an AGGREGATE_HANDLES window (Tx::resolve_conflicts), so every such command fails Unresolved"]
+fn ea_0023_bets_for_different_seats_prepared_at_the_same_moment_both_land() {
+    let mut table = given(background("2♣"));
+    let at = head(&table);
+    let handles = || prepared(at, ConflictResolution::AggregateHandles);
+
+    table.when_handled(place(0, 20), handles()).expect("placed");
+    table.when_handled(place(1, 30), handles()).expect("placed");
+
+    let state = table.state();
+    assert_eq!((state.seated[&0].wager, state.seated[&1].wager), (20, 30));
+}
+
+#[test]
+fn ea_0024_two_hits_for_one_hand_at_the_same_moment_deal_exactly_one_card() {
+    // Seed 1 deals Alice 7♦ 4♦ against a dealer showing 9♣.
+    let mut table = given(vec![]);
+    table.when(create_main(1)).expect("created");
+    table.when(request(ALICE, 0, 500, B1)).expect("held");
+    table.when(confirm(B1)).expect("seated");
+    table.when(place(0, 20)).expect("bet");
+    let dealt = table.when(v1::DealRound {}).expect("dealt");
+    let Ev::RoundDealt(round) = &dealt[0] else {
+        panic!("expected RoundDealt, got {dealt:?}");
+    };
+    assert_eq!(
+        (round.hands[0].cards.clone(), round.dealer_up),
+        (cards("7♦ 4♦"), Some(card("9♣")))
+    );
+    let at = head(&table);
+    let strict = || prepared(at, ConflictResolution::Strict);
+
+    let first = table.when_handled(v1::Hit { seat: 0 }, strict());
+    let second = table.when_handled(v1::Hit { seat: 0 }, strict());
+
+    let first = first.expect("one hit lands");
+    assert!(
+        matches!(&first[0], Ev::CardDealt(c) if c.card == Some(card("8♦"))),
+        "the 8♦: {first:?}"
+    );
+    // Out of date, and retryable.
+    assert!(
+        matches!(second, Err(Failure::Kernel(KernelError::Stale { .. }))),
+        "refused as stale: {second:?}"
     );
 }
