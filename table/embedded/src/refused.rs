@@ -36,6 +36,21 @@ impl Diagnostic for TableRefused {
         match self.0.code {
             RejectionCode::TableAlreadyExists => "examples-table-table-already-exists",
             RejectionCode::InvalidTableConfig => "examples-table-invalid-table-config",
+            RejectionCode::TableNotFound => "examples-table-table-not-found",
+            RejectionCode::SeatTaken => "examples-table-seat-taken",
+            RejectionCode::PlayerAlreadySeated => "examples-table-player-already-seated",
+            RejectionCode::NotSeated => "examples-table-not-seated",
+            RejectionCode::RoundInProgress => "examples-table-round-in-progress",
+            RejectionCode::AlreadyBet => "examples-table-already-bet",
+            RejectionCode::InsufficientStack => "examples-table-insufficient-stack",
+            RejectionCode::NoBets => "examples-table-no-bets",
+            RejectionCode::NoRoundInProgress => "examples-table-no-round-in-progress",
+            RejectionCode::NotYourTurn => "examples-table-not-your-turn",
+            RejectionCode::DoubleNotAllowed => "examples-table-double-not-allowed",
+            RejectionCode::SeatOutOfRange => "examples-table-seat-out-of-range",
+            RejectionCode::BuyInOutOfRange => "examples-table-buy-in-out-of-range",
+            RejectionCode::BetOutOfRange => "examples-table-bet-out-of-range",
+            RejectionCode::BetNotEven => "examples-table-bet-not-even",
         }
     }
 

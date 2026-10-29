@@ -6,10 +6,10 @@
 //!
 //! Both are stateless and name their target root from the event they handle
 //! (decision 14.36).
-//!
-//! RED: the implementations are `todo!()`.
 
-use examples_proto::v1::{DecideMove, DoubleDown, Hit, MoveDecided, Stand, TurnStarted};
+use examples_proto::v1::{
+    DecideMove, DoubleDown, Hit, MoveAction, MoveDecided, Stand, TurnStarted,
+};
 
 /// A command for the stream at `root`.
 #[derive(Debug, Clone, PartialEq)]
@@ -53,13 +53,40 @@ pub trait PlayerTable {
 pub struct Policies;
 
 impl TablePlayer for Policies {
-    fn turn_started(&self, _table_root: &[u8], _event: &TurnStarted) -> To<DecideMove> {
-        todo!()
+    fn turn_started(&self, table_root: &[u8], event: &TurnStarted) -> To<DecideMove> {
+        let hand = event.hand.clone().unwrap_or_default();
+        To {
+            root: event.player_root.to_vec(),
+            command: DecideMove {
+                table_root: table_root.to_vec().into(),
+                round: event.round,
+                seat: event.seat,
+                cards: hand.cards,
+                total: hand.total,
+                soft: hand.soft,
+                dealer_up: event.dealer_up,
+                can_double: event.can_double,
+                stack: event.stack,
+                wager: event.wager,
+            },
+        }
     }
 }
 
 impl PlayerTable for Policies {
-    fn move_decided(&self, _event: &MoveDecided) -> Result<To<TableMove>, NoMove> {
-        todo!()
+    fn move_decided(&self, event: &MoveDecided) -> Result<To<TableMove>, NoMove> {
+        let seat = event.seat;
+        let command = match MoveAction::try_from(event.action) {
+            Ok(MoveAction::Hit) => TableMove::Hit(Hit { seat }),
+            Ok(MoveAction::Stand) => TableMove::Stand(Stand { seat }),
+            Ok(MoveAction::DoubleDown) => TableMove::DoubleDown(DoubleDown { seat }),
+            Ok(MoveAction::Unspecified) | Err(_) => {
+                return Err(NoMove::UnknownAction(event.action))
+            }
+        };
+        Ok(To {
+            root: event.table_root.to_vec(),
+            command,
+        })
     }
 }

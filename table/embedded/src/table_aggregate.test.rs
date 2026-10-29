@@ -142,6 +142,8 @@ fn given(events: Vec<Ev>) -> Harness {
     }
 }
 
+// angzarr-embedded's `Failure` is what the pipeline returns, unboxed.
+#[allow(clippy::result_large_err)]
 impl Harness {
     /// Send `command` as a client does: the events of its one decision, or
     /// why it was refused.
@@ -834,7 +836,7 @@ fn eu_1478_a_seat_without_a_bet_is_dealt_no_cards() {
     );
     let alice = &table.state().seated[&0];
     assert!(
-        alice.hand.as_ref().map_or(true, |h| h.cards.is_empty()),
+        alice.hand.as_ref().is_none_or(|h| h.cards.is_empty()),
         "seat 0 is dealt no cards"
     );
 }
