@@ -1,0 +1,82 @@
+name: Mutation
+
+# The mutation full pass, weekly and by hand: `mutation-test` mutates the
+# MUTATED crates (the aggregate, the player policies, the embedded host) and
+# judges each by MUTATION_THRESHOLDS (justfile.container). The pre-push gate
+# (`mutation-push`) judges only what a push adds; this pass catches what has
+# drifted under it. Set up as ci.yml's test job is, and like it calls
+# justfile.container directly (CI runs without the container wrapper).
+
+on:
+  schedule:
+    # 06:00 UTC every Monday.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # Opt into Node.js 24 for GitHub Actions (required after June 2026)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  mutation:
+    name: Mutation test (full pass)
+    runs-on: ubuntu-latest
+    # GitHub caps hosted jobs at 6h; let the full pass finish rather than
+    # cancel it mid-run.
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false  # fetched manually below without --depth=1
+
+      - name: Fetch submodules (unshallow; avoids HTTP 500 direct-fetch path)
+        run: git submodule update --init
+
+      - name: Init nested angzarr-project submodule (non-recursive)
+        run: git -C angzarr-client-rust submodule update --init angzarr-project
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-mutants-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+                      /usr/share/swift || true
+          df -h
+
+      - name: Mutation test
+        run: just -f justfile.container mutation-test
+
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants.out
+          path: mutants.out/
+          retention-days: 30
