@@ -72,7 +72,9 @@ table_events!(
     TableCreated,
     ShoeShuffled,
     SeatHeld,
+    SeatReleased,
     PlayerSeated,
+    PlayerCashedOut,
     BetPlaced,
     RoundDealt,
     TurnStarted,
@@ -1789,4 +1791,136 @@ fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
         &step_context(),
     );
     assert_eq!(settled.state().phase(), Phase::Idle);
+}
+
+// ================================================================ ReleaseSeat
+
+#[test]
+fn eu_1453_releasing_a_held_seat_frees_it() {
+    let mut events = main_table();
+    events.push(held(B1, ALICE, 0, 500));
+    let mut table = given(events);
+
+    let release = v1::ReleaseSeat {
+        buy_in_id: bytes(B1).into(),
+        reason: "funds were refused".into(),
+    };
+    let events = table.when(release).expect("released");
+
+    assert_eq!(
+        events,
+        vec![Ev::SeatReleased(v1::SeatReleased {
+            buy_in_id: bytes(B1).into(),
+            player_root: bytes(ALICE).into(),
+            seat: 0,
+            reason: "funds were refused".into(),
+        })]
+    );
+    assert!(table.state().seat_holds.is_empty(), "seat 0 is free");
+    // Free: Bob can now ask for it.
+    table
+        .when(request(BOB, 0, 500, B2))
+        .expect("seat 0 can be requested");
+}
+
+#[test]
+fn eu_1454_releasing_a_seat_that_is_no_longer_held_changes_nothing() {
+    let mut table = given(main_table());
+
+    let release = v1::ReleaseSeat {
+        buy_in_id: bytes(0x09).into(),
+        reason: "funds were refused".into(),
+    };
+    assert_eq!(table.when(release).expect("ok"), vec![]);
+}
+
+// ================================================================ LeaveTable
+
+/// Alice seated at seat 0 with `stack`, after table "Main" (event 3).
+fn alice_seated(stack: i64) -> Vec<Ev> {
+    let mut events = main_table();
+    events.extend([held(B1, ALICE, 0, stack), seated(B1, ALICE, 0, stack)]);
+    events
+}
+
+/// UUIDv5(namespace = the table root, [0x7a; 16], read as a UUID,
+/// name = "cashout/<sequence>"), from Python's `uuid.uuid5`.
+fn cashout_id(sequence: u64) -> Vec<u8> {
+    match sequence {
+        4 => vec![
+            34, 253, 80, 2, 216, 234, 83, 209, 160, 246, 57, 63, 200, 211, 187, 223,
+        ],
+        5 => vec![
+            176, 120, 52, 182, 203, 213, 82, 247, 184, 245, 7, 64, 141, 142, 43, 119,
+        ],
+        _ => panic!("no vector for sequence {sequence}"),
+    }
+}
+
+#[test]
+fn eu_1460_leaving_cashes_out_the_whole_stack_and_frees_the_seat() {
+    let mut table = given(alice_seated(640));
+
+    let events = table.when(v1::LeaveTable { seat: 0 }).expect("left");
+
+    assert_eq!(
+        events,
+        vec![Ev::PlayerCashedOut(v1::PlayerCashedOut {
+            cashout_id: cashout_id(4).into(),
+            player_root: bytes(ALICE).into(),
+            seat: 0,
+            amount: 640,
+        })]
+    );
+    let state = table.state();
+    assert!(state.seated.is_empty(), "seat 0 is free");
+    assert_eq!(state.chips_out, 640, "table Main has paid out 640 chips");
+    assert_ledger_balances(state);
+}
+
+#[test]
+fn eu_1461_a_cash_out_is_identified_by_the_table_and_its_position_in_the_history() {
+    // One event more before it: the cash-out is event 5, not 4.
+    let mut events = alice_seated(640);
+    events.push(held(B2, BOB, 1, 500));
+    let mut table = given(events);
+
+    let events = table.when(v1::LeaveTable { seat: 0 }).expect("left");
+
+    let [Ev::PlayerCashedOut(cashed)] = &events[..] else {
+        panic!("expected PlayerCashedOut, got {events:?}");
+    };
+    assert_eq!(cashed.cashout_id[..], cashout_id(5)[..]);
+}
+
+#[test]
+fn eu_1462_a_player_with_a_bet_in_play_cannot_leave() {
+    let mut events = alice_seated(500);
+    events.push(bet(0, 20, 480));
+    let mut table = given(events);
+
+    assert_eq!(
+        refused(table.when(v1::LeaveTable { seat: 0 })),
+        "WAGER_IN_PLAY"
+    );
+}
+
+#[test]
+fn eu_1463_nobody_can_leave_an_empty_seat() {
+    let mut table = given(main_table());
+
+    assert_eq!(
+        refused(table.when(v1::LeaveTable { seat: 2 })),
+        "NOT_SEATED"
+    );
+}
+
+#[test]
+fn leaving_a_table_that_does_not_exist_is_refused() {
+    let mut table = given(vec![]);
+
+    assert_eq!(
+        refused(table.when(v1::LeaveTable { seat: 0 })),
+        "TABLE_NOT_FOUND"
+    );
 }

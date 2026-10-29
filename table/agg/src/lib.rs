@@ -15,6 +15,7 @@
 //!
 //! [`TableState`]: examples_proto::v1::TableState
 
+pub mod cashout;
 mod create_table;
 mod hand;
 mod rejection;
