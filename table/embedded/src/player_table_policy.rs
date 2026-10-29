@@ -34,11 +34,7 @@ impl PlayerTablePolicy {
         let to = Policies
             .move_decided(&event.0)
             .map_err(|NoMove::UnknownAction(action)| {
-                Report::new(
-                    "policy-player-table-unknown-action",
-                    format!("a decision with no move the table knows: action {action}"),
-                )
-                .arg("action", action)
+                Report::new("policy-player-table-unknown-action").arg("action", action)
             })?;
         let root = Uuid {
             value: to.root.into(),

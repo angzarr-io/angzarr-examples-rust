@@ -1559,8 +1559,9 @@ fn eu_1500_the_last_action_plays_the_dealer_and_settles_in_the_same_step() {
 /// A shoe the dealer runs out of is a bug, never a business answer: a
 /// round never runs the shoe out (AHR-4: DealRound replaces a shoe that
 /// could). The step that settles fails the whole decision as a keyed bug,
-/// UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out` as its cause,
-/// its English TableBug's, dead-lettered, and nothing is recorded.
+/// UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out` as its cause
+/// and its round as `cause.round`, never English, dead-lettered under the
+/// kernel's own code, and nothing is recorded.
 #[test]
 fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
     // Exactly the four cards dealt: Alice's 10 9, the dealer's 5 up and 6
@@ -1587,16 +1588,25 @@ fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
     assert!(
         matches!(
             &failure,
-            Failure::Kernel(KernelError::Router(e)) if e.message == "the shoe ran out in round 1"
+            Failure::Kernel(KernelError::Router(e))
+                if e.extras.get("cause").map(String::as_str) == Some("examples-table-shoe-ran-out")
+                    && e.extras.get("cause.round").map(String::as_str) == Some("1")
         ),
-        "its English is TableBug's, naming the round: {failure:?}"
+        "TableBug's code its cause, the round its arg: {failure:?}"
     );
     let lines = table.dead_letters.lines();
     assert_eq!(lines.len(), 1, "dead-lettered once: {lines:?}");
     assert!(
-        lines[0]
-            .contains("UNHANDLED_HANDLER_ERROR cause=examples-table-shoe-ran-out cause.round=1"),
+        lines[0].contains(
+            "angzarr-embedded-next-unhandled-handler-error cause=examples-table-shoe-ran-out \
+             cause.round=1"
+        ),
         "keyed, its round the arg: {}",
+        lines[0]
+    );
+    assert!(
+        !lines[0].contains("UNHANDLED_HANDLER_ERROR") && !lines[0].contains("ran out in"),
+        "no retired code and no English: {}",
         lines[0]
     );
     assert_eq!(table.state(), &before, "nothing recorded");
@@ -2246,33 +2256,43 @@ fn between_rounds_no_seat_is_on_turn() {
 
 // ================================================================ the refusals as diagnostics
 
-/// A refusal's report: its code and its English.
+/// A refusal's report: its code and its `reason` arg (decision 14.37: a
+/// key and args; English only from a catalog, where it is shown).
 #[track_caller]
-fn report_of(then: Then) -> (String, String) {
+fn report_of(then: Then) -> (String, Option<String>) {
     match then {
         Err(Failure::Rejected(rejected)) => (
             rejected.report().code().to_string(),
-            rejected.report().to_string(),
+            rejected
+                .report()
+                .args()
+                .into_iter()
+                .find_map(|(name, arg)| match (name, arg) {
+                    ("reason", Arg::Str(reason)) => Some(reason),
+                    _ => None,
+                }),
         ),
         other => panic!("expected the table to refuse, got {other:?}"),
     }
 }
 
 #[test]
-fn a_table_refusal_is_reported_by_its_code_and_its_message() {
+fn a_table_refusal_is_reported_by_its_code_and_its_reason() {
     let mut table = given(background("2♣"));
 
     assert_eq!(
         report_of(table.when(place(0, 102))),
         (
             "examples-table-bet-out-of-range".to_string(),
-            "the bet is outside 10 to 100".to_string()
+            Some("BET_OUT_OF_RANGE".to_string())
         )
     );
 }
 
+/// A typed refusal is keyed COMMAND_REFUSED with its object's type as
+/// `refusal_type` (decision 14.37); its reason travels in the object.
 #[test]
-fn a_seat_not_confirmable_is_reported_by_its_code_message_and_reason() {
+fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
     let mut table = given(main_table());
 
     let then = table.when(confirm(B1));
@@ -2281,16 +2301,13 @@ fn a_seat_not_confirmable_is_reported_by_its_code_message_and_reason() {
     };
     let report = rejected.report();
     let reason = not_confirmable(then.clone());
-    assert_eq!(report.code(), "examples-table-seat-not-confirmable");
+    assert_eq!(report.code(), "angzarr-embedded-next-command-refused");
     assert_eq!(
         report.to_string(),
-        format!("the seat cannot be confirmed: {reason}")
+        format!(
+            "angzarr-embedded-next-command-refused refusal_type={}",
+            v1::SeatNotConfirmable::full_name()
+        )
     );
-    assert!(
-        report
-            .args()
-            .into_iter()
-            .any(|(name, arg)| name == "reason" && matches!(arg, Arg::Str(r) if r == reason)),
-        "its reason travels as an arg: {report:?}"
-    );
+    assert!(!reason.is_empty(), "its reason travels in the object");
 }
