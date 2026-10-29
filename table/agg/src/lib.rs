@@ -29,4 +29,4 @@ pub use create_table::create_table;
 pub use hand::{value, Value};
 pub use rejection::{Rejection, RejectionCode, StatusCode};
 pub use state::{apply, apply_shoe_shuffled, apply_table_created, TableEvent};
-pub use table::{AfterAction, Table, TableLogic};
+pub use table::{AfterAction, ShoeRanOut, Table, TableLogic};

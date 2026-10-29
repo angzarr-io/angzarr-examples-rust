@@ -9,12 +9,12 @@
 //! hand edit to its output is marked `HAND-EDIT`.
 
 use agg_table::{AfterAction, Table, TableLogic};
-use angzarr_embedded::next::markup::{Context, Emit, Refuses};
+use angzarr_embedded::next::markup::{Context, Emit, Failed, Refuses};
 use angzarr_embedded_macros::{aggregate, applies, handles_cmd};
 use examples_proto::v1::TableState;
 
 use crate::domain::*;
-use crate::refused::TableRefused;
+use crate::refused::{TableBug, TableRefused};
 
 // HAND-EDIT: the scaffold writes `pub struct TableAggregate {}`; the
 // aggregate holds agg-table's `Table`.
@@ -30,9 +30,14 @@ impl TableAggregate {
         self.table.state()
     }
 
-    /// The step after the deal and after every action, as events.
-    fn after_action(&self, _ctx: &Context) -> Result<Emit<Self>, TableRefused> {
-        Ok(match self.table.after_action() {
+    /// The step after the deal and after every action, as events; the
+    /// dealer running the shoe out is the table's bug.
+    fn after_action(&self, _ctx: &Context) -> Result<Emit<Self>, Failed<TableRefused>> {
+        let after = self
+            .table
+            .after_action()
+            .map_err(|ran_out| Failed::bug(&TableBug(ran_out)))?;
+        Ok(match after {
             AfterAction::Turn(turn) => Emit::of(TurnStarted(turn)),
             AfterAction::Settle(dealer, settled) => {
                 Emit::of((DealerPlayed(dealer), RoundSettled(settled)))
@@ -43,8 +48,8 @@ impl TableAggregate {
 
     /// DealRound's second step: the deal, then the step after it; nothing
     /// once the round is dealt.
-    fn deal(&self, _ctx: &Context) -> Result<Emit<Self>, TableRefused> {
-        Ok(match self.table.deal()? {
+    fn deal(&self, _ctx: &Context) -> Result<Emit<Self>, Failed<TableRefused>> {
+        Ok(match self.table.deal().map_err(TableRefused::from)? {
             Some(dealt) => Emit::of(RoundDealt(dealt)).then(Self::after_action),
             None => Emit::of(None::<RoundDealt>),
         })

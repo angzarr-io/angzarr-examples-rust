@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use agg_table::{Rejection, RejectionCode};
+use agg_table::{Rejection, RejectionCode, ShoeRanOut};
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 /// Why the table refused a command (other than ConfirmSeat's typed
@@ -62,5 +62,26 @@ impl Diagnostic for TableRefused {
             ("reason", self.reason().into()),
             ("message", self.0.message.as_str().into()),
         ]
+    }
+}
+
+/// agg-table's [`ShoeRanOut`] as the table's bug: a defect, never a
+/// refusal, keyed `examples-table-shoe-ran-out` with its round.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TableBug(pub ShoeRanOut);
+
+impl fmt::Display for TableBug {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "the shoe ran out in round {}", self.0.round)
+    }
+}
+
+impl Diagnostic for TableBug {
+    fn code(&self) -> &'static str {
+        "examples-table-shoe-ran-out"
+    }
+
+    fn args(&self) -> Vec<(&'static str, Arg)> {
+        vec![("round", u64::from(self.0.round).into())]
     }
 }

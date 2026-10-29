@@ -36,6 +36,14 @@ pub enum AfterAction {
     Nothing,
 }
 
+/// The shoe ran out while the dealer drew in round `round`: a bug, never a
+/// business answer, since a round never runs the shoe out (AHR-4:
+/// DealRound replaces a shoe that could).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShoeRanOut {
+    pub round: u32,
+}
+
 /// The table's decisions and folds.
 ///
 /// A decision reads the state before its events. Where a later event is
@@ -77,8 +85,9 @@ pub trait TableLogic {
     fn stand(&self, cmd: &Stand) -> Result<HandStood, Rejection>;
     /// DoubleDown: the wager doubled and one card drawn.
     fn double_down(&self, cmd: &DoubleDown) -> Result<HandDoubled, Rejection>;
-    /// The step after the deal and after every action.
-    fn after_action(&self) -> AfterAction;
+    /// The step after the deal and after every action; the dealer's
+    /// play running the shoe out is a bug, [`ShoeRanOut`].
+    fn after_action(&self) -> Result<AfterAction, ShoeRanOut>;
 
     fn apply_table_created(&mut self, event: &TableCreated);
     fn apply_shoe_shuffled(&mut self, event: &ShoeShuffled);
@@ -195,7 +204,7 @@ impl Table {
     }
 
     /// The dealer's play (AHR-7, AHR-11) and the settlement (AHR-12).
-    fn settle(&self) -> (DealerPlayed, RoundSettled) {
+    fn settle(&self) -> Result<(DealerPlayed, RoundSettled), ShoeRanOut> {
         let state = &self.state;
         let seats = self.wagered();
         let hand_of = |n: &i32| value(&state.seated[n].hand.clone().unwrap_or_default().cards);
@@ -209,9 +218,7 @@ impl Table {
         if live && !opening.blackjack {
             let mut shoe = state.shoe.iter();
             while value(&dealer).total < 17 {
-                let card = *shoe
-                    .next()
-                    .expect("a round never runs the shoe out (AHR-4)");
+                let card = *shoe.next().ok_or(ShoeRanOut { round: state.round })?;
                 dealer.push(card);
                 drawn.push(card);
             }
@@ -241,7 +248,7 @@ impl Table {
             })
             .collect();
         let house_delta: i64 = outcomes.iter().map(|o| o.wager - o.returned).sum();
-        (
+        Ok((
             DealerPlayed {
                 round: state.round,
                 hole: state.dealer_cards.get(1).copied(),
@@ -257,7 +264,7 @@ impl Table {
                 house_delta,
                 house_result_after: state.house_result + house_delta,
             },
-        )
+        ))
     }
 }
 
@@ -572,18 +579,18 @@ impl TableLogic for Table {
         })
     }
 
-    fn after_action(&self) -> AfterAction {
+    fn after_action(&self) -> Result<AfterAction, ShoeRanOut> {
         if self.state.phase() != Phase::PlayerTurns {
-            return AfterAction::Nothing;
+            return Ok(AfterAction::Nothing);
         }
         if self.state.turn >= 0 {
-            return match self.turn_announced {
+            return Ok(match self.turn_announced {
                 true => AfterAction::Nothing,
                 false => AfterAction::Turn(self.turn_started()),
-            };
+            });
         }
-        let (dealer, settled) = self.settle();
-        AfterAction::Settle(dealer, settled)
+        let (dealer, settled) = self.settle()?;
+        Ok(AfterAction::Settle(dealer, settled))
     }
 
     fn apply_table_created(&mut self, event: &TableCreated) {
