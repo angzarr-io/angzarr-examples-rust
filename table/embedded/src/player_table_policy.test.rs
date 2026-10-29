@@ -5,7 +5,7 @@
 use angzarr_embedded::next::markup::PolicyContext;
 use angzarr_embedded::next::v1::{Cover, EventRef, Uuid};
 use angzarr_embedded::next::{pack, Any, Timestamp};
-use examples_proto::v1::{self, MoveAction};
+use examples_proto::v1::{self, MoveAction, Suit};
 
 use super::PlayerTablePolicy;
 use crate::domain::MoveDecided;
@@ -38,12 +38,25 @@ fn context(domain: &str, stream_root: u8) -> PolicyContext {
 
 // ================================================================ policy-player-table
 
+fn card(rank: u32, suit: Suit) -> v1::Card {
+    v1::Card {
+        rank,
+        suit: suit.into(),
+    }
+}
+
+/// A decision on a hard 11 (six, five) against a dealer's six: a hand on
+/// which a hit, a stand and a double down are all moves a player makes.
 fn decided(action: MoveAction) -> MoveDecided {
     MoveDecided(v1::MoveDecided {
         table_root: vec![TABLE; 16].into(),
         round: 1,
         seat: 0,
         action: action.into(),
+        cards: vec![card(6, Suit::Clubs), card(5, Suit::Hearts)],
+        total: 11,
+        soft: false,
+        dealer_up: Some(card(6, Suit::Diamonds)),
     })
 }
 
@@ -85,6 +98,10 @@ fn eu_1603_the_command_names_the_seat_and_table_the_decision_names() {
         round: 4,
         seat: 2,
         action: MoveAction::Stand.into(),
+        cards: vec![card(10, Suit::Spades), card(7, Suit::Hearts)],
+        total: 17,
+        soft: false,
+        dealer_up: Some(card(9, Suit::Clubs)),
     });
 
     let commands = PlayerTablePolicy.move_decided(&decision, &context("player", ALICE));
