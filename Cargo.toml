@@ -2,7 +2,7 @@
 resolver = "2"
 # The example crates join this workspace as they are ported; tools/archlint
 # checks their module layering (archlint.toml).
-members = ["proto", "table/agg", "tools/archlint"]
+members = ["proto", "table/agg", "table/policies", "table/embedded", "tools/archlint"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,15 @@ license = "BSD-3-Clause"
 
 [workspace.dependencies]
 examples-proto = { path = "proto" }
+agg-table = { path = "table/agg" }
+table-player-policies = { path = "table/policies" }
+# angzarr-embedded (angzarr's in-app runtime) and its markup, pinned by hash
+# at its main. Its angzarr-proto and angzarr-ports pins are the
+# angzarr-project rev the angzarr-project submodule is checked out at, so one
+# spec is in the graph.
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
 bytes = "1"
 prost = "0.14"
 prost-build = "0.14"

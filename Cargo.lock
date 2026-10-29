@@ -19,6 +19,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "angzarr-embedded"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd#b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd"
+dependencies = [
+ "angzarr-embedded-diagnostic",
+ "angzarr-ports",
+ "angzarr-proto",
+ "prost",
+ "prost-types",
+]
+
+[[package]]
+name = "angzarr-embedded-diagnostic"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd#b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd"
+
+[[package]]
+name = "angzarr-embedded-macros"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd#b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "angzarr-ports"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr-project?rev=57f029d09d531f4825bc215499cdeabde01538dc#57f029d09d531f4825bc215499cdeabde01538dc"
+dependencies = [
+ "angzarr-proto",
+ "prost",
+ "prost-types",
+]
+
+[[package]]
+name = "angzarr-proto"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr-project?rev=57f029d09d531f4825bc215499cdeabde01538dc#57f029d09d531f4825bc215499cdeabde01538dc"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "prost-types",
+ "uuid",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -363,6 +412,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -382,6 +437,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "table-embedded"
+version = "0.1.0"
+dependencies = [
+ "agg-table",
+ "angzarr-embedded",
+ "angzarr-embedded-diagnostic",
+ "angzarr-embedded-macros",
+ "examples-proto",
+ "prost",
+ "table-player-policies",
+]
+
+[[package]]
+name = "table-player-policies"
+version = "0.1.0"
+dependencies = [
+ "examples-proto",
 ]
 
 [[package]]
@@ -442,6 +517,15 @@ name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+
+[[package]]
+name = "uuid"
+version = "1.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
+dependencies = [
+ "sha1_smol",
+]
 
 [[package]]
 name = "windows-link"

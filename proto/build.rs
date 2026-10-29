@@ -22,7 +22,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join("proto");
     let examples = proto_root.join("io/angzarr/examples/v1");
 
-    let protos = [examples.join("cards.proto"), examples.join("table.proto")];
+    let protos = [
+        examples.join("cards.proto"),
+        examples.join("table.proto"),
+        examples.join("player.proto"),
+    ];
     println!("cargo:rerun-if-env-changed=PROTOC");
     for proto in &protos {
         println!("cargo:rerun-if-changed={}", proto.display());

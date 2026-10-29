@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "Generated io.angzarr.examples.v1 types for the blackjack example (cards, table)"
+description = "Generated io.angzarr.examples.v1 types for the blackjack example (cards, table, player)"
 
 [dependencies]
 bytes = { workspace = true }

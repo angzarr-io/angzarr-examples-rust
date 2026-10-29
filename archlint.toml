@@ -27,7 +27,7 @@ name = "table-domain-is-framework-free"
 why = "the table's decisions and appliers are pure functions over the generated types, so any handler framework can wire them without the domain linking it"
 from = ["agg_table::**"]
 allow = ["agg_table::**", "examples_proto::**"]
-deny = ["angzarr_client::**", "tonic::**"]
+deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
 
 [[rule]]
 name = "the-shoe-knows-only-cards"
@@ -35,3 +35,17 @@ why = "the shoe is the cards.proto algorithm alone; the table's state and decisi
 from = ["agg_table::shoe"]
 allow = ["examples_proto::**"]
 scope = "lib"
+
+[[rule]]
+name = "the-embedded-table-is-an-adapter-over-the-logic"
+why = "table-embedded is the scaffolded angzarr-embedded markup, a thin adapter delegating to agg-table's TableLogic and table-player-policies' traits; the logic stays there, so the adapter can be regenerated and links no other example crate or framework client"
+from = ["table_embedded::**"]
+allow = ["table_embedded::**", "agg_table::**", "table_player_policies::**", "examples_proto::**"]
+deny = ["angzarr_client::**", "tonic::**"]
+
+[[rule]]
+name = "the-policies-are-framework-free"
+why = "the table-player policies are plain functions over the generated types, so any harness adapter can delegate to them without the logic linking it"
+from = ["table_player_policies::**"]
+allow = ["table_player_policies::**", "examples_proto::**"]
+deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]

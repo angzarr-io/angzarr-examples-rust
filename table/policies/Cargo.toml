@@ -1,0 +1,10 @@
+[package]
+name = "table-player-policies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The blackjack table's two policies with the player bot, as plain Rust: TurnStarted to DecideMove, MoveDecided to Hit, Stand or DoubleDown"
+
+[dependencies]
+examples-proto.workspace = true

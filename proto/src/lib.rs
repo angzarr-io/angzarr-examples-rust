@@ -1,5 +1,7 @@
 //! Generated protobuf types for the blackjack example
-//! (`io.angzarr.examples.v1`): cards and the table domain.
+//! (`io.angzarr.examples.v1`): cards, the table domain and the player bot
+//! (`player.proto`, whose DecideMove and MoveDecided the table's policies
+//! translate).
 //!
 //! Module nesting mirrors the proto package so prost's `super::` references
 //! resolve; [`v1`] is the short path.
