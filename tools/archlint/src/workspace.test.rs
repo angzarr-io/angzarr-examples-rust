@@ -42,8 +42,8 @@ fn lib_name_comes_from_the_library_target() {
 fn non_library_targets_get_kind_tagged_roots_and_scopes() {
     assert_eq!(target("x", "lib", "").root_module("app"), "app");
     assert_eq!(
-        target("saga", "test", "").root_module("app"),
-        "app::test#saga"
+        target("policy", "test", "").root_module("app"),
+        "app::test#policy"
     );
     assert_eq!(
         target("build-script-build", "custom-build", "").root_module("app"),

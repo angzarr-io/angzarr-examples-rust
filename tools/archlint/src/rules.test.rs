@@ -47,7 +47,7 @@ fn single_star_matches_within_one_segment() {
     assert!(matches("a::*", "a::b"));
     assert!(!matches("a::*", "a"));
     assert!(!matches("a::*", "a::b::c"));
-    assert!(matches("a::test#*", "a::test#saga"));
+    assert!(matches("a::test#*", "a::test#policy"));
     assert!(matches("a::*_x", "a::y_x"));
     assert!(!matches("a::*_x", "a::y_z"));
     assert!(matches("a::x*y", "a::xy"));
@@ -132,13 +132,13 @@ fn allow_constrains_only_workspace_targets() {
     let m = model(vec![
         edge("core_crate::error", "core_crate::proto::v1", Scope::Lib),
         edge("core_crate::error", "prost::Message", Scope::Lib),
-        edge("core_crate::error", "core_crate::saga", Scope::Lib),
+        edge("core_crate::error", "core_crate::policy", Scope::Lib),
         edge("core_crate::error", "path:bindings/x", Scope::Lib),
     ]);
     assert_eq!(
         names(&f, &m),
         vec![
-            ("leaf".to_string(), "core_crate::saga".to_string()),
+            ("leaf".to_string(), "core_crate::policy".to_string()),
             ("leaf".to_string(), "path:bindings/x".to_string()),
         ]
     );

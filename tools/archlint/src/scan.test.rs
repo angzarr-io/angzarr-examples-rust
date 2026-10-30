@@ -106,19 +106,19 @@ fn unreadable_or_unparsable_root_is_an_error() {
 fn resolves_crate_self_super_and_child_paths() {
     let (m, _) = scan_lib(
         &[
-            ("src/lib.rs", "pub mod error; pub mod saga; pub mod kernel; pub fn root_fn() {}"),
+            ("src/lib.rs", "pub mod error; pub mod policy; pub mod kernel; pub fn root_fn() {}"),
             ("src/error.rs", "pub mod codes { pub const X: u8 = 1; }"),
             (
-                "src/saga.rs",
+                "src/policy.rs",
                 "use crate::error::codes; fn f() { let _ = super::kernel::g(); let _ = self::h(); crate::root_fn(); }\nfn h() {}",
             ),
             ("src/kernel.rs", "pub fn g() {} fn k() { let _ = crate::error::codes::X; }"),
         ],
         &[],
     );
-    assert!(has(&m, "app::saga", "app::error::codes", Scope::Lib));
-    assert!(has(&m, "app::saga", "app::kernel", Scope::Lib));
-    assert!(has(&m, "app::saga", "app", Scope::Lib));
+    assert!(has(&m, "app::policy", "app::error::codes", Scope::Lib));
+    assert!(has(&m, "app::policy", "app::kernel", Scope::Lib));
+    assert!(has(&m, "app::policy", "app", Scope::Lib));
     assert!(has(&m, "app::kernel", "app::error::codes", Scope::Lib));
     assert!(
         !edges(&m).iter().any(|(f, t, _)| f == t),
@@ -149,17 +149,17 @@ fn resolves_through_reexport_aliases() {
         &[
             (
                 "src/lib.rs",
-                "pub mod proto; pub mod saga; pub use proto::v1 as pb;",
+                "pub mod proto; pub mod policy; pub use proto::v1 as pb;",
             ),
             ("src/proto.rs", "pub mod v1 { pub struct Book; }"),
-            ("src/saga.rs", "use crate::pb; fn f(_: pb::Book) {}"),
+            ("src/policy.rs", "use crate::pb; fn f(_: pb::Book) {}"),
         ],
         &[],
     );
-    assert!(has(&m, "app::saga", "app::proto::v1", Scope::Lib));
+    assert!(has(&m, "app::policy", "app::proto::v1", Scope::Lib));
     assert!(has(&m, "app", "app::proto::v1", Scope::Lib));
     assert!(
-        !has(&m, "app::saga", "app", Scope::Lib),
+        !has(&m, "app::policy", "app", Scope::Lib),
         "alias resolves past the root"
     );
 }
@@ -497,8 +497,11 @@ fn cyclic_aliases_terminate() {
 fn bare_identifiers_are_not_module_references() {
     let (m, _) = scan_lib(
         &[
-            ("src/lib.rs", "pub mod saga; fn f(saga: u8) -> u8 { saga }"),
-            ("src/saga.rs", ""),
+            (
+                "src/lib.rs",
+                "pub mod policy; fn f(policy: u8) -> u8 { policy }",
+            ),
+            ("src/policy.rs", ""),
         ],
         &[],
     );

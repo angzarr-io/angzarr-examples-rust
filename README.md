@@ -6,7 +6,7 @@ The poker example is parked, not deleted: it was removed for its complexity
 (owner, 2026-10-27, "at least for now") and may come back. Its last version
 is at 59bd1b8e (`git checkout 59bd1b8e`); it was removed in aabe5e3. Blackjack
 replaces it as the example. This repository holds the Rust side of the
-blackjack example: the aggregates, sagas, process managers and
+blackjack example: the aggregates, policies, process managers and
 projections. The virtual players are Python. The spec (protos under
 `proto/io/angzarr/examples/v1/`, Gherkin under `features/example/blackjack*/`)
 lives in the [angzarr-project](https://github.com/angzarr-io/angzarr-project)
