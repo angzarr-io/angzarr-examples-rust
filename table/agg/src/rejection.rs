@@ -125,11 +125,37 @@ impl RejectionCode {
     }
 }
 
+/// A value a [`Rejection`] carries: a number or an id, never prose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RejectionArg {
+    Int(i64),
+    Str(String),
+}
+
+impl From<i32> for RejectionArg {
+    fn from(value: i32) -> Self {
+        Self::Int(value.into())
+    }
+}
+
+impl From<i64> for RejectionArg {
+    fn from(value: i64) -> Self {
+        Self::Int(value)
+    }
+}
+
+impl From<&str> for RejectionArg {
+    fn from(value: &str) -> Self {
+        Self::Str(value.to_owned())
+    }
+}
+
 /// A refused command: the reason code and a human-readable message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rejection {
     pub code: RejectionCode,
     pub message: String,
+    pub args: Vec<(&'static str, RejectionArg)>,
 }
 
 impl Rejection {
@@ -137,6 +163,7 @@ impl Rejection {
         Self {
             code,
             message: message.into(),
+            args: Vec::new(),
         }
     }
 }

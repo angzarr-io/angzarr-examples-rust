@@ -2,7 +2,7 @@ use examples_proto::v1::table_state::Phase;
 use examples_proto::v1::{CreateTable, ShoeShuffled, TableCreated, TableState};
 
 use super::*;
-use crate::rejection::RejectionCode;
+use crate::rejection::{RejectionArg, RejectionCode};
 use crate::state::apply;
 use crate::test_support::cards;
 
@@ -159,9 +159,28 @@ fn eu_1442_a_table_cannot_be_created_twice() {
     let refused = create_table(&existing, &create_main()).expect_err("refused");
 
     assert_eq!(refused.code, RejectionCode::TableAlreadyExists);
-    assert!(
-        refused.message.contains("Main"),
-        "message names the table: {}",
-        refused.message
-    );
+    assert_eq!(refused.args, [("name", RejectionArg::Str("Main".into()))]);
+}
+
+/// Decision 14.37: a rejection is a key and its args, never English. A
+/// broken house rule is named by a key of its own.
+#[test]
+fn eu_1441_an_invalid_configuration_names_the_rule_it_breaks_by_a_key() {
+    for &(row, rule) in &[
+        ((0, 1, 10, 100, 100, 1000), "seats"),
+        ((3, 9, 10, 100, 100, 1000), "decks"),
+        ((3, 1, 0, 100, 100, 1000), "bet_limits"),
+        ((3, 1, 11, 101, 100, 1000), "even_bets"),
+        ((3, 1, 10, 100, 2, 1000), "buy_in_limits"),
+    ] {
+        let refused = create_table(&TableState::default(), &with_config(row)).expect_err("refused");
+        assert_eq!(
+            (refused.code, refused.args),
+            (
+                RejectionCode::InvalidTableConfig,
+                vec![("rule", RejectionArg::Str(rule.into()))]
+            ),
+            "config {row:?}"
+        );
+    }
 }

@@ -37,6 +37,7 @@ use examples_proto::v1::{self, seat_outcome::Outcome, table_state::Phase, Card, 
 use prost::{Message, Name};
 
 use super::TableAggregate;
+use crate::TableRefused;
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 // ---------------------------------------------------------------- the events
@@ -2286,6 +2287,120 @@ fn a_table_refusal_is_reported_by_its_code_and_its_reason() {
             "examples-table-bet-out-of-range".to_string(),
             Some("BET_OUT_OF_RANGE".to_string())
         )
+    );
+}
+
+/// A message-only refusal as it is shown and logged: its code and args.
+#[track_caller]
+fn refusal_shown(then: Then) -> String {
+    match then {
+        Err(Failure::Rejected(rejected)) if rejected.refusal_object().is_none() => {
+            rejected.report().to_string()
+        }
+        other => panic!("expected the table to refuse, got {other:?}"),
+    }
+}
+
+/// Decision 14.37: a refusal is a key and its args, never English. Each
+/// table refusal carries its reason and the values it names, and no
+/// `message`; through the router its args come back in name order.
+#[test]
+fn a_table_refusal_is_its_code_reason_and_values_never_english() {
+    let shown = |events: Vec<Ev>, when: &dyn Fn(&mut Harness) -> Then| {
+        refusal_shown(when(&mut given(events)))
+    };
+    let mut taken = main_table();
+    taken.push(held(B2, BOB, 1, 500));
+    let mut wagered = alice_seated(500);
+    wagered.push(bet(0, 20, 480));
+    let mut bet_once = background("2♣");
+    bet_once.push(bet(0, 20, 480));
+    let cases: Vec<(Vec<Ev>, &dyn Fn(&mut Harness) -> Then, &str)> = vec![
+        (
+            main_table(),
+            &|t| t.when(create_main(42)),
+            "examples-table-table-already-exists name=Main reason=TABLE_ALREADY_EXISTS",
+        ),
+        (
+            vec![],
+            &|t| t.when(v1::CreateTable { seats: 8, ..create_main(42) }),
+            "examples-table-invalid-table-config reason=INVALID_TABLE_CONFIG rule=seats",
+        ),
+        (
+            vec![],
+            &|t| t.when(v1::Hit { seat: 0 }),
+            "examples-table-table-not-found reason=TABLE_NOT_FOUND",
+        ),
+        (
+            main_table(),
+            &|t| t.when(request(ALICE, 3, 500, B1)),
+            "examples-table-seat-out-of-range reason=SEAT_OUT_OF_RANGE seat=3",
+        ),
+        (
+            main_table(),
+            &|t| t.when(request(ALICE, 0, 99, B1)),
+            "examples-table-buy-in-out-of-range max_buy_in=1000 min_buy_in=100 reason=BUY_IN_OUT_OF_RANGE",
+        ),
+        (
+            taken,
+            &|t| t.when(request(ALICE, 1, 500, 0x03)),
+            "examples-table-seat-taken reason=SEAT_TAKEN seat=1",
+        ),
+        (
+            background("2♣"),
+            &|t| t.when(place(0, 102)),
+            "examples-table-bet-out-of-range max_bet=100 min_bet=10 reason=BET_OUT_OF_RANGE",
+        ),
+        (
+            background("2♣"),
+            &|t| t.when(place(0, 15)),
+            "examples-table-bet-not-even reason=BET_NOT_EVEN",
+        ),
+        (
+            bet_once,
+            &|t| t.when(place(0, 20)),
+            "examples-table-already-bet reason=ALREADY_BET seat=0",
+        ),
+        (
+            background("2♣"),
+            &|t| t.when(place(2, 20)),
+            "examples-table-not-seated reason=NOT_SEATED seat=2",
+        ),
+        (
+            main_table(),
+            &|t| t.when(v1::LeaveTable { seat: 2 }),
+            "examples-table-not-seated reason=NOT_SEATED seat=2",
+        ),
+        (
+            two_hands_low(""),
+            &|t| t.when(v1::Hit { seat: 1 }),
+            "examples-table-not-your-turn reason=NOT_YOUR_TURN seat=1",
+        ),
+        (
+            wagered,
+            &|t| t.when(v1::LeaveTable { seat: 0 }),
+            "examples-table-wager-in-play reason=WAGER_IN_PLAY seat=0",
+        ),
+    ];
+    for (events, when, expected) in cases {
+        assert_eq!(shown(events, when), expected);
+    }
+}
+
+/// A table refusal's own display is its code and args too (decision 14.37:
+/// English only from a catalog, where it is shown).
+#[test]
+fn a_table_refusal_displays_as_its_code_and_args() {
+    let broken = v1::CreateTable {
+        decks: 9,
+        ..create_main(42)
+    };
+    let rejection = agg_table::create_table(&v1::TableState::default(), &broken)
+        .expect_err("nine decks break the house rules");
+
+    assert_eq!(
+        TableRefused::from(rejection).to_string(),
+        "examples-table-invalid-table-config reason=INVALID_TABLE_CONFIG rule=decks"
     );
 }
 
