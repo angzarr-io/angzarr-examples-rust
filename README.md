@@ -81,7 +81,7 @@ just fmt-fix         # Auto-format code
 just lint            # Clippy, warnings denied
 just archlint        # Module layering rules (archlint.toml)
 just mutation-test   # cargo-mutants over the aggregate, policies and embedded host
-just mutation-push   # pre-push: the same, over what a push adds (stdin: git's pushed refs)
+just mutation-push   # by hand: the same, over what a push adds (stdin: git's pushed refs)
 just up              # Kind cluster with coordinators + infrastructure
 ```
 

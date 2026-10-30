@@ -2,9 +2,9 @@ name: Mutation
 
 # The mutation full pass, weekly and by hand: `mutation-test` mutates the
 # MUTATED crates (the aggregate, the player policies, the embedded host) and
-# judges each by MUTATION_THRESHOLDS (justfile.container). The pre-push gate
-# (`mutation-push`) judges only what a push adds; this pass catches what has
-# drifted under it. Set up as ci.yml's test job is, and like it calls
+# judges each by MUTATION_THRESHOLDS (justfile.container). No git hook runs
+# mutation; `mutation-push` judges what a push adds, by hand, and this pass
+# catches what has drifted under it. Set up as ci.yml's test job is, and like it calls
 # justfile.container directly (CI runs without the container wrapper).
 
 on:

@@ -82,7 +82,7 @@ mutation-test: (_mutation "")
 
 # Mutation-test only the lines of the MUTATED crates that the diff PATCH
 # (relative to the checkout, a/ and b/ paths) changes, judged the same way:
-# the host `mutation-push`'s run, in the pushed commit's tree. Exits 4 when the
+# the host `mutation-push`'s run (by hand), in the pushed commit's tree. Exits 4 when the
 # tests fail unmutated (cargo-mutants' baseline), so no mutant can be judged.
 mutation-diff PATCH: (_mutation PATCH)
 
