@@ -68,7 +68,9 @@ Install git hooks (requires [lefthook](https://github.com/evilmartians/lefthook)
 lefthook install
 ```
 
-This configures a pre-commit hook that auto-formats Rust sources before each commit.
+This configures a pre-commit hook that auto-formats Rust sources before each commit,
+and a pre-push hook (`just push-check`) that runs every test of each pushed commit
+in a tree of its own: red tests may be pushed to a branch, never to `main`.
 
 ### Recipes
 
@@ -82,6 +84,7 @@ just lint            # Clippy, warnings denied
 just archlint        # Module layering rules (archlint.toml)
 just mutation-test   # cargo-mutants over the aggregate, policies and embedded host
 just mutation-push   # by hand: the same, over what a push adds (stdin: git's pushed refs)
+just push-check origin  # pre-push: every test of each pushed commit; red refused on main only
 just up              # Kind cluster with coordinators + infrastructure
 ```
 
