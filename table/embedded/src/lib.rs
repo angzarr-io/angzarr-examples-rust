@@ -10,7 +10,7 @@
 //! - [`domain`]: each command, event and refusal object as the domain type
 //!   the markup takes (hand-written: the generator refuses table.proto);
 //! - [`TableRefused`]: agg-table's rejection as the domain's
-//!   message-only rejection, a localizable diagnostic;
+//!   untyped rejection, a localizable diagnostic (its code and args);
 //! - [`TableAggregate`]: the table;
 //! - [`TablePlayerPolicy`] and [`PlayerTablePolicy`]: TurnStarted to the
 //!   player bot's DecideMove, and its MoveDecided back to Hit, Stand or

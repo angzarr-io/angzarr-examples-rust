@@ -1,9 +1,11 @@
-//! agg-table's [`Rejection`] as the table domain's message-only rejection:
-//! a localizable diagnostic, one code per `ErrorInfo.reason`.
+//! agg-table's [`Rejection`] as the table domain's untyped rejection: a
+//! localizable diagnostic, one code per `ErrorInfo.reason`, its args the
+//! reason and the values the rejection names (decision 14.37: a key and an
+//! argument map, never English).
 
 use std::fmt;
 
-use agg_table::{Rejection, RejectionCode, ShoeRanOut};
+use agg_table::{Rejection, RejectionArg, RejectionCode, ShoeRanOut};
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 /// Why the table refused a command (other than ConfirmSeat's typed
@@ -25,9 +27,10 @@ impl From<Rejection> for TableRefused {
     }
 }
 
+/// Its code and args, as every error displays itself (decision 14.37).
 impl fmt::Display for TableRefused {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0.message)
+        angzarr_embedded_diagnostic::display(self, f)
     }
 }
 
@@ -58,10 +61,15 @@ impl Diagnostic for TableRefused {
     fn args(&self) -> Vec<(&'static str, Arg)> {
         // The reason travels as an arg: through angzarr-router a caller
         // receives the code and args, not this value.
-        vec![
-            ("reason", self.reason().into()),
-            ("message", self.0.message.as_str().into()),
-        ]
+        let mut args = vec![("reason", self.reason().into())];
+        args.extend(self.0.args.iter().map(|(name, value)| {
+            let value = match value {
+                RejectionArg::Int(n) => Arg::Int(*n),
+                RejectionArg::Str(s) => Arg::Str(s.clone()),
+            };
+            (*name, value)
+        }));
+        args
     }
 }
 

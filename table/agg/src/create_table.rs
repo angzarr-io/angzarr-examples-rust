@@ -23,10 +23,9 @@ const DECKS: std::ops::RangeInclusive<i32> = 1..=8;
 /// and `min_bet <= min_buy_in`.
 pub fn create_table(state: &TableState, cmd: &CreateTable) -> Result<Vec<TableEvent>, Rejection> {
     if table_exists(state) {
-        return Err(Rejection::new(
-            RejectionCode::TableAlreadyExists,
-            format!("table {:?} already exists", state.name),
-        ));
+        return Err(
+            Rejection::new(RejectionCode::TableAlreadyExists).arg("name", state.name.as_str())
+        );
     }
     let decks = valid_decks(cmd)?;
     Ok(vec![
@@ -51,29 +50,25 @@ pub fn create_table(state: &TableState, cmd: &CreateTable) -> Result<Vec<TableEv
 /// Check the configuration against the house rules and return the deck
 /// count as the shoe takes it.
 fn valid_decks(cmd: &CreateTable) -> Result<u32, Rejection> {
-    let invalid = |why: &str| {
-        Rejection::new(
-            RejectionCode::InvalidTableConfig,
-            format!("invalid table configuration: {why}"),
-        )
-    };
+    // The rule broken, by a key: `seats` 1 to 7, `decks` 1 to 8,
+    // `bet_limits` 0 < min_bet <= max_bet, `even_bets` both even,
+    // `buy_in_limits` min_bet <= min_buy_in <= max_buy_in.
+    let invalid = |rule: &str| Rejection::new(RejectionCode::InvalidTableConfig).arg("rule", rule);
     if !SEATS.contains(&cmd.seats) {
-        return Err(invalid("seats must be 1 to 7"));
+        return Err(invalid("seats"));
     }
     if !DECKS.contains(&cmd.decks) {
-        return Err(invalid("decks must be 1 to 8"));
+        return Err(invalid("decks"));
     }
     if cmd.min_bet <= 0 || cmd.min_bet > cmd.max_bet {
-        return Err(invalid("bets must satisfy 0 < min_bet <= max_bet"));
+        return Err(invalid("bet_limits"));
     }
     if cmd.min_bet % 2 != 0 || cmd.max_bet % 2 != 0 {
-        return Err(invalid("min_bet and max_bet must be even"));
+        return Err(invalid("even_bets"));
     }
     // min_buy_in > 0 follows from 0 < min_bet <= min_buy_in.
     if cmd.min_buy_in < cmd.min_bet || cmd.min_buy_in > cmd.max_buy_in {
-        return Err(invalid(
-            "buy-ins must satisfy min_bet <= min_buy_in <= max_buy_in",
-        ));
+        return Err(invalid("buy_in_limits"));
     }
     // Positive, checked above.
     Ok(cmd.decks.unsigned_abs())

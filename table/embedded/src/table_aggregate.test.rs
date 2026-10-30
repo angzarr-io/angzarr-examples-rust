@@ -199,7 +199,7 @@ impl Harness {
     }
 }
 
-/// The `ErrorInfo.reason` of a message-only refusal: its `reason` arg.
+/// The `ErrorInfo.reason` of an untyped refusal: its `reason` arg.
 #[track_caller]
 fn refused(then: Then) -> String {
     match then {
@@ -2290,7 +2290,7 @@ fn a_table_refusal_is_reported_by_its_code_and_its_reason() {
     );
 }
 
-/// A message-only refusal as it is shown and logged: its code and args.
+/// An untyped refusal as it is shown and logged: its code and args.
 #[track_caller]
 fn refusal_shown(then: Then) -> String {
     match then {

@@ -128,10 +128,7 @@ impl Table {
     fn exists(&self) -> Result<(), Rejection> {
         match table_exists(&self.state) {
             true => Ok(()),
-            false => Err(refuse(
-                RejectionCode::TableNotFound,
-                "the table does not exist",
-            )),
+            false => Err(Rejection::new(RejectionCode::TableNotFound)),
         }
     }
 
@@ -160,16 +157,10 @@ impl Table {
     fn on_turn(&self, seat: i32) -> Result<&TableSeat, Rejection> {
         self.exists()?;
         if self.state.phase() != Phase::PlayerTurns || self.state.turn < 0 {
-            return Err(refuse(
-                RejectionCode::NoRoundInProgress,
-                "no round is in progress",
-            ));
+            return Err(Rejection::new(RejectionCode::NoRoundInProgress));
         }
         if self.state.turn != seat {
-            return Err(refuse(
-                RejectionCode::NotYourTurn,
-                format!("it is not seat {seat}'s turn"),
-            ));
+            return Err(Rejection::new(RejectionCode::NotYourTurn).arg("seat", seat));
         }
         Ok(&self.state.seated[&seat])
     }
@@ -289,10 +280,6 @@ fn outcome(player: Value, dealer: Value) -> Outcome {
     }
 }
 
-fn refuse(code: RejectionCode, message: impl Into<String>) -> Rejection {
-    Rejection::new(code, message)
-}
-
 /// The key `seat_holds` and `confirmed_buy_ins` use: lowercase hex.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -327,32 +314,19 @@ impl TableLogic for Table {
         }
         let state = &self.state;
         if cmd.seat < 0 || cmd.seat >= state.seats {
-            return Err(refuse(
-                RejectionCode::SeatOutOfRange,
-                format!("seat {} does not exist", cmd.seat),
-            ));
+            return Err(Rejection::new(RejectionCode::SeatOutOfRange).arg("seat", cmd.seat));
         }
         if cmd.amount < state.min_buy_in || cmd.amount > state.max_buy_in {
-            return Err(refuse(
-                RejectionCode::BuyInOutOfRange,
-                format!(
-                    "the buy-in is outside {} to {}",
-                    state.min_buy_in, state.max_buy_in
-                ),
-            ));
+            return Err(Rejection::new(RejectionCode::BuyInOutOfRange)
+                .arg("min_buy_in", state.min_buy_in)
+                .arg("max_buy_in", state.max_buy_in));
         }
         if self.seat_of(&cmd.player_root).is_some() {
-            return Err(refuse(
-                RejectionCode::PlayerAlreadySeated,
-                "the player is already seated",
-            ));
+            return Err(Rejection::new(RejectionCode::PlayerAlreadySeated));
         }
         let held = state.seat_holds.values().any(|h| h.seat == cmd.seat);
         if held || state.seated.contains_key(&cmd.seat) {
-            return Err(refuse(
-                RejectionCode::SeatTaken,
-                format!("seat {} is taken", cmd.seat),
-            ));
+            return Err(Rejection::new(RejectionCode::SeatTaken).arg("seat", cmd.seat));
         }
         Ok(Some(SeatHeld {
             buy_in_id: cmd.request_id.clone(),
@@ -402,17 +376,13 @@ impl TableLogic for Table {
         table_root: &[u8; 16],
     ) -> Result<PlayerCashedOut, Rejection> {
         self.exists()?;
-        let seat = self.state.seated.get(&cmd.seat).ok_or_else(|| {
-            refuse(
-                RejectionCode::NotSeated,
-                format!("seat {} is not occupied", cmd.seat),
-            )
-        })?;
+        let seat = self
+            .state
+            .seated
+            .get(&cmd.seat)
+            .ok_or_else(|| Rejection::new(RejectionCode::NotSeated).arg("seat", cmd.seat))?;
         if seat.wager > 0 {
-            return Err(refuse(
-                RejectionCode::WagerInPlay,
-                format!("seat {} has a wager in play", cmd.seat),
-            ));
+            return Err(Rejection::new(RejectionCode::WagerInPlay).arg("seat", cmd.seat));
         }
         Ok(PlayerCashedOut {
             cashout_id: cashout_id(table_root, self.events).to_vec().into(),
@@ -426,37 +396,25 @@ impl TableLogic for Table {
         self.exists()?;
         let state = &self.state;
         if state.phase() == Phase::PlayerTurns {
-            return Err(refuse(
-                RejectionCode::RoundInProgress,
-                "a round is in progress",
-            ));
+            return Err(Rejection::new(RejectionCode::RoundInProgress));
         }
-        let seat = state.seated.get(&cmd.seat).ok_or_else(|| {
-            refuse(
-                RejectionCode::NotSeated,
-                format!("seat {} is not occupied", cmd.seat),
-            )
-        })?;
+        let seat = state
+            .seated
+            .get(&cmd.seat)
+            .ok_or_else(|| Rejection::new(RejectionCode::NotSeated).arg("seat", cmd.seat))?;
         if cmd.amount < state.min_bet || cmd.amount > state.max_bet {
-            return Err(refuse(
-                RejectionCode::BetOutOfRange,
-                format!("the bet is outside {} to {}", state.min_bet, state.max_bet),
-            ));
+            return Err(Rejection::new(RejectionCode::BetOutOfRange)
+                .arg("min_bet", state.min_bet)
+                .arg("max_bet", state.max_bet));
         }
         if cmd.amount % 2 != 0 {
-            return Err(refuse(RejectionCode::BetNotEven, "the bet is not even"));
+            return Err(Rejection::new(RejectionCode::BetNotEven));
         }
         if seat.wager > 0 {
-            return Err(refuse(
-                RejectionCode::AlreadyBet,
-                format!("seat {} has already bet this round", cmd.seat),
-            ));
+            return Err(Rejection::new(RejectionCode::AlreadyBet).arg("seat", cmd.seat));
         }
         if cmd.amount > seat.stack {
-            return Err(refuse(
-                RejectionCode::InsufficientStack,
-                "the stack is too small",
-            ));
+            return Err(Rejection::new(RejectionCode::InsufficientStack));
         }
         Ok(BetPlaced {
             round: state.round + 1,
@@ -471,14 +429,11 @@ impl TableLogic for Table {
         self.exists()?;
         let state = &self.state;
         if state.phase() == Phase::PlayerTurns {
-            return Err(refuse(
-                RejectionCode::RoundInProgress,
-                "a round is in progress",
-            ));
+            return Err(Rejection::new(RejectionCode::RoundInProgress));
         }
         let wagered = self.wagered().len();
         if wagered == 0 {
-            return Err(refuse(RejectionCode::NoBets, "nobody has bet"));
+            return Err(Rejection::new(RejectionCode::NoBets));
         }
         // AHR-4: 11 cards for each wagered seat and 11 for the dealer.
         if state.shoe.len() >= 11 * (wagered + 1) {
@@ -554,16 +509,10 @@ impl TableLogic for Table {
         let seat = self.on_turn(cmd.seat)?;
         let mut cards = seat.hand.clone().unwrap_or_default().cards;
         if cards.len() != 2 {
-            return Err(refuse(
-                RejectionCode::DoubleNotAllowed,
-                "doubling is only allowed on the first two cards",
-            ));
+            return Err(Rejection::new(RejectionCode::DoubleNotAllowed));
         }
         if seat.stack < seat.wager {
-            return Err(refuse(
-                RejectionCode::InsufficientStack,
-                "the stack is too small",
-            ));
+            return Err(Rejection::new(RejectionCode::InsufficientStack));
         }
         let card = self.top();
         cards.push(card);

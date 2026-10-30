@@ -150,21 +150,28 @@ impl From<&str> for RejectionArg {
     }
 }
 
-/// A refused command: the reason code and a human-readable message.
+/// A refused command: the reason code and the values it names, as args
+/// (decision 14.37: a key and an argument map, never English; text is
+/// rendered only where it is shown, from a catalog keyed by the code).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rejection {
     pub code: RejectionCode,
-    pub message: String,
     pub args: Vec<(&'static str, RejectionArg)>,
 }
 
 impl Rejection {
-    pub fn new(code: RejectionCode, message: impl Into<String>) -> Self {
+    /// A rejection with no args yet.
+    pub fn new(code: RejectionCode) -> Self {
         Self {
             code,
-            message: message.into(),
             args: Vec::new(),
         }
+    }
+
+    /// Add an arg.
+    pub fn arg(mut self, name: &'static str, value: impl Into<RejectionArg>) -> Self {
+        self.args.push((name, value.into()));
+        self
     }
 }
 
