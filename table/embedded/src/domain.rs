@@ -91,9 +91,10 @@ domain_messages!(
     MoveDecided,
 );
 
+/// Its code and args, as every error displays itself (decision 14.37).
 impl fmt::Display for SeatNotConfirmable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the seat cannot be confirmed: {}", self.0.reason)
+        angzarr_embedded_diagnostic::display(self, f)
     }
 }
 

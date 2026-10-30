@@ -78,9 +78,10 @@ impl Diagnostic for TableRefused {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TableBug(pub ShoeRanOut);
 
+/// Its code and args, as every error displays itself (decision 14.37).
 impl fmt::Display for TableBug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the shoe ran out in round {}", self.0.round)
+        angzarr_embedded_diagnostic::display(self, f)
     }
 }
 
