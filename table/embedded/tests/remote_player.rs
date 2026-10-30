@@ -59,11 +59,11 @@ fn config() -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
     let path = dir.join(format!("remote-player-{}.toml", std::process::id()));
     let text = format!(
-        r#"[[domain]]
+        r#"[[component]]
 name = "table"
 language = "rust"
 
-[[domain]]
+[[component]]
 name = "player"
 language = "python"
 entry = ["angzarr-player"]

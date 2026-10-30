@@ -14,13 +14,14 @@ examples-proto = { path = "proto" }
 agg-table = { path = "table/agg" }
 table-player-policies = { path = "table/policies" }
 # angzarr-embedded (angzarr's in-app runtime) and its markup, pinned by hash
-# on its main. Its angzarr-proto and angzarr-ports pins are the
+# on its main (for now, feat/host-admit-policies, the first host to read
+# [[component]] tables). Its angzarr-proto and angzarr-ports pins are the
 # angzarr-project rev the angzarr-project submodule is checked out at, so one
 # spec is in the graph.
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "4fef59dd95f4c00d75d6f42248021a72f5ea70e0" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "4fef59dd95f4c00d75d6f42248021a72f5ea70e0" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "4fef59dd95f4c00d75d6f42248021a72f5ea70e0" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "4fef59dd95f4c00d75d6f42248021a72f5ea70e0" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "91d230a382326ab0f79fbbc81ec67985f92350af" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "91d230a382326ab0f79fbbc81ec67985f92350af" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "91d230a382326ab0f79fbbc81ec67985f92350af" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "91d230a382326ab0f79fbbc81ec67985f92350af" }
 bytes = "1"
 prost = "0.14"
 prost-build = "0.14"
