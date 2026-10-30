@@ -2404,6 +2404,30 @@ fn a_table_refusal_displays_as_its_code_and_args() {
     );
 }
 
+/// The table's bug displays as its code and round, never English
+/// (decision 14.37).
+#[test]
+fn a_table_bug_displays_as_its_code_and_args() {
+    let bug = crate::refused::TableBug(agg_table::ShoeRanOut { round: 1 });
+
+    assert_eq!(bug.to_string(), "examples-table-shoe-ran-out round=1");
+}
+
+/// ConfirmSeat's typed refusal displays as its code and reason, never
+/// English (decision 14.37).
+#[test]
+fn a_seat_not_confirmable_displays_as_its_code_and_args() {
+    let refusal = crate::domain::SeatNotConfirmable(v1::SeatNotConfirmable {
+        reason: "SEAT_NOT_HELD".to_string(),
+        ..Default::default()
+    });
+
+    assert_eq!(
+        refusal.to_string(),
+        "examples-table-seat-not-confirmable reason=SEAT_NOT_HELD"
+    );
+}
+
 /// A typed refusal is keyed COMMAND_REFUSED with its object's type as
 /// `refusal_type` (decision 14.37); its reason travels in the object.
 #[test]
