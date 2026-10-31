@@ -1,0 +1,6 @@
+# Pinned to the toolchain angzarr-embedded and angzarr-cli pin (angzarr-build,
+# a build dependency, needs 1.96). In the devcontainer, rustup installs it
+# into .rustup-container on first use (the justfile's `_container`).
+[toolchain]
+channel = "1.96.1"
+components = ["clippy", "rustfmt"]

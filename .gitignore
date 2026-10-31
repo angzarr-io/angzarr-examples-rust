@@ -32,3 +32,6 @@ mutants.out.old/
 
 # Container-side cargo home (justfile `_container` sets CARGO_HOME here)
 .cargo-container/
+
+# Container-side rustup home (justfile `_container` sets RUSTUP_HOME here)
+.rustup-container/
