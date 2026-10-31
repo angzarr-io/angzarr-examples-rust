@@ -19,11 +19,11 @@
 use std::path::PathBuf;
 
 use angzarr_embedded::next::v1::{command_page, Command, CommandBook, CommandPage, Cover, Uuid};
-use angzarr_embedded::next::{pack, type_name, Any, Registry, Sampled, Timestamp};
+use angzarr_embedded::next::{pack, type_name, Any, Sampled, Timestamp};
 use angzarr_embedded_host::{run, App};
 use examples_proto::v1::{self, seat_outcome::Outcome, MoveAction};
 use prost::{Message, Name};
-use table_embedded::{PlayerTablePolicy, TableAggregate, TablePlayerPolicy};
+use table_embedded::register;
 
 const TABLE: u8 = 0x7a;
 const ALICE: u8 = 0xa1;
@@ -81,22 +81,37 @@ fn the_player_dir_is_angzarr_player_dir_and_unset_says_what_to_set() {
     }
 }
 
-/// The application's angzarr.toml: the table in process, the player a
-/// Python child, an in-memory store. Written beside the test's other
-/// scratch files, in the target directory.
+/// The application's angzarr.toml, in angzarr-embedded-host's strict shape
+/// (what `angzarr scaffold app --python player --in-memory` writes for the
+/// spec's table, player and policies protos): every component listed with
+/// its kind, the table and both policies (by their spec names, decision
+/// 14.50) in process, the player a Python child; an in-memory store.
+/// Written beside the test's other scratch files, in the target directory.
 fn config() -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
     let path = dir.join(format!("remote-player-{}.toml", std::process::id()));
     let text = format!(
         r#"[[component]]
 name = "table"
+kind = "domain"
 language = "rust"
 
 [[component]]
 name = "player"
+kind = "domain"
 language = "python"
 entry = ["angzarr-player"]
 dir = {dir:?}
+
+[[component]]
+name = "policy-table-player"
+kind = "policy"
+language = "rust"
+
+[[component]]
+name = "policy-player-table"
+kind = "policy"
+language = "rust"
 
 [supervision]
 handshake_timeout_ms = 300000
@@ -108,16 +123,6 @@ in_memory = true
     );
     std::fs::write(&path, text).expect("the config is written");
     path
-}
-
-/// The table and both policies, registered in process beside the remote
-/// player. The player domain is the child's: nothing registers the
-/// contract-only `PlayerAggregate`.
-fn register(registry: &mut Registry) {
-    registry
-        .aggregate::<TableAggregate>(TableAggregate::default)
-        .policy(TablePlayerPolicy)
-        .policy(PlayerTablePolicy);
 }
 
 /// A driver's command `n` to the table.
