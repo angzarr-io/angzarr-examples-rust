@@ -19,6 +19,11 @@
 //! `shoe.test.rs`; EU-1440's golden first twelve cards, and the seeds of
 //! EU-1502/1503, are pinned again here at the aggregate.
 
+// The harness's `Then`, and every test's closure returning it, carries
+// angzarr-embedded's `Failure`, what the pipeline returns, unboxed: as on the
+// generated adapters (lib.rs), its size is not this crate's to choose.
+#![allow(clippy::result_large_err)]
+
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards, create_main, seed_21};
 use agg_table::Table;
@@ -110,6 +115,9 @@ table_events!(
 type Refusal = Failure<Rejected>;
 type Then = Result<Vec<Ev>, Refusal>;
 
+/// A **when** a test names among others: a command sent to the harness.
+type When = dyn Fn(&mut Harness) -> Then;
+
 fn registry() -> Registry {
     let mut registry = Registry::new();
     registry.aggregate::<TableAggregate>(TableAggregate::default);
@@ -168,8 +176,6 @@ fn given(events: Vec<Ev>) -> Harness {
     }
 }
 
-// angzarr-embedded's `Failure` is what the pipeline returns, unboxed.
-#[allow(clippy::result_large_err)]
 impl Harness {
     /// Send `command` as a client does: the events of its one decision, or
     /// why it was refused.
@@ -340,8 +346,8 @@ fn shoe_one(cards: Vec<Card>) -> Ev {
 
 fn held(buy_in: u8, player: u8, seat: i32, amount: i64) -> Ev {
     Ev::SeatHeld(v1::SeatHeld {
-        buy_in_id: bytes(buy_in).into(),
-        player_root: bytes(player).into(),
+        buy_in_id: bytes(buy_in),
+        player_root: bytes(player),
         seat,
         amount,
     })
@@ -349,8 +355,8 @@ fn held(buy_in: u8, player: u8, seat: i32, amount: i64) -> Ev {
 
 fn seated(buy_in: u8, player: u8, seat: i32, stack: i64) -> Ev {
     Ev::PlayerSeated(v1::PlayerSeated {
-        buy_in_id: bytes(buy_in).into(),
-        player_root: bytes(player).into(),
+        buy_in_id: bytes(buy_in),
+        player_root: bytes(player),
         seat,
         stack,
     })
@@ -391,7 +397,7 @@ fn bet(seat: i32, amount: i64, stack_after: i64) -> Ev {
     Ev::BetPlaced(v1::BetPlaced {
         round: 1,
         seat,
-        player_root: bytes(player(seat)).into(),
+        player_root: bytes(player(seat)),
         amount,
         stack_after,
     })
@@ -433,7 +439,7 @@ fn turn(
     Ev::TurnStarted(v1::TurnStarted {
         round: 1,
         seat,
-        player_root: bytes(player(seat)).into(),
+        player_root: bytes(player(seat)),
         hand: Some(hand(seat, text, total, soft, false)),
         dealer_up: Some(card(up)),
         can_double,
@@ -477,7 +483,7 @@ fn dealer(hole: &str, drawn: &str, total: u32, soft: bool, busted: bool, bj: boo
 fn outcome(seat: i32, wager: i64, outcome: Outcome, returned: i64, after: i64) -> v1::SeatOutcome {
     v1::SeatOutcome {
         seat,
-        player_root: bytes(player(seat)).into(),
+        player_root: bytes(player(seat)),
         wager,
         outcome: outcome.into(),
         returned,
@@ -552,10 +558,10 @@ fn a_command_to_a_table_that_does_not_exist_is_refused() {
     let mut table = given(vec![]);
 
     let request = v1::RequestSeat {
-        player_root: bytes(ALICE).into(),
+        player_root: bytes(ALICE),
         seat: 0,
         amount: 500,
-        request_id: bytes(B1).into(),
+        request_id: bytes(B1),
     };
     assert_eq!(refused(table.when(request)), "TABLE_NOT_FOUND");
     let bet = v1::PlaceBet {
@@ -575,10 +581,10 @@ fn a_command_to_a_table_that_does_not_exist_is_refused() {
 
 fn request(player: u8, seat: i32, amount: i64, request: u8) -> v1::RequestSeat {
     v1::RequestSeat {
-        player_root: bytes(player).into(),
+        player_root: bytes(player),
         seat,
         amount,
-        request_id: bytes(request).into(),
+        request_id: bytes(request),
     }
 }
 
@@ -675,7 +681,7 @@ fn eu_1448_a_seated_player_cannot_ask_for_a_second_seat() {
 
 fn confirm(buy_in: u8) -> v1::ConfirmSeat {
     v1::ConfirmSeat {
-        buy_in_id: bytes(buy_in).into(),
+        buy_in_id: bytes(buy_in),
     }
 }
 
@@ -1087,7 +1093,7 @@ fn dealt_round(shoe: &str, stacks: (i64, i64), seats: &[i32], round: Ev) -> Vec<
             Some(Ev::TurnStarted(v1::TurnStarted {
                 round: 1,
                 seat: r.turn,
-                player_root: bytes(player(r.turn)).into(),
+                player_root: bytes(player(r.turn)),
                 hand: Some(hand.clone()),
                 dealer_up: r.dealer_up,
                 can_double: hand.cards.len() == 2 && left >= 20,
@@ -1918,7 +1924,7 @@ fn eu_1453_releasing_a_held_seat_frees_it() {
     let mut table = given(events);
 
     let release = v1::ReleaseSeat {
-        buy_in_id: bytes(B1).into(),
+        buy_in_id: bytes(B1),
         reason: "funds were refused".into(),
     };
     let events = table.when(release).expect("released");
@@ -1926,8 +1932,8 @@ fn eu_1453_releasing_a_held_seat_frees_it() {
     assert_eq!(
         events,
         vec![Ev::SeatReleased(v1::SeatReleased {
-            buy_in_id: bytes(B1).into(),
-            player_root: bytes(ALICE).into(),
+            buy_in_id: bytes(B1),
+            player_root: bytes(ALICE),
             seat: 0,
             reason: "funds were refused".into(),
         })]
@@ -1944,7 +1950,7 @@ fn eu_1454_releasing_a_seat_that_is_no_longer_held_changes_nothing() {
     let mut table = given(main_table());
 
     let release = v1::ReleaseSeat {
-        buy_in_id: bytes(0x09).into(),
+        buy_in_id: bytes(0x09),
         reason: "funds were refused".into(),
     };
     assert_eq!(table.when(release).expect("ok"), vec![]);
@@ -1982,8 +1988,8 @@ fn eu_1460_leaving_cashes_out_the_whole_stack_and_frees_the_seat() {
     assert_eq!(
         events,
         vec![Ev::PlayerCashedOut(v1::PlayerCashedOut {
-            cashout_id: cashout_id(4).into(),
-            player_root: bytes(ALICE).into(),
+            cashout_id: cashout_id(4),
+            player_root: bytes(ALICE),
             seat: 0,
             amount: 640,
         })]
@@ -2045,7 +2051,7 @@ fn eu_1461_every_kind_of_table_event_moves_the_cash_out_position_by_one() {
     let then = table.when(request(CAROL, 2, 500, B3));
     record(&mut table, then);
     let then = table.when(v1::ReleaseSeat {
-        buy_in_id: bytes(B3).into(),
+        buy_in_id: bytes(B3),
         reason: "funds were refused".into(),
     });
     record(&mut table, then);
@@ -2053,7 +2059,7 @@ fn eu_1461_every_kind_of_table_event_moves_the_cash_out_position_by_one() {
     let then = table.when(v1::LeaveTable { seat: 1 });
     record(&mut table, then);
     for command in [
-        Box::new(|t: &mut Harness| t.when(place(0, 20))) as Box<dyn Fn(&mut Harness) -> Then>,
+        Box::new(|t: &mut Harness| t.when(place(0, 20))) as Box<When>,
         Box::new(|t| t.when(v1::DealRound {})),
         Box::new(|t| t.when(v1::Hit { seat: 0 })),
         Box::new(|t| t.when(v1::Stand { seat: 0 })),
@@ -2339,16 +2345,14 @@ fn refusal_shown(then: Then) -> String {
 /// `message`; through the router its args come back in name order.
 #[test]
 fn a_table_refusal_is_its_code_reason_and_values_never_english() {
-    let shown = |events: Vec<Ev>, when: &dyn Fn(&mut Harness) -> Then| {
-        refusal_shown(when(&mut given(events)))
-    };
+    let shown = |events: Vec<Ev>, when: &When| refusal_shown(when(&mut given(events)));
     let mut taken = main_table();
     taken.push(held(B2, BOB, 1, 500));
     let mut wagered = alice_seated(500);
     wagered.push(bet(0, 20, 480));
     let mut bet_once = background("2♣");
     bet_once.push(bet(0, 20, 480));
-    let cases: Vec<(Vec<Ev>, &dyn Fn(&mut Harness) -> Then, &str)> = vec![
+    let cases: Vec<(Vec<Ev>, &When, &str)> = vec![
         (
             main_table(),
             &|t| t.when(create_main(42)),

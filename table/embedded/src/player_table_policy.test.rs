@@ -50,7 +50,7 @@ fn card(rank: u32, suit: Suit) -> v1::Card {
 /// which a hit, a stand and a double down are all moves a player makes.
 fn decided(action: MoveAction) -> v1::MoveDecided {
     v1::MoveDecided {
-        table_root: vec![TABLE; 16].into(),
+        table_root: vec![TABLE; 16],
         round: 1,
         seat: 0,
         action: action.into(),
@@ -101,7 +101,7 @@ fn eu_1603_the_player_to_table_translator_turns_double_down_into_double_down() {
 #[test]
 fn eu_1603_the_command_names_the_seat_and_table_the_decision_names() {
     let decision = domain(v1::MoveDecided {
-        table_root: vec![0x7b; 16].into(),
+        table_root: vec![0x7b; 16],
         round: 4,
         seat: 2,
         action: MoveAction::Stand.into(),

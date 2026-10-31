@@ -34,7 +34,8 @@ pre-commit:
       stage_fixed: true
     # Clippy, warnings denied: the complexity gate (cognitive_complexity,
     # too_many_lines, excessive_nesting; Cargo.toml and clippy.toml) and
-    # every other lint, over the workspace's libraries and binaries.
+    # every other lint, over every target of the workspace, tests and
+    # agg-table's test-support included.
     lint:
       glob: "*.{rs,toml}"
       run: just lint

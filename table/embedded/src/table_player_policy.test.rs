@@ -51,7 +51,7 @@ fn alices_turn() -> v1::TurnStarted {
     v1::TurnStarted {
         round: 1,
         seat: 0,
-        player_root: vec![ALICE; 16].into(),
+        player_root: vec![ALICE; 16],
         hand: Some(SeatHand {
             seat: 0,
             cards: cards("2♣ 4♣"),
@@ -72,7 +72,7 @@ fn eu_1601_the_table_to_player_translator_asks_the_seats_player_to_decide() {
         TablePlayerPolicy.turn_started(&domain(alices_turn()), &context("table", TABLE));
 
     let decide = v1::DecideMove {
-        table_root: vec![TABLE; 16].into(),
+        table_root: vec![TABLE; 16],
         round: 1,
         seat: 0,
         cards: cards("2♣ 4♣"),
@@ -93,7 +93,7 @@ fn eu_1601_the_request_follows_the_turn_field_for_field() {
     let turn = v1::TurnStarted {
         round: 3,
         seat: 2,
-        player_root: vec![0xb0; 16].into(),
+        player_root: vec![0xb0; 16],
         hand: Some(SeatHand {
             seat: 2,
             cards: cards("A♣ 6♣ 2♥"),
@@ -110,7 +110,7 @@ fn eu_1601_the_request_follows_the_turn_field_for_field() {
     let Ok(commands) = TablePlayerPolicy.turn_started(&domain(turn), &context("table", 0x7b));
 
     let decide = v1::DecideMove {
-        table_root: vec![0x7b; 16].into(),
+        table_root: vec![0x7b; 16],
         round: 3,
         seat: 2,
         cards: cards("A♣ 6♣ 2♥"),

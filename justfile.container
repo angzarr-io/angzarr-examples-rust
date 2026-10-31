@@ -34,8 +34,10 @@ build-release: (_cargo "build" "--workspace" "--release")
 # Run all tests
 test: (_cargo "test" "--workspace")
 
-# Run clippy linter
-lint: (_cargo "clippy" "--workspace" "--" "-D" "warnings")
+# Run clippy linter, warnings denied, over every target (libraries, binaries,
+# tests) and agg-table's test-support module, so test code meets the same
+# lints, the complexity gate's included.
+lint: (_cargo "clippy" "--workspace" "--all-targets" "--features" "agg-table/test-support" "--" "-D" "warnings")
 
 # Check formatting (use fmt-fix to auto-format)
 fmt: (_cargo "fmt" "--check")
