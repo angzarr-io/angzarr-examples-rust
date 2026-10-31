@@ -1313,6 +1313,25 @@ fn eu_1489_nobody_can_act_between_rounds() {
     );
 }
 
+/// Every hand finished, the dealer yet to play: the round is still in its
+/// players' turns but no seat is on turn, so none may act.
+#[test]
+fn nobody_can_act_once_every_hand_is_finished() {
+    let mut events = dealt_round(
+        "A♣ 9♦ 6♣ 7♠ 10♥",
+        (500, 500),
+        &[0],
+        dealt(vec![hand(0, "A♣ 6♣", 17, true, false)], "9♦", "7♠", 0),
+    );
+    events.push(stood(0, 17, -1));
+    let mut table = given(events);
+
+    assert_eq!(
+        refused(table.when(v1::Hit { seat: 0 })),
+        "NO_ROUND_IN_PROGRESS"
+    );
+}
+
 // ================================================================ dealer play and settlement
 
 /// Alice alone, dealt `alice` against `up` with `hole` in the hole.
