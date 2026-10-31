@@ -27,3 +27,6 @@ angzarr-embedded-host.workspace = true
 # The host's App is async, on the caller's runtime, which is tokio's
 # (angzarr-embedded-host's own, already in the graph through it).
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -16,3 +16,6 @@ uuid.workspace = true
 # The spec's card notation (`test_support::cards("7♣ 3♥ K♣")`) for other crates'
 # tests; agg-table's own tests have it without the feature.
 test-support = []
+
+[lints]
+workspace = true

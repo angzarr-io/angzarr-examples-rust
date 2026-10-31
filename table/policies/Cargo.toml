@@ -8,3 +8,6 @@ description = "The blackjack table's two policies with the player bot, as plain 
 
 [dependencies]
 examples-proto.workspace = true
+
+[lints]
+workspace = true

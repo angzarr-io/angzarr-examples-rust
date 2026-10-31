@@ -32,6 +32,12 @@ pre-commit:
       glob: "*.rs"
       run: just fmt-fix
       stage_fixed: true
+    # Clippy, warnings denied: the complexity gate (cognitive_complexity,
+    # too_many_lines, excessive_nesting; Cargo.toml and clippy.toml) and
+    # every other lint, over the workspace's libraries and binaries.
+    lint:
+      glob: "*.{rs,toml}"
+      run: just lint
 
 # No mutation testing in any hook: it runs while tests are written and judged
 # (`just mutation-push`, by hand), at the end of an unattended run, and in the
