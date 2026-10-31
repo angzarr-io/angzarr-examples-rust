@@ -51,8 +51,10 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          # The devcontainer image's version (.devcontainer/Containerfile)
+          toolchain: 1.96.1
           components: rustfmt, clippy
 
       - name: Install protoc

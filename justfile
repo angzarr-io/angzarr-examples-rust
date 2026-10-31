@@ -49,9 +49,8 @@ _container +ARGS: _build-image
     else
         # Mount the shared git dir at its host path so linked worktrees
         # (whose .git file points there) resolve inside the container.
-        # CARGO_HOME and RUSTUP_HOME are the checkout's own, so the
-        # toolchain rust-toolchain.toml pins (installed by rustup on first
-        # use) and the registry persist across runs.
+        # CARGO_HOME is the checkout's own, so the registry persists across
+        # runs; the toolchain is the image's (.devcontainer/Containerfile).
         git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
         docker run --rm {{DOCKER_USER}} \
             -v "{{ROOT}}:/workspace" \
@@ -59,7 +58,6 @@ _container +ARGS: _build-image
             -v "{{ROOT}}/justfile.container:/workspace/justfile:ro" \
             -w /workspace \
             -e CARGO_HOME=/workspace/.cargo-container \
-            -e RUSTUP_HOME=/workspace/.rustup-container \
             -e GIT_CONFIG_COUNT=1 \
             -e GIT_CONFIG_KEY_0=safe.directory \
             -e GIT_CONFIG_VALUE_0='*' \
@@ -122,8 +120,8 @@ mutation-test:
 # (<remote>/HEAD, else main). A deleted ref, and a ref whose diff touches no
 # Rust, pass at once. Each of the push tree's submodules is the pushed
 # commit's submodule commit, exported from this checkout's submodule (fetched
-# if it is missing there); its .cargo-container and .rustup-container start
-# as hard-linked copies of this checkout's. The run's log is target/logs/mutation-push.log, its
+# if it is missing there); its .cargo-container starts as a hard-linked copy
+# of this checkout's. The run's log is target/logs/mutation-push.log, its
 # mutants.out target/push-tree/mutants.out.
 #
 # Red tests (cargo-mutants' baseline fails, exit 4) cannot be judged: pushed
@@ -173,9 +171,8 @@ mutation-push remote *lefthook:
             continue
         fi
         # The pushed commit's tree, alone; no hook of this repository runs for
-        # it (core.hooksPath), and its target/, .cargo-container/ and
-        # .rustup-container/ (ignored, so kept by clean) carry builds and the
-        # toolchain across pushes.
+        # it (core.hooksPath), and its target/ and .cargo-container/ (ignored,
+        # so kept by clean) carry builds and the registry across pushes.
         nohooks=(-c core.hooksPath=/dev/null)
         if ! git -C "$tree" rev-parse --git-dir > /dev/null 2>&1; then
             rm -rf "$tree"
@@ -197,11 +194,9 @@ mutation-push remote *lefthook:
             mkdir -p "$tree/$path"
             git -C "$top/$path" archive "$sub" | tar -x -C "$tree/$path"
         done < <(git -C "$top" config -f .gitmodules --get-regexp '^submodule\..*\.path$')
-        for home in .cargo-container .rustup-container; do
-            if [ ! -d "$tree/$home" ] && [ -d "$top/$home" ]; then
-                cp -al "$top/$home" "$tree/$home"
-            fi
-        done
+        if [ ! -d "$tree/.cargo-container" ] && [ -d "$top/.cargo-container" ]; then
+            cp -al "$top/.cargo-container" "$tree/.cargo-container"
+        fi
         mkdir -p "$tree/target"
         git -C "$top" diff --no-color --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ \
             "$base" "$local_sha" -- '*.rs' > "$tree/target/mutants-push.patch"
@@ -241,9 +236,8 @@ mutation-push remote *lefthook:
 # the merge base with the remote's default branch (<remote>/HEAD, else main).
 # A deleted ref passes at once. Each of the push tree's submodules is the
 # pushed commit's submodule commit, exported from this checkout's submodule
-# (fetched if it is missing there); its .cargo-container and
-# .rustup-container start as hard-linked copies of this checkout's. The run's
-# log is
+# (fetched if it is missing there); its .cargo-container starts as a
+# hard-linked copy of this checkout's. The run's log is
 # target/logs/push-tests.log.
 #
 # Red tests are allowed on a branch and kept out of the default branch: pushed
@@ -292,9 +286,8 @@ push-check remote *lefthook:
         fi
         range="$(git -C "$top" rev-parse --short "$base")..$(git -C "$top" rev-parse --short "$local_sha") to $remote/$target"
         # The pushed commit's tree, alone; no hook of this repository runs for
-        # it (core.hooksPath), and its target/, .cargo-container/ and
-        # .rustup-container/ (ignored, so kept by clean) carry builds and the
-        # toolchain across pushes.
+        # it (core.hooksPath), and its target/ and .cargo-container/ (ignored,
+        # so kept by clean) carry builds and the registry across pushes.
         nohooks=(-c core.hooksPath=/dev/null)
         if ! git -C "$tree" rev-parse --git-dir > /dev/null 2>&1; then
             rm -rf "$tree"
@@ -316,11 +309,9 @@ push-check remote *lefthook:
             mkdir -p "$tree/$path"
             git -C "$top/$path" archive "$sub" | tar -x -C "$tree/$path"
         done < <(git -C "$top" config -f .gitmodules --get-regexp '^submodule\..*\.path$')
-        for home in .cargo-container .rustup-container; do
-            if [ ! -d "$tree/$home" ] && [ -d "$top/$home" ]; then
-                cp -al "$top/$home" "$tree/$home"
-            fi
-        done
+        if [ ! -d "$tree/.cargo-container" ] && [ -d "$top/.cargo-container" ]; then
+            cp -al "$top/.cargo-container" "$tree/.cargo-container"
+        fi
         rc=0
         (cd "$tree" && just --justfile "$tree/justfile" test) > "$log" 2>&1 9>&- || rc=$?
         if [ "$rc" -ne 0 ]; then

@@ -67,9 +67,8 @@ This configures a pre-commit hook that auto-formats Rust sources before each com
 and a pre-push hook (`just push-check`) that runs every test of each pushed commit
 in a tree of its own: red tests may be pushed to a branch, never to `main`.
 
-The toolchain is pinned in `rust-toolchain.toml` (angzarr-build needs 1.96).
-The recipes run in the devcontainer, where rustup installs it into
-`.rustup-container/` on first use.
+The recipes run in the devcontainer, whose image (`.devcontainer/Containerfile`)
+sets the toolchain, Rust 1.96.1 (angzarr-build needs 1.96); CI installs the same.
 
 ### Recipes
 

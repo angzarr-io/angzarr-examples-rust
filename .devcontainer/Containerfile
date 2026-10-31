@@ -4,5 +4,19 @@
 ARG RUST_IMAGE=ghcr.io/angzarr-io/angzarr-rust:latest
 FROM ${RUST_IMAGE}
 
+# The toolchain this repository builds with. angzarr-build, a build
+# dependency, needs rustc 1.96, the toolchain angzarr-embedded and
+# angzarr-cli use; the base image ships an older one. CI installs the same
+# version (.github/workflows/*.yml).
+ARG RUST_VERSION=1.96.1
+RUN rustup toolchain install ${RUST_VERSION} --profile minimal \
+        --component rustfmt,clippy,llvm-tools-preview \
+        --target x86_64-unknown-linux-musl,aarch64-unknown-linux-musl \
+    && rustup default ${RUST_VERSION} \
+    && for t in $(rustup toolchain list | awk '{print $1}' | grep -v "^${RUST_VERSION}-"); do \
+           rustup toolchain uninstall "$t"; \
+       done \
+    && rustc --version | grep -q "^rustc ${RUST_VERSION} "
+
 # Mark as devcontainer for justfile detection
 ENV DEVCONTAINER=true
