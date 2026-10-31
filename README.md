@@ -37,8 +37,9 @@ submodule; the submodule pin is the contract this repository implements.
   `register()` are generated from table.proto into `OUT_DIR`
   (`table/embedded/build.rs`, angzarr-build's `adapters` and `register`),
   delegating to agg-table's `Table`. The policies are written in the markup
-  (`#[policy]`) over table-player-policies, the player domain they name a
-  command set and an event set (`Player`), not a stand-in aggregate. Its
+  (`#[policy]`) over table-player-policies; the player domain they name is
+  a command set and an event set (`PlayerAggregate`), generated from
+  player.proto (angzarr-build's `stand_ins`) and never registered. Its
   `register` registers the table and both policies.
 
   angzarr-embedded and angzarr-build are pinned by hash in the workspace

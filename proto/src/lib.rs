@@ -11,13 +11,6 @@
 //! Module nesting mirrors the proto package so prost's `super::` references
 //! resolve; [`v1`] is the short path.
 
-// The generated code (angzarr-build a94c0f4) names the diagnostic crate by its
-// old name, `::angzarr_embedded_diagnostic`, which embedded no longer has; it
-// is core's angzarr-diagnostic now. This alias goes when angzarr-build moves
-// to the angzarr-cli tip whose generator names `::angzarr_embedded`'s
-// re-export.
-extern crate angzarr_diagnostic as angzarr_embedded_diagnostic;
-
 pub mod io {
     pub mod angzarr {
         pub mod examples {

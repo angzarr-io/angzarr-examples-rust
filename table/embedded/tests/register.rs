@@ -3,7 +3,7 @@
 
 use angzarr_embedded::markup::{CommandTarget, EventSource};
 use angzarr_embedded::Registry;
-use table_embedded::{register, Player};
+use table_embedded::{register, PlayerAggregate};
 
 /// The table, its generated registration, and both policies, in order;
 /// the player is no domain here, the host's child.
@@ -21,14 +21,14 @@ fn register_registers_the_table_and_both_policies() {
 /// The player is sent DecideMove and read for MoveDecided, by full name.
 #[test]
 fn the_player_is_named_by_its_command_and_event() {
-    assert_eq!(<Player as CommandTarget>::DOMAIN, "player");
+    assert_eq!(<PlayerAggregate as CommandTarget>::DOMAIN, "player");
     assert_eq!(
-        <Player as CommandTarget>::command_types(),
+        <PlayerAggregate as CommandTarget>::command_types(),
         ["io.angzarr.examples.v1.DecideMove"]
     );
-    assert_eq!(<Player as EventSource>::DOMAIN, "player");
+    assert_eq!(<PlayerAggregate as EventSource>::DOMAIN, "player");
     assert_eq!(
-        <Player as EventSource>::event_types(),
+        <PlayerAggregate as EventSource>::event_types(),
         ["io.angzarr.examples.v1.MoveDecided"]
     );
 }

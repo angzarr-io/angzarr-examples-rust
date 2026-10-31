@@ -11,20 +11,14 @@
 //! - [`TablePlayerPolicy`] and [`PlayerTablePolicy`]: TurnStarted to the
 //!   player bot's DecideMove, and its MoveDecided back to Hit, Stand or
 //!   DoubleDown, over table-player-policies;
-//! - [`Player`]: the player bot's domain as the policies name it, its
-//!   command set and its event set: the bot is Python, run as a child
-//!   process by angzarr-embedded-host (`tests/remote_player.rs` plays a
-//!   hand with it).
+//! - [`PlayerAggregate`]: the player bot's domain as the policies name
+//!   it, its command set and its event set, a stand-in generated from
+//!   player.proto (`build.rs`, angzarr-build's `stand_ins`): the bot is
+//!   Python, run as a child process by angzarr-embedded-host
+//!   (`tests/remote_player.rs` plays a hand with it).
 //!
 //! [`register`] registers the table and both policies, beside the remote
 //! player (`angzarr_embedded_host::run(config, register)`).
-
-// The generated code (angzarr-build a94c0f4) names the diagnostic crate by its
-// old name, `::angzarr_embedded_diagnostic`, which embedded no longer has; it
-// is core's angzarr-diagnostic now. This alias goes when angzarr-build moves
-// to the angzarr-cli tip whose generator names `::angzarr_embedded`'s
-// re-export.
-extern crate angzarr_diagnostic as angzarr_embedded_diagnostic;
 
 pub use agg_table::table_aggregate;
 pub use examples_proto::domain;
@@ -47,13 +41,18 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/angzarr-register.rs"));
 }
 
-mod player;
+/// The domains a child process serves, as the policies name them,
+/// generated from their protos (`build.rs`).
+mod stand_ins {
+    include!(concat!(env!("OUT_DIR"), "/angzarr-stand-ins.rs"));
+}
+
 mod player_table_policy;
 mod table_player_policy;
 
 pub use adapters::TableAggregate;
-pub use player::Player;
 pub use player_table_policy::PlayerTablePolicy;
+pub use stand_ins::PlayerAggregate;
 pub use table_player_policy::TablePlayerPolicy;
 
 /// Registers the table (its generated registration) and both policies. The

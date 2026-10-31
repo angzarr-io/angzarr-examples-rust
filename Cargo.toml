@@ -24,8 +24,9 @@ angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedde
 angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "77e62062765446d0a339f05bcb69a9593a30b94e" }
 angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "a75eb28f8416ca485aea2e28fe7b45924404d3fe" }
 # angzarr-cli's build.rs helpers: the generated wire types, domain layer,
-# adapters and register(), pinned by hash on poc/local-wiring.
-angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "a94c0f4ea97cd588e94f554911bc10013a099913" }
+# adapters, register() and the remote player's stand-in, pinned by hash on
+# poc/local-wiring, at the angzarr-proto and angzarr-diagnostic above.
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "24bdfbba34509a8a584a19f47b21454f250e70b8" }
 prost = "0.14"
 prost-build = "0.14"
 # Matches the uuid angzarr-proto already brings into the graph.

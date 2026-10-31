@@ -12,11 +12,11 @@ use angzarr_embedded_macros::{on_event, policy};
 use table_player_policies::{PlayerTable, Policies, TableMove};
 
 use crate::domain::MoveDecided;
-use crate::{Player, TableAggregate};
+use crate::{PlayerAggregate, TableAggregate};
 
 pub struct PlayerTablePolicy;
 
-#[policy(name = "policy-player-table", source = Player, target = TableAggregate)]
+#[policy(name = "policy-player-table", source = PlayerAggregate, target = TableAggregate)]
 impl PlayerTablePolicy {
     #[on_event(MoveDecided)]
     fn move_decided(

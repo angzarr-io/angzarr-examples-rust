@@ -9,18 +9,18 @@ use angzarr_embedded_macros::{on_event, policy};
 use table_player_policies::{Policies, TablePlayer};
 
 use crate::domain::TurnStarted;
-use crate::{Player, TableAggregate};
+use crate::{PlayerAggregate, TableAggregate};
 
 pub struct TablePlayerPolicy;
 
-#[policy(name = "policy-table-player", source = TableAggregate, target = Player)]
+#[policy(name = "policy-table-player", source = TableAggregate, target = PlayerAggregate)]
 impl TablePlayerPolicy {
     #[on_event(TurnStarted)]
     fn turn_started(
         &self,
         event: &TurnStarted,
         ctx: &PolicyContext,
-    ) -> Result<Commands<Player>, Infallible> {
+    ) -> Result<Commands<PlayerAggregate>, Infallible> {
         let ask = Policies.turn_started(&ctx.source_root().value, event);
         Ok(Commands::none().to(
             Uuid {
