@@ -2464,3 +2464,129 @@ fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
     );
     assert!(!reason.is_empty(), "its reason travels in the object");
 }
+
+// ------------------------------------------------- characterization (red/table-generated)
+
+/// Characterization, ahead of the table's generated domain layer
+/// (red/table-generated): seed 21's hand played to settlement at the wire,
+/// with the moves the remote player's basic strategy makes
+/// (`tests/remote_player.rs`) sent by the test, so it runs without the
+/// Python child. Alice doubles her hard 10 and wins 540; Bob hits twice,
+/// stands on 20 and wins 520; the house is down 60.
+#[test]
+fn seed_21_settles_alice_540_bob_520_house_minus_60() {
+    let mut table = given(vec![]);
+    table.when(create_main(21)).expect("created");
+    for (player, seat, buy_in) in [(ALICE, 0, B1), (BOB, 1, B2)] {
+        table
+            .when(request(player, seat, 500, buy_in))
+            .expect("held");
+        table.when(confirm(buy_in)).expect("seated");
+    }
+    table.when(place(0, 20)).expect("bet");
+    table.when(place(1, 20)).expect("bet");
+    table.when(v1::DealRound {}).expect("dealt");
+    table.when(v1::DoubleDown { seat: 0 }).expect("doubled");
+    table.when(v1::Hit { seat: 1 }).expect("hit");
+    table.when(v1::Hit { seat: 1 }).expect("hit");
+    let last = table.when(v1::Stand { seat: 1 }).expect("stood");
+
+    let settled = last
+        .iter()
+        .find_map(|e| match e {
+            Ev::RoundSettled(settled) => Some(settled.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the stand settles the round: {last:?}"));
+    let outcomes: Vec<(i32, i64, Outcome, i64, i64)> = settled
+        .outcomes
+        .iter()
+        .map(|o| (o.seat, o.wager, o.outcome(), o.returned, o.stack_after))
+        .collect();
+    assert_eq!(
+        outcomes,
+        [
+            (0, 40, Outcome::Win, 80, 540),
+            (1, 20, Outcome::Win, 40, 520),
+        ]
+    );
+    assert_eq!(settled.house_delta, -60);
+    assert_eq!(table.state().house_result, -60);
+    assert_ledger_balances(table.state());
+}
+
+/// Characterization, ahead of declaring the rejection codes in the proto
+/// (red/table-generated): every one of the eighteen, its diagnostic code
+/// and its ErrorInfo.reason, as they cross the wire today. Whatever
+/// declares them next must keep these strings.
+#[test]
+fn every_rejection_code_keeps_its_diagnostic_code_and_reason() {
+    use agg_table::{Rejection, RejectionCode};
+    let shown: Vec<(&str, &str)> = RejectionCode::ALL
+        .iter()
+        .map(|code| {
+            let refused = TableRefused(Rejection {
+                code: *code,
+                args: Vec::new(),
+            });
+            (refused.code(), refused.reason())
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (
+                "examples-table-table-already-exists",
+                "TABLE_ALREADY_EXISTS"
+            ),
+            (
+                "examples-table-invalid-table-config",
+                "INVALID_TABLE_CONFIG"
+            ),
+            ("examples-table-table-not-found", "TABLE_NOT_FOUND"),
+            ("examples-table-seat-taken", "SEAT_TAKEN"),
+            (
+                "examples-table-player-already-seated",
+                "PLAYER_ALREADY_SEATED"
+            ),
+            ("examples-table-not-seated", "NOT_SEATED"),
+            ("examples-table-round-in-progress", "ROUND_IN_PROGRESS"),
+            ("examples-table-already-bet", "ALREADY_BET"),
+            ("examples-table-insufficient-stack", "INSUFFICIENT_STACK"),
+            ("examples-table-no-bets", "NO_BETS"),
+            (
+                "examples-table-no-round-in-progress",
+                "NO_ROUND_IN_PROGRESS"
+            ),
+            ("examples-table-not-your-turn", "NOT_YOUR_TURN"),
+            ("examples-table-double-not-allowed", "DOUBLE_NOT_ALLOWED"),
+            ("examples-table-seat-out-of-range", "SEAT_OUT_OF_RANGE"),
+            ("examples-table-buy-in-out-of-range", "BUY_IN_OUT_OF_RANGE"),
+            ("examples-table-bet-out-of-range", "BET_OUT_OF_RANGE"),
+            ("examples-table-bet-not-even", "BET_NOT_EVEN"),
+            ("examples-table-wager-in-play", "WAGER_IN_PLAY"),
+        ]
+    );
+}
+
+/// Characterization: ConfirmSeat's typed refusal as it is reported today,
+/// its code and its reason arg. The generated diagnostic of a typed
+/// refusal is keyed `io-angzarr-examples-v1-seatnotconfirmable` with no
+/// args (angzarr-cli poc/local-wiring): which key wins is an owner
+/// decision this pins the current side of.
+#[test]
+fn seat_not_confirmable_keeps_its_code_and_reason_arg() {
+    let refusal = crate::domain::SeatNotConfirmable(v1::SeatNotConfirmable {
+        reason: "SEAT_HOLD_NOT_FOUND".into(),
+    });
+    assert_eq!(refusal.code(), "examples-table-seat-not-confirmable");
+    let args: Vec<(&str, String)> = refusal
+        .args()
+        .into_iter()
+        .map(|(name, arg)| match arg {
+            Arg::Str(s) => (name, s),
+            other => panic!("{name} is a string, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(args, [("reason", "SEAT_HOLD_NOT_FOUND".to_string())]);
+}
