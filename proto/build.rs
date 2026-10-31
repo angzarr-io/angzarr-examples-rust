@@ -1,42 +1,21 @@
-//! Generates the blackjack example types from the angzarr-project submodule.
-//!
-//! The protos are read in place: the submodule pin is the spec contract, so
-//! there is no staging copy. Only the files the Rust components use so far
-//! are compiled; add a file here when a component needs its messages.
-//!
-//! `table.proto` imports `io/angzarr/v1/options.proto` for its component
-//! options. prost skips `extend` declarations and generates only the listed
-//! files, so nothing from `io.angzarr.v1` is generated here; the wire types
-//! come from the angzarr-proto crate.
+//! Generates the blackjack example's layer from the angzarr-project
+//! submodule's protos, read in place (the submodule pin is the spec
+//! contract): the wire types (angzarr-build's `wire`, prost with angzarr's
+//! settings) and the markup domain layer over them (`markup_domain`), into
+//! OUT_DIR. table.proto's siblings (cards, player, policies) join the set;
+//! io.angzarr.v1's own types come from angzarr-proto, never generated here.
 //!
 //! Requires `protoc` on PATH (or `PROTOC` set).
 
-use std::path::PathBuf;
+const PROTOS: &[&str] = &[
+    "io/angzarr/examples/v1/cards.proto",
+    "io/angzarr/examples/v1/table.proto",
+    "io/angzarr/examples/v1/player.proto",
+    "io/angzarr/examples/v1/policies.proto",
+];
+const INCLUDES: &[&str] = &["../angzarr-project/proto"];
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
-    let proto_root = manifest_dir
-        .parent()
-        .ok_or("proto crate should be in the workspace")?
-        .join("angzarr-project")
-        .join("proto");
-    let examples = proto_root.join("io/angzarr/examples/v1");
-
-    let protos = [
-        examples.join("cards.proto"),
-        examples.join("table.proto"),
-        examples.join("player.proto"),
-    ];
-    println!("cargo:rerun-if-env-changed=PROTOC");
-    for proto in &protos {
-        println!("cargo:rerun-if-changed={}", proto.display());
-    }
-
-    let mut config = prost_build::Config::new();
-    // Type names give every message its `/io.angzarr.examples.v1.X` type URL
-    // for packing into `Any`. `bytes` fields are `bytes::Bytes`, as in
-    // angzarr-proto.
-    config.enable_type_names().bytes(["."]);
-    config.compile_protos(&protos, &[proto_root])?;
-    Ok(())
+fn main() -> Result<(), angzarr_build::BuildError> {
+    angzarr_build::wire(PROTOS, INCLUDES)?;
+    angzarr_build::markup_domain(PROTOS, INCLUDES, &[("io.angzarr.examples.v1", "crate::v1")])
 }

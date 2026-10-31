@@ -48,8 +48,8 @@ fn card(rank: u32, suit: Suit) -> v1::Card {
 
 /// A decision on a hard 11 (six, five) against a dealer's six: a hand on
 /// which a hit, a stand and a double down are all moves a player makes.
-fn decided(action: MoveAction) -> MoveDecided {
-    MoveDecided(v1::MoveDecided {
+fn decided(action: MoveAction) -> v1::MoveDecided {
+    v1::MoveDecided {
         table_root: vec![TABLE; 16].into(),
         round: 1,
         seat: 0,
@@ -58,12 +58,17 @@ fn decided(action: MoveAction) -> MoveDecided {
         total: 11,
         soft: false,
         dealer_up: Some(card(6, Suit::Diamonds)),
-    })
+    }
+}
+
+/// The MoveDecided the policy is handed: the wire's, as the domain's.
+fn domain(decided: v1::MoveDecided) -> MoveDecided {
+    MoveDecided::try_from(decided).expect("a MoveDecided")
 }
 
 fn table_command(action: MoveAction) -> Vec<(Uuid, Any)> {
     PlayerTablePolicy
-        .move_decided(&decided(action), &context("player", ALICE))
+        .move_decided(&domain(decided(action)), &context("player", ALICE))
         .expect("a move")
         .orders()
         .to_vec()
@@ -95,7 +100,7 @@ fn eu_1603_the_player_to_table_translator_turns_double_down_into_double_down() {
 
 #[test]
 fn eu_1603_the_command_names_the_seat_and_table_the_decision_names() {
-    let decision = MoveDecided(v1::MoveDecided {
+    let decision = domain(v1::MoveDecided {
         table_root: vec![0x7b; 16].into(),
         round: 4,
         seat: 2,
@@ -117,17 +122,24 @@ fn eu_1603_the_command_names_the_seat_and_table_the_decision_names() {
 }
 
 #[test]
-fn eu_1604_a_decision_with_no_action_is_the_policys_error() {
-    // The spec: a player bug, dead-lettered and alerted. The handler's
-    // error is what angzarr-embedded dead-letters, by its code and args.
-    let error = PlayerTablePolicy
-        .move_decided(&decided(MoveAction::Unspecified), &context("player", ALICE))
-        .err()
-        .expect("no move is a bug, not an empty answer");
-    assert_eq!(error.code(), "policy-player-table-unknown-action");
+fn eu_1604_a_decision_with_no_action_is_not_a_move_decided() {
+    // The spec: a player bug, dead-lettered and alerted. A MoveDecided with
+    // MOVE_ACTION_UNSPECIFIED does not decode as the domain's, so the
+    // policy never sees it: angzarr-embedded fails the step as a bug,
+    // dead-lettered by the decoding's code and args.
+    let error = MoveDecided::try_from(decided(MoveAction::Unspecified))
+        .expect_err("no move is a bug, not a decision");
+    assert_eq!(error.code(), "angzarr-embedded-next-wire-unknown-enum");
     let args = error.args();
     assert!(
-        matches!(args.as_slice(), [("action", Arg::Int(0))]),
+        matches!(
+            args.as_slice(),
+            [
+                ("message", Arg::Str(message)),
+                ("field", Arg::Str(field)),
+                ("value", Arg::Int(0)),
+            ] if message == "io.angzarr.examples.v1.MoveDecided" && field == "action"
+        ),
         "the action it decided, MOVE_ACTION_UNSPECIFIED: {args:?}"
     );
 }

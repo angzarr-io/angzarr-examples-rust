@@ -3,26 +3,12 @@
 //! The state is the spec's `TableState` message itself. Appliers never
 //! fail: an event is a fact the table already decided.
 
-use examples_proto::v1::{table_state::Phase, ShoeShuffled, TableCreated, TableState};
-
-/// An event the table emits.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TableEvent {
-    TableCreated(TableCreated),
-    ShoeShuffled(ShoeShuffled),
-}
+use examples_proto::domain::{ShoeShuffled, TableCreated};
+use examples_proto::v1::{table_state::Phase, Card, TableState};
 
 /// Whether the table has been created.
 pub(crate) fn table_exists(state: &TableState) -> bool {
     state.phase() != Phase::Unspecified
-}
-
-/// Fold any table event into `state`.
-pub fn apply(state: &mut TableState, event: &TableEvent) {
-    match event {
-        TableEvent::TableCreated(event) => apply_table_created(state, event),
-        TableEvent::ShoeShuffled(event) => apply_shoe_shuffled(state, event),
-    }
 }
 
 /// The table opens with its configuration, no one seated and no wager.
@@ -41,7 +27,7 @@ pub fn apply_table_created(state: &mut TableState, event: &TableCreated) {
 pub fn apply_shoe_shuffled(state: &mut TableState, event: &ShoeShuffled) {
     state.shoe_number = event.shoe_number;
     state.shoe_seed = event.seed;
-    state.shoe.clone_from(&event.cards);
+    state.shoe = event.cards.iter().cloned().map(Card::from).collect();
 }
 
 #[cfg(test)]

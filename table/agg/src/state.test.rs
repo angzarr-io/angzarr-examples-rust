@@ -1,5 +1,6 @@
+use examples_proto::domain::{Card, ShoeShuffled, TableCreated};
 use examples_proto::v1::table_state::Phase;
-use examples_proto::v1::{ShoeShuffled, TableCreated, TableState};
+use examples_proto::v1::TableState;
 
 use super::*;
 use crate::test_support::cards;
@@ -21,7 +22,10 @@ fn shoe_one() -> ShoeShuffled {
         shoe_number: 1,
         seed: 42,
         decks: 1,
-        cards: cards("7♣ 3♥ K♣"),
+        cards: cards("7♣ 3♥ K♣")
+            .into_iter()
+            .map(|c| Card::try_from(c).expect("a card"))
+            .collect(),
     }
 }
 
@@ -55,20 +59,6 @@ fn eu_1440_a_shuffled_shoe_becomes_the_undealt_cards() {
     assert_eq!(state.shoe_number, 1);
     assert_eq!(state.shoe_seed, 42);
     assert_eq!(state.shoe, cards("7♣ 3♥ K♣"));
-}
-
-#[test]
-fn eu_1440_apply_folds_each_table_event() {
-    let mut via_dispatch = TableState::default();
-    apply(&mut via_dispatch, &TableEvent::TableCreated(main_created()));
-    apply(&mut via_dispatch, &TableEvent::ShoeShuffled(shoe_one()));
-
-    let mut direct = TableState::default();
-    apply_table_created(&mut direct, &main_created());
-    apply_shoe_shuffled(&mut direct, &shoe_one());
-
-    assert_eq!(via_dispatch, direct);
-    assert_ne!(via_dispatch, TableState::default());
 }
 
 #[test]

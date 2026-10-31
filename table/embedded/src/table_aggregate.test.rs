@@ -7,7 +7,7 @@
 //! - **When** a command is sent as a client sends it, packed in a
 //!   `CommandBook` ([`Harness::when`]).
 //! - **Then** the events of that one decision, decoded back to the
-//!   generated types, or the refusal: its `ErrorInfo.reason`
+//!   generated types, or the refusal: the typed `TableRefused`'s reason
 //!   ([`refused`]) or ConfirmSeat's typed `SeatNotConfirmable`
 //!   ([`not_confirmable`]).
 //!
@@ -21,9 +21,8 @@
 
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards};
-use angzarr_embedded::next::markup::{
-    assert_step_idempotent, CommandContext, Context, MARKUP_RULES_VERSION,
-};
+use agg_table::Table;
+use angzarr_embedded::next::markup::{Failed, MARKUP_RULES_VERSION};
 use angzarr_embedded::next::v1::event_meta::Causation;
 use angzarr_embedded::next::v1::{
     command_page, Command, CommandBook, CommandPage, ConflictResolution, Cover, EventMeta,
@@ -36,9 +35,9 @@ use angzarr_embedded::next::{
 use examples_proto::v1::{self, seat_outcome::Outcome, table_state::Phase, Card, SeatHand};
 use prost::{Message, Name};
 
-use super::TableAggregate;
-use crate::TableRefused;
-use angzarr_embedded_diagnostic::{Arg, Diagnostic};
+use crate::domain::{TableAggregateEvent, TableRefused, TableRefusedReason};
+use crate::TableAggregate;
+use angzarr_embedded_diagnostic::{Arg, Diagnostic, Report};
 
 /// Polls `f` to completion with a waker that does nothing: angzarr-embedded's
 /// pipeline is async, and with no store its futures are ready at once.
@@ -212,21 +211,40 @@ impl Harness {
     }
 }
 
-/// The `ErrorInfo.reason` of an untyped refusal: its `reason` arg.
+/// The table's typed refusal, `TableRefused`, as the refused caller
+/// receives it: the object packed beside the refusal, decoded.
 #[track_caller]
-fn refused(then: Then) -> String {
+fn table_refused(then: Then) -> TableRefused {
     match then {
-        Err(Failure::Rejected(rejected)) if rejected.refusal_object().is_none() => rejected
-            .report()
-            .args()
-            .into_iter()
-            .find_map(|(name, arg)| match (name, arg) {
-                ("reason", Arg::Str(reason)) => Some(reason),
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("a table refusal names its reason: {rejected:?}")),
+        Err(Failure::Rejected(rejected)) => {
+            let any = rejected
+                .refusal_object()
+                .unwrap_or_else(|| panic!("a typed refusal is packed: {rejected:?}"));
+            assert_eq!(type_name(&any.type_url), v1::TableRefused::full_name());
+            TableRefused::try_from(v1::TableRefused::decode(&any.value[..]).expect("decodes"))
+                .expect("a TableRefused")
+        }
         other => panic!("expected the table to refuse, got {other:?}"),
     }
+}
+
+/// A diagnostic's `reason` arg: a table refusal's `ErrorInfo.reason`.
+#[track_caller]
+fn reason_of(refusal: &dyn Diagnostic) -> String {
+    refusal
+        .args()
+        .into_iter()
+        .find_map(|(name, arg)| match (name, arg) {
+            ("reason", Arg::Str(reason)) => Some(reason),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("a table refusal names its reason: {refusal:?}"))
+}
+
+/// A table refusal's `ErrorInfo.reason`.
+#[track_caller]
+fn refused(then: Then) -> String {
+    reason_of(&table_refused(then))
 }
 
 /// The reason of ConfirmSeat's typed refusal.
@@ -1607,7 +1625,7 @@ fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
                 if e.extras.get("cause").map(String::as_str) == Some("examples-table-shoe-ran-out")
                     && e.extras.get("cause.round").map(String::as_str) == Some("1")
         ),
-        "TableBug's code its cause, the round its arg: {failure:?}"
+        "the bug's code its cause, the round its arg: {failure:?}"
     );
     let lines = table.dead_letters.lines();
     assert_eq!(lines.len(), 1, "dead-lettered once: {lines:?}");
@@ -1819,17 +1837,22 @@ fn eu_1504_every_round_keeps_the_tables_chips_in_balance() {
 
 // ================================================================ continuation steps
 
-fn step_context() -> Context {
-    Context::new(Timestamp {
-        seconds: 1_000,
-        nanos: 0,
-    })
-    .with_command(CommandContext {
-        cover: Some(cover()),
-        command_id: Some(id(99)),
-        correlation_id: Some(id(99)),
-        ..CommandContext::default()
-    })
+/// Runs `step` on `table`, folds what it decides and runs it again,
+/// panicking unless the second run decides nothing: a step must be
+/// idempotent on its own result, or a decision re-run through it never
+/// settles. Returns the table after the first run.
+#[track_caller]
+fn assert_step_idempotent(
+    table: TableAggregate,
+    step: fn(&Table) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>,
+) -> Table {
+    let mut table = table.0;
+    for event in step(&table).expect("the step decides") {
+        table.fold(&event);
+    }
+    let again = step(&table).expect("the step decides on its own result");
+    assert!(again.is_empty(), "the step is not idempotent: {again:?}");
+    table
 }
 
 /// The background with Alice and Bob's bets, from a shoe beginning `shoe`.
@@ -1841,25 +1864,17 @@ fn bets_on(shoe: &str) -> TableAggregate {
 
 #[test]
 fn the_deal_step_does_nothing_when_re_run_on_its_own_result() {
-    let dealt = assert_step_idempotent(
-        bets_on("2♣ 3♣ 9♦ 4♣ 5♣ 7♠"),
-        TableAggregate::deal,
-        &step_context(),
-    );
+    let dealt = assert_step_idempotent(bets_on("2♣ 3♣ 9♦ 4♣ 5♣ 7♠"), Table::deal);
     assert_eq!(dealt.state().turn, 0, "the first run dealt");
 }
 
 #[test]
-fn the_deal_step_does_nothing_when_re_run_after_a_dealer_blackjack_settled() {
-    let settled = assert_step_idempotent(
-        bets_on("10♣ 9♣ A♦ 8♥ 9♥ K♠"),
-        TableAggregate::deal,
-        &step_context(),
-    );
+fn the_deal_step_does_nothing_when_re_run_after_a_dealer_blackjack_dealt() {
+    let dealt = assert_step_idempotent(bets_on("10♣ 9♣ A♦ 8♥ 9♥ K♠"), Table::deal);
     assert_eq!(
-        settled.state().phase(),
-        Phase::Idle,
-        "the first run settled"
+        dealt.state().phase(),
+        Phase::PlayerTurns,
+        "the first run dealt; the step after it settles"
     );
 }
 
@@ -1867,7 +1882,7 @@ fn the_deal_step_does_nothing_when_re_run_after_a_dealer_blackjack_settled() {
 fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
     // A turn to announce, then a round to settle.
     let on_turn = given(two_hands_low("")).stream.state().clone();
-    assert_step_idempotent(on_turn, TableAggregate::after_action, &step_context());
+    assert_step_idempotent(on_turn, Table::after_action);
 
     let mut events = two_hands_low("10♥");
     events.extend([
@@ -1875,11 +1890,7 @@ fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
         turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
         stood(1, 8, -1),
     ]);
-    let settled = assert_step_idempotent(
-        given(events).stream.state().clone(),
-        TableAggregate::after_action,
-        &step_context(),
-    );
+    let settled = assert_step_idempotent(given(events).stream.state().clone(), Table::after_action);
     assert_eq!(settled.state().phase(), Phase::Idle);
 }
 
@@ -2271,24 +2282,12 @@ fn between_rounds_no_seat_is_on_turn() {
 
 // ================================================================ the refusals as diagnostics
 
-/// A refusal's report: its code and its `reason` arg (decision 14.37: a
-/// key and args; English only from a catalog, where it is shown).
+/// A table refusal's diagnostic: its code and its `reason` arg (decision
+/// 14.37: a key and args; English only from a catalog, where it is shown).
 #[track_caller]
 fn report_of(then: Then) -> (String, Option<String>) {
-    match then {
-        Err(Failure::Rejected(rejected)) => (
-            rejected.report().code().to_string(),
-            rejected
-                .report()
-                .args()
-                .into_iter()
-                .find_map(|(name, arg)| match (name, arg) {
-                    ("reason", Arg::Str(reason)) => Some(reason),
-                    _ => None,
-                }),
-        ),
-        other => panic!("expected the table to refuse, got {other:?}"),
-    }
+    let refusal = table_refused(then);
+    (refusal.code().to_string(), Some(reason_of(&refusal)))
 }
 
 #[test]
@@ -2298,21 +2297,26 @@ fn a_table_refusal_is_reported_by_its_code_and_its_reason() {
     assert_eq!(
         report_of(table.when(place(0, 102))),
         (
-            "examples-table-bet-out-of-range".to_string(),
+            "io-angzarr-examples-v1-tablerefused-bet-out-of-range".to_string(),
             Some("BET_OUT_OF_RANGE".to_string())
         )
     );
 }
 
-/// An untyped refusal as it is shown and logged: its code and args.
+/// A table refusal as it is shown and logged: its diagnostic's code and
+/// args, the args in name order (as angzarr-router hands args back).
 #[track_caller]
 fn refusal_shown(then: Then) -> String {
-    match then {
-        Err(Failure::Rejected(rejected)) if rejected.refusal_object().is_none() => {
-            rejected.report().to_string()
-        }
-        other => panic!("expected the table to refuse, got {other:?}"),
-    }
+    let refusal = table_refused(then);
+    let mut args = refusal.args();
+    args.sort_by_key(|(name, _)| *name);
+    args.into_iter()
+        .fold(refusal.code().to_string(), |shown, (name, arg)| match arg {
+            Arg::Int(n) => format!("{shown} {name}={n}"),
+            Arg::Uint(n) => format!("{shown} {name}={n}"),
+            Arg::Str(s) => format!("{shown} {name}={s}"),
+            Arg::Nested(cause) => format!("{shown} {name}={}", cause.code()),
+        })
 }
 
 /// Decision 14.37: a refusal is a key and its args, never English. Each
@@ -2333,67 +2337,67 @@ fn a_table_refusal_is_its_code_reason_and_values_never_english() {
         (
             main_table(),
             &|t| t.when(create_main(42)),
-            "examples-table-table-already-exists name=Main reason=TABLE_ALREADY_EXISTS",
+            "io-angzarr-examples-v1-tablerefused-table-already-exists name=Main reason=TABLE_ALREADY_EXISTS",
         ),
         (
             vec![],
             &|t| t.when(v1::CreateTable { seats: 8, ..create_main(42) }),
-            "examples-table-invalid-table-config reason=INVALID_TABLE_CONFIG rule=seats",
+            "io-angzarr-examples-v1-tablerefused-invalid-table-config reason=INVALID_TABLE_CONFIG rule=seats",
         ),
         (
             vec![],
             &|t| t.when(v1::Hit { seat: 0 }),
-            "examples-table-table-not-found reason=TABLE_NOT_FOUND",
+            "io-angzarr-examples-v1-tablerefused-table-not-found reason=TABLE_NOT_FOUND",
         ),
         (
             main_table(),
             &|t| t.when(request(ALICE, 3, 500, B1)),
-            "examples-table-seat-out-of-range reason=SEAT_OUT_OF_RANGE seat=3",
+            "io-angzarr-examples-v1-tablerefused-seat-out-of-range reason=SEAT_OUT_OF_RANGE seat=3",
         ),
         (
             main_table(),
             &|t| t.when(request(ALICE, 0, 99, B1)),
-            "examples-table-buy-in-out-of-range max_buy_in=1000 min_buy_in=100 reason=BUY_IN_OUT_OF_RANGE",
+            "io-angzarr-examples-v1-tablerefused-buy-in-out-of-range max_buy_in=1000 min_buy_in=100 reason=BUY_IN_OUT_OF_RANGE",
         ),
         (
             taken,
             &|t| t.when(request(ALICE, 1, 500, 0x03)),
-            "examples-table-seat-taken reason=SEAT_TAKEN seat=1",
+            "io-angzarr-examples-v1-tablerefused-seat-taken reason=SEAT_TAKEN seat=1",
         ),
         (
             background("2♣"),
             &|t| t.when(place(0, 102)),
-            "examples-table-bet-out-of-range max_bet=100 min_bet=10 reason=BET_OUT_OF_RANGE",
+            "io-angzarr-examples-v1-tablerefused-bet-out-of-range max_bet=100 min_bet=10 reason=BET_OUT_OF_RANGE",
         ),
         (
             background("2♣"),
             &|t| t.when(place(0, 15)),
-            "examples-table-bet-not-even reason=BET_NOT_EVEN",
+            "io-angzarr-examples-v1-tablerefused-bet-not-even reason=BET_NOT_EVEN",
         ),
         (
             bet_once,
             &|t| t.when(place(0, 20)),
-            "examples-table-already-bet reason=ALREADY_BET seat=0",
+            "io-angzarr-examples-v1-tablerefused-already-bet reason=ALREADY_BET seat=0",
         ),
         (
             background("2♣"),
             &|t| t.when(place(2, 20)),
-            "examples-table-not-seated reason=NOT_SEATED seat=2",
+            "io-angzarr-examples-v1-tablerefused-not-seated reason=NOT_SEATED seat=2",
         ),
         (
             main_table(),
             &|t| t.when(v1::LeaveTable { seat: 2 }),
-            "examples-table-not-seated reason=NOT_SEATED seat=2",
+            "io-angzarr-examples-v1-tablerefused-not-seated reason=NOT_SEATED seat=2",
         ),
         (
             two_hands_low(""),
             &|t| t.when(v1::Hit { seat: 1 }),
-            "examples-table-not-your-turn reason=NOT_YOUR_TURN seat=1",
+            "io-angzarr-examples-v1-tablerefused-not-your-turn reason=NOT_YOUR_TURN seat=1",
         ),
         (
             wagered,
             &|t| t.when(v1::LeaveTable { seat: 0 }),
-            "examples-table-wager-in-play reason=WAGER_IN_PLAY seat=0",
+            "io-angzarr-examples-v1-tablerefused-wager-in-play reason=WAGER_IN_PLAY seat=0",
         ),
     ];
     for (events, when, expected) in cases {
@@ -2409,12 +2413,16 @@ fn a_table_refusal_displays_as_its_code_and_args() {
         decks: 9,
         ..create_main(42)
     };
-    let rejection = agg_table::create_table(&v1::TableState::default(), &broken)
-        .expect_err("nine decks break the house rules");
+    let broken = broken.try_into().expect("a CreateTable");
+    let Err(Failed::Rejected { rejection, .. }) =
+        agg_table::create_table(&v1::TableState::default(), &broken)
+    else {
+        panic!("nine decks break the house rules");
+    };
 
     assert_eq!(
-        TableRefused::from(rejection).to_string(),
-        "examples-table-invalid-table-config reason=INVALID_TABLE_CONFIG rule=decks"
+        Report::of(&rejection).to_string(),
+        "io-angzarr-examples-v1-tablerefused-invalid-table-config reason=INVALID_TABLE_CONFIG rule=decks"
     );
 }
 
@@ -2422,8 +2430,20 @@ fn a_table_refusal_displays_as_its_code_and_args() {
 /// (decision 14.37).
 #[test]
 fn a_table_bug_displays_as_its_code_and_args() {
-    let bug = crate::refused::TableBug(agg_table::ShoeRanOut { round: 1 });
+    // The shoe of the dealt round that runs out (above), Alice stood.
+    let mut events = dealt_round(
+        "10♣ 5♦ 9♥ 6♠",
+        (500, 500),
+        &[0],
+        dealt(vec![hand(0, "10♣ 9♥", 19, false, false)], "5♦", "6♠", 0),
+    );
+    events[1] = shoe_one(cards("10♣ 5♦ 9♥ 6♠"));
+    events.push(stood(0, 19, -1));
+    let table = given(events).stream.state().0.clone();
 
+    let Err(Failed::Bug(bug)) = table.after_action() else {
+        panic!("the dealer's draw from an empty shoe is a bug");
+    };
     assert_eq!(bug.to_string(), "examples-table-shoe-ran-out round=1");
 }
 
@@ -2431,14 +2451,13 @@ fn a_table_bug_displays_as_its_code_and_args() {
 /// English (decision 14.37).
 #[test]
 fn a_seat_not_confirmable_displays_as_its_code_and_args() {
-    let refusal = crate::domain::SeatNotConfirmable(v1::SeatNotConfirmable {
+    let refusal = crate::domain::SeatNotConfirmable {
         reason: "SEAT_NOT_HELD".to_string(),
-        ..Default::default()
-    });
+    };
 
     assert_eq!(
-        refusal.to_string(),
-        "examples-table-seat-not-confirmable reason=SEAT_NOT_HELD"
+        Report::of(&refusal).to_string(),
+        "io-angzarr-examples-v1-seatnotconfirmable reason=SEAT_NOT_HELD"
     );
 }
 
@@ -2467,7 +2486,7 @@ fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
 
 // ------------------------------------------------- characterization (red/table-generated)
 
-/// Characterization, ahead of the table's generated domain layer
+/// Characterization of the table's generated domain layer
 /// (red/table-generated): seed 21's hand played to settlement at the wire,
 /// with the moves the remote player's basic strategy makes
 /// (`tests/remote_player.rs`) sent by the test, so it runs without the
@@ -2515,71 +2534,117 @@ fn seed_21_settles_alice_540_bob_520_house_minus_60() {
     assert_ledger_balances(table.state());
 }
 
-/// Characterization, ahead of declaring the rejection codes in the proto
-/// (red/table-generated): every one of the eighteen, its diagnostic code
-/// and its ErrorInfo.reason, as they cross the wire today. Whatever
-/// declares them next must keep these strings.
+/// Characterization of the rejection codes declared in the proto
+/// (table.proto's TableRefused.Reason, red/table-generated): every one of
+/// the eighteen, its diagnostic code and its ErrorInfo.reason. The code is
+/// the generator's key, the refusal's full name and its reason (owner
+/// ruling, decision 14.50); the reasons are the ones table.proto lists.
 #[test]
 fn every_rejection_code_keeps_its_diagnostic_code_and_reason() {
-    use agg_table::{Rejection, RejectionCode};
-    let shown: Vec<(&str, &str)> = RejectionCode::ALL
-        .iter()
-        .map(|code| {
-            let refused = TableRefused(Rejection {
-                code: *code,
-                args: Vec::new(),
-            });
-            (refused.code(), refused.reason())
+    // Every Reason table.proto declares, in its order: 1, 2, .. until the
+    // first number it does not.
+    let shown: Vec<(&str, String)> = (1..)
+        .map_while(|n| TableRefusedReason::try_from(n).ok())
+        .map(|reason| {
+            let refused = TableRefused {
+                reason,
+                name: None,
+                rule: None,
+                seat: None,
+                min_buy_in: None,
+                max_buy_in: None,
+                min_bet: None,
+                max_bet: None,
+            };
+            (refused.code(), reason_of(&refused))
         })
         .collect();
+    let shown: Vec<(&str, &str)> = shown.iter().map(|(c, r)| (*c, r.as_str())).collect();
     assert_eq!(
         shown,
         [
             (
-                "examples-table-table-already-exists",
+                "io-angzarr-examples-v1-tablerefused-table-already-exists",
                 "TABLE_ALREADY_EXISTS"
             ),
             (
-                "examples-table-invalid-table-config",
+                "io-angzarr-examples-v1-tablerefused-invalid-table-config",
                 "INVALID_TABLE_CONFIG"
             ),
-            ("examples-table-table-not-found", "TABLE_NOT_FOUND"),
-            ("examples-table-seat-taken", "SEAT_TAKEN"),
             (
-                "examples-table-player-already-seated",
+                "io-angzarr-examples-v1-tablerefused-table-not-found",
+                "TABLE_NOT_FOUND"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-seat-taken",
+                "SEAT_TAKEN"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-player-already-seated",
                 "PLAYER_ALREADY_SEATED"
             ),
-            ("examples-table-not-seated", "NOT_SEATED"),
-            ("examples-table-round-in-progress", "ROUND_IN_PROGRESS"),
-            ("examples-table-already-bet", "ALREADY_BET"),
-            ("examples-table-insufficient-stack", "INSUFFICIENT_STACK"),
-            ("examples-table-no-bets", "NO_BETS"),
             (
-                "examples-table-no-round-in-progress",
+                "io-angzarr-examples-v1-tablerefused-not-seated",
+                "NOT_SEATED"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-round-in-progress",
+                "ROUND_IN_PROGRESS"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-already-bet",
+                "ALREADY_BET"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-insufficient-stack",
+                "INSUFFICIENT_STACK"
+            ),
+            ("io-angzarr-examples-v1-tablerefused-no-bets", "NO_BETS"),
+            (
+                "io-angzarr-examples-v1-tablerefused-no-round-in-progress",
                 "NO_ROUND_IN_PROGRESS"
             ),
-            ("examples-table-not-your-turn", "NOT_YOUR_TURN"),
-            ("examples-table-double-not-allowed", "DOUBLE_NOT_ALLOWED"),
-            ("examples-table-seat-out-of-range", "SEAT_OUT_OF_RANGE"),
-            ("examples-table-buy-in-out-of-range", "BUY_IN_OUT_OF_RANGE"),
-            ("examples-table-bet-out-of-range", "BET_OUT_OF_RANGE"),
-            ("examples-table-bet-not-even", "BET_NOT_EVEN"),
-            ("examples-table-wager-in-play", "WAGER_IN_PLAY"),
+            (
+                "io-angzarr-examples-v1-tablerefused-not-your-turn",
+                "NOT_YOUR_TURN"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-double-not-allowed",
+                "DOUBLE_NOT_ALLOWED"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-seat-out-of-range",
+                "SEAT_OUT_OF_RANGE"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-buy-in-out-of-range",
+                "BUY_IN_OUT_OF_RANGE"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-bet-out-of-range",
+                "BET_OUT_OF_RANGE"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-bet-not-even",
+                "BET_NOT_EVEN"
+            ),
+            (
+                "io-angzarr-examples-v1-tablerefused-wager-in-play",
+                "WAGER_IN_PLAY"
+            ),
         ]
     );
 }
 
-/// Characterization: ConfirmSeat's typed refusal as it is reported today,
-/// its code and its reason arg. The generated diagnostic of a typed
-/// refusal is keyed `io-angzarr-examples-v1-seatnotconfirmable` with no
-/// args (angzarr-cli poc/local-wiring): which key wins is an owner
-/// decision this pins the current side of.
+/// Characterization: ConfirmSeat's typed refusal, its code and its reason
+/// arg. The generated diagnostic is keyed by the refusal's full name
+/// (owner ruling, decision 14.50), its args its fields.
 #[test]
 fn seat_not_confirmable_keeps_its_code_and_reason_arg() {
-    let refusal = crate::domain::SeatNotConfirmable(v1::SeatNotConfirmable {
+    let refusal = crate::domain::SeatNotConfirmable {
         reason: "SEAT_HOLD_NOT_FOUND".into(),
-    });
-    assert_eq!(refusal.code(), "examples-table-seat-not-confirmable");
+    };
+    assert_eq!(refusal.code(), "io-angzarr-examples-v1-seatnotconfirmable");
     let args: Vec<(&str, String)> = refusal
         .args()
         .into_iter()

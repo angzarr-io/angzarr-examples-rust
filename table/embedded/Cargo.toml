@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "The blackjack table and its two policies on angzarr-embedded: scaffolded markup adapters over agg-table and table-player-policies"
+description = "The blackjack table and its two policies on angzarr-embedded: the table's generated adapter over agg-table, and the policies' markup over table-player-policies"
 # angzarr-embedded needs 1.85 (prost 0.14 through angzarr-proto).
 rust-version = "1.85"
 
@@ -16,6 +16,9 @@ angzarr-embedded.workspace = true
 angzarr-embedded-macros.workspace = true
 angzarr-embedded-diagnostic.workspace = true
 prost.workspace = true
+
+[build-dependencies]
+angzarr-build.workspace = true
 
 [dev-dependencies]
 agg-table = { workspace = true, features = ["test-support"] }

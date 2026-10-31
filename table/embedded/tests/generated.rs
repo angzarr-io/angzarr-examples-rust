@@ -1,10 +1,9 @@
-//! RED (red/table-generated): the table built from the generated domain
-//! layer, not hand-written wiring. The plan is
-//! `rust-table-generation.plan.md` (session inept-sixth-stick); each test
-//! fails while the file or type it names is still here, and passes once
-//! the refactor removes it. The behaviour the refactor must keep is
-//! characterized in `src/table_aggregate.test.rs` (seed 21, the rejection
-//! codes' wire strings).
+//! The table built from the generated domain layer, not hand-written
+//! wiring (red/table-generated; the plan is `rust-table-generation.plan.md`,
+//! session inept-sixth-stick): each test fails if the file or type it names
+//! comes back. The behaviour the refactor kept is pinned in
+//! `src/table_aggregate.test.rs` (seed 21, the rejection codes' keys and
+//! reasons).
 
 use std::path::{Path, PathBuf};
 

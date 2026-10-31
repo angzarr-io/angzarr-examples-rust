@@ -1,13 +1,13 @@
 //! The two policies between the table and the player bot (policies.proto,
 //! decision 14.38), framework-free: each trait has one method per event it
-//! handles, a generated event in and the command (with the root it is for)
-//! out. A harness adapter (the angzarr-embedded `#[policy]` files in
-//! `table-embedded`, or any other) delegates to them.
+//! handles, an event of the generated domain layer in and the command (with
+//! the root it is for) out. A harness adapter (the angzarr-embedded
+//! `#[policy]` files in `table-embedded`, or any other) delegates to them.
 //!
 //! Both are stateless and name their target root from the event they handle
 //! (decision 14.36).
 
-use examples_proto::v1::{
+use examples_proto::domain::{
     DecideMove, DoubleDown, Hit, MoveAction, MoveDecided, Stand, TurnStarted,
 };
 
@@ -35,17 +35,13 @@ pub enum TableMove {
     DoubleDown(DoubleDown),
 }
 
-/// A MoveDecided no command answers: a player bug.
-#[derive(Debug, Clone, PartialEq)]
-pub enum NoMove {
-    /// MOVE_ACTION_UNSPECIFIED, or an action this table does not know.
-    UnknownAction(i32),
-}
-
 /// policy-player-table.
 pub trait PlayerTable {
-    /// Hit, Stand or DoubleDown{seat} for root = `event.table_root`.
-    fn move_decided(&self, event: &MoveDecided) -> Result<To<TableMove>, NoMove>;
+    /// Hit, Stand or DoubleDown{seat} for root = `event.table_root`. Every
+    /// action is one of the three: a MoveDecided with
+    /// MOVE_ACTION_UNSPECIFIED, or an action the table does not know, is not
+    /// a domain value (a player bug the harness reports as it decodes it).
+    fn move_decided(&self, event: &MoveDecided) -> To<TableMove>;
 }
 
 /// The policies' one implementation.
@@ -54,17 +50,17 @@ pub struct Policies;
 
 impl TablePlayer for Policies {
     fn turn_started(&self, table_root: &[u8], event: &TurnStarted) -> To<DecideMove> {
-        let hand = event.hand.clone().unwrap_or_default();
+        let hand = event.hand.clone();
         To {
-            root: event.player_root.to_vec(),
+            root: event.player_root.clone(),
             command: DecideMove {
-                table_root: table_root.to_vec().into(),
+                table_root: table_root.to_vec(),
                 round: event.round,
                 seat: event.seat,
                 cards: hand.cards,
                 total: hand.total,
                 soft: hand.soft,
-                dealer_up: event.dealer_up,
+                dealer_up: event.dealer_up.clone(),
                 can_double: event.can_double,
                 stack: event.stack,
                 wager: event.wager,
@@ -74,19 +70,16 @@ impl TablePlayer for Policies {
 }
 
 impl PlayerTable for Policies {
-    fn move_decided(&self, event: &MoveDecided) -> Result<To<TableMove>, NoMove> {
+    fn move_decided(&self, event: &MoveDecided) -> To<TableMove> {
         let seat = event.seat;
-        let command = match MoveAction::try_from(event.action) {
-            Ok(MoveAction::Hit) => TableMove::Hit(Hit { seat }),
-            Ok(MoveAction::Stand) => TableMove::Stand(Stand { seat }),
-            Ok(MoveAction::DoubleDown) => TableMove::DoubleDown(DoubleDown { seat }),
-            Ok(MoveAction::Unspecified) | Err(_) => {
-                return Err(NoMove::UnknownAction(event.action))
-            }
+        let command = match event.action {
+            MoveAction::Hit => TableMove::Hit(Hit { seat }),
+            MoveAction::Stand => TableMove::Stand(Stand { seat }),
+            MoveAction::DoubleDown => TableMove::DoubleDown(DoubleDown { seat }),
         };
-        Ok(To {
-            root: event.table_root.to_vec(),
+        To {
+            root: event.table_root.clone(),
             command,
-        })
+        }
     }
 }

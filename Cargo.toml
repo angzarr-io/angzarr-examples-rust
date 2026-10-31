@@ -14,15 +14,18 @@ examples-proto = { path = "proto" }
 agg-table = { path = "table/agg" }
 table-player-policies = { path = "table/policies" }
 # angzarr-embedded (angzarr's in-app runtime) and its markup, pinned by hash
-# on its main. Its angzarr-proto and angzarr-ports pins are angzarr core's
-# crates, at a core commit whose own angzarr-project submodule is the rev this
-# repository's angzarr-project submodule is checked out at, so one spec is in
-# the graph.
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
-bytes = "1"
+# on its main. Its angzarr-proto and angzarr-router pins are angzarr core's
+# and the router's, at the commits angzarr-build pins too, so one
+# angzarr-proto is in the graph; core's own angzarr-project submodule is the
+# rev this repository's angzarr-project submodule is checked out at, so one
+# spec is in it.
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "760797e58eaf4f20ebe416dc24ec18e10c8f0991" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "760797e58eaf4f20ebe416dc24ec18e10c8f0991" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "760797e58eaf4f20ebe416dc24ec18e10c8f0991" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "760797e58eaf4f20ebe416dc24ec18e10c8f0991" }
+# angzarr-cli's build.rs helpers: the generated wire types, domain layer,
+# adapters and register(), pinned by hash on poc/local-wiring.
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "a94c0f4ea97cd588e94f554911bc10013a099913" }
 prost = "0.14"
 prost-build = "0.14"
 # Matches the uuid angzarr-proto already brings into the graph.

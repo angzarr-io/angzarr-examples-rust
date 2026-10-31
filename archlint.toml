@@ -17,16 +17,16 @@ deny = ["angzarr_client::**", "path:angzarr-client-rust/**", "path:angzarr-proje
 
 [[rule]]
 name = "generated-types-are-a-leaf"
-why = "examples-proto is generated wire types only: every component links it, so it links no example crate and no framework client"
+why = "examples-proto is the generated layer only (wire types and the markup domain layer over them): every component links it, so it links no example crate and no framework client"
 from = ["examples_proto::**"]
 allow = ["examples_proto::**"]
 deny = ["angzarr_client::**"]
 
 [[rule]]
-name = "table-domain-is-framework-free"
-why = "the table's decisions and appliers are pure functions over the generated types, so any handler framework can wire them without the domain linking it"
+name = "the-table-names-the-runtime-only-through-its-generated-layer"
+why = "agg-table is the table's logic: its generated interface implemented over the generated domain layer, whose context and failure types are the only runtime it names; it marks nothing up and links no framework directly, so the generated adapter is the one place the markup is"
 from = ["agg_table::**"]
-allow = ["agg_table::**", "examples_proto::**"]
+allow = ["agg_table::**", "examples_proto::**", "angzarr_embedded_diagnostic::**"]
 deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
 
 [[rule]]
@@ -37,15 +37,15 @@ allow = ["examples_proto::**"]
 scope = "lib"
 
 [[rule]]
-name = "the-embedded-table-is-an-adapter-over-the-logic"
-why = "table-embedded is the scaffolded angzarr-embedded markup, a thin adapter delegating to agg-table's TableLogic and table-player-policies' traits; the logic stays there, so the adapter can be regenerated and links no other example crate or framework client"
+name = "the-embedded-table-is-generated-wiring-over-the-logic"
+why = "table-embedded is the table's generated angzarr-embedded adapter and register() (build.rs), and the two policies' markup delegating to table-player-policies; the logic stays in agg-table and table-player-policies, so nothing here restates it, and it links no other example crate or framework client"
 from = ["table_embedded::**"]
 allow = ["table_embedded::**", "agg_table::**", "table_player_policies::**", "examples_proto::**"]
 deny = ["angzarr_client::**", "tonic::**"]
 
 [[rule]]
 name = "the-policies-are-framework-free"
-why = "the table-player policies are plain functions over the generated types, so any harness adapter can delegate to them without the logic linking it"
+why = "the table-player policies are plain functions over the generated domain types, so any harness adapter can delegate to them without the logic linking it"
 from = ["table_player_policies::**"]
 allow = ["table_player_policies::**", "examples_proto::**"]
 deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]

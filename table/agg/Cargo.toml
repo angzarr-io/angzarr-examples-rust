@@ -4,13 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "The blackjack table aggregate's domain logic: the deterministic shoe and the table's decisions and state, as pure functions"
+description = "The blackjack table aggregate: the deterministic shoe and the table's decisions and state, implementing its generated interface over the generated domain layer"
 
 [dependencies]
 examples-proto.workspace = true
+# A wire conversion's error is reported as the table's bug by its code.
+angzarr-embedded-diagnostic.workspace = true
 uuid.workspace = true
 
 [features]
-# The spec's card notation (`test_support::cards("7♣ 3♥")`) for other crates'
+# The spec's card notation (`test_support::cards("7♣ 3♥ K♣")`) for other crates'
 # tests; agg-table's own tests have it without the feature.
 test-support = []

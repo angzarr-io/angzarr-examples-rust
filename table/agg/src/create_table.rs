@@ -1,59 +1,70 @@
 //! CreateTable: open the table and shuffle its first shoe (AHR-1, AHR-3,
 //! AHR-5, AHR-13).
 
-use examples_proto::v1::{CreateTable, ShoeShuffled, TableCreated, TableState};
+use examples_proto::domain::{
+    CreateTable, Failed, ShoeShuffled, TableCreated, TableRefused, TableRefusedReason,
+};
+use examples_proto::v1::{self, TableState};
 
-use crate::rejection::{Rejection, RejectionCode};
+use crate::failure::{domain, refused};
 use crate::shoe;
-use crate::state::{table_exists, TableEvent};
+use crate::state::table_exists;
 
 /// Seats a table may have (AHR-1).
 const SEATS: std::ops::RangeInclusive<i32> = 1..=7;
 /// Decks a shoe may hold (AHR-3).
 const DECKS: std::ops::RangeInclusive<i32> = 1..=8;
 
-/// Decide CreateTable against `state`: TableCreated then ShoeShuffled for
+/// Decide CreateTable against `state`: TableCreated, then ShoeShuffled for
 /// shoe 1, shuffled from the command's seed.
 ///
 /// # Errors
-/// [`TableAlreadyExists`](crate::RejectionCode::TableAlreadyExists) when the
-/// table exists; [`InvalidTableConfig`](crate::RejectionCode::InvalidTableConfig)
-/// when the configuration breaks the house rules: 1..=7 seats, 1..=8 decks,
-/// `0 < min_bet <= max_bet` with both even, `0 < min_buy_in <= max_buy_in`
-/// and `min_bet <= min_buy_in`.
-pub fn create_table(state: &TableState, cmd: &CreateTable) -> Result<Vec<TableEvent>, Rejection> {
+/// [`TableAlreadyExists`](TableRefusedReason::TableAlreadyExists), naming
+/// the table, when it exists;
+/// [`InvalidTableConfig`](TableRefusedReason::InvalidTableConfig), naming
+/// the rule, when the configuration breaks the house rules: 1..=7 seats,
+/// 1..=8 decks, `0 < min_bet <= max_bet` with both even,
+/// `0 < min_buy_in <= max_buy_in` and `min_bet <= min_buy_in`.
+pub fn create_table(
+    state: &TableState,
+    cmd: &CreateTable,
+) -> Result<(TableCreated, ShoeShuffled), Failed<TableRefused>> {
     if table_exists(state) {
-        return Err(
-            Rejection::new(RejectionCode::TableAlreadyExists).arg("name", state.name.as_str())
-        );
+        return Err(TableRefused {
+            name: Some(state.name.clone()),
+            ..refused(TableRefusedReason::TableAlreadyExists)
+        }
+        .into());
     }
     let decks = valid_decks(cmd)?;
-    Ok(vec![
-        TableEvent::TableCreated(TableCreated {
-            name: cmd.name.clone(),
-            min_bet: cmd.min_bet,
-            max_bet: cmd.max_bet,
-            min_buy_in: cmd.min_buy_in,
-            max_buy_in: cmd.max_buy_in,
-            seats: cmd.seats,
-            decks: cmd.decks,
-        }),
-        TableEvent::ShoeShuffled(ShoeShuffled {
-            shoe_number: 1,
-            seed: cmd.shoe_seed,
-            decks: cmd.decks,
-            cards: shoe::shuffle(cmd.shoe_seed, decks),
-        }),
-    ])
+    let created = TableCreated {
+        name: cmd.name.clone(),
+        min_bet: cmd.min_bet,
+        max_bet: cmd.max_bet,
+        min_buy_in: cmd.min_buy_in,
+        max_buy_in: cmd.max_buy_in,
+        seats: cmd.seats,
+        decks: cmd.decks,
+    };
+    let shuffled = domain(v1::ShoeShuffled {
+        shoe_number: 1,
+        seed: cmd.shoe_seed,
+        decks: cmd.decks,
+        cards: shoe::shuffle(cmd.shoe_seed, decks),
+    })?;
+    Ok((created, shuffled))
 }
 
 /// Check the configuration against the house rules and return the deck
 /// count as the shoe takes it.
-fn valid_decks(cmd: &CreateTable) -> Result<u32, Rejection> {
+fn valid_decks(cmd: &CreateTable) -> Result<u32, TableRefused> {
     // The rule broken, by a key: `seats` 1 to 7, `decks` 1 to 8,
     // `bet_limits` 0 < min_bet <= max_bet, `even_bets` both even,
     // `buy_in_limits` min_bet <= min_buy_in <= max_buy_in.
-    let invalid = |rule: &str| Rejection::new(RejectionCode::InvalidTableConfig).arg("rule", rule);
+    let invalid = |rule: &str| TableRefused {
+        rule: Some(rule.to_string()),
+        ..refused(TableRefusedReason::InvalidTableConfig)
+    };
     if !SEATS.contains(&cmd.seats) {
         return Err(invalid("seats"));
     }

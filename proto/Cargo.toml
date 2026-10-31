@@ -4,11 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "Generated io.angzarr.examples.v1 types for the blackjack example (cards, table, player)"
+description = "The blackjack example's generated io.angzarr.examples.v1 layer: its wire types and the markup domain layer (cards, table, player, policies)"
 
 [dependencies]
-bytes = { workspace = true }
-prost = { workspace = true }
+# The domain layer's DomainMessage impls, typed refusals' diagnostics and
+# the handlers' context and failure types are angzarr-embedded's.
+angzarr-embedded.workspace = true
+angzarr-embedded-diagnostic.workspace = true
+prost.workspace = true
 
 [build-dependencies]
-prost-build = { workspace = true }
+angzarr-build.workspace = true

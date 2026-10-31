@@ -40,6 +40,11 @@ fn context(domain: &str, stream_root: u8) -> PolicyContext {
 
 // ================================================================ policy-table-player
 
+/// The TurnStarted the policy is handed: the wire's, as the domain's.
+fn domain(turn: v1::TurnStarted) -> TurnStarted {
+    TurnStarted::try_from(turn).expect("a TurnStarted")
+}
+
 /// Seat 0's turn at table "Main" in EU-1601: 2♣ 4♣ (a hard 6) against 9♦,
 /// may double, stack 480, wager 20.
 fn alices_turn() -> v1::TurnStarted {
@@ -64,7 +69,7 @@ fn alices_turn() -> v1::TurnStarted {
 #[test]
 fn eu_1601_the_table_to_player_translator_asks_the_seats_player_to_decide() {
     let Ok(commands) =
-        TablePlayerPolicy.turn_started(&TurnStarted(alices_turn()), &context("table", TABLE));
+        TablePlayerPolicy.turn_started(&domain(alices_turn()), &context("table", TABLE));
 
     let decide = v1::DecideMove {
         table_root: vec![TABLE; 16].into(),
@@ -102,7 +107,7 @@ fn eu_1601_the_request_follows_the_turn_field_for_field() {
         wager: 30,
     };
 
-    let Ok(commands) = TablePlayerPolicy.turn_started(&TurnStarted(turn), &context("table", 0x7b));
+    let Ok(commands) = TablePlayerPolicy.turn_started(&domain(turn), &context("table", 0x7b));
 
     let decide = v1::DecideMove {
         table_root: vec![0x7b; 16].into(),
