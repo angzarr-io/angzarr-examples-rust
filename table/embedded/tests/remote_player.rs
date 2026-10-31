@@ -186,61 +186,7 @@ async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
     let app = run_with(config(), Languages::builtin(), register)
         .await
         .expect("the application starts with the player child");
-
-    to_table(
-        &app,
-        1,
-        v1::CreateTable {
-            name: "Main".into(),
-            min_bet: 10,
-            max_bet: 100,
-            min_buy_in: 100,
-            max_buy_in: 1000,
-            seats: 3,
-            decks: 1,
-            shoe_seed: 21,
-        },
-    )
-    .await;
-    for (n, player, seat) in [(2, ALICE, 0), (4, BOB, 1)] {
-        to_table(
-            &app,
-            n,
-            v1::RequestSeat {
-                player_root: vec![player; 16].into(),
-                seat,
-                amount: 500,
-                request_id: vec![n; 16].into(),
-            },
-        )
-        .await;
-        to_table(
-            &app,
-            n + 1,
-            v1::ConfirmSeat {
-                buy_in_id: vec![n; 16].into(),
-            },
-        )
-        .await;
-    }
-    to_table(
-        &app,
-        6,
-        v1::PlaceBet {
-            seat: 0,
-            amount: 20,
-        },
-    )
-    .await;
-    to_table(
-        &app,
-        7,
-        v1::PlaceBet {
-            seat: 1,
-            amount: 20,
-        },
-    )
-    .await;
+    seat_and_bet(&app).await;
     // The deal sets off the whole loop: TurnStarted, DecideMove to the
     // player, MoveDecided, back to the table, until the round settles.
     to_table(&app, 8, v1::DealRound {}).await;
@@ -288,8 +234,76 @@ async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
         .collect();
     assert_eq!(turns, [0, 1, 1, 1]);
 
-    let [settled] = &decoded::<v1::RoundSettled>(&table)[..] else {
-        panic!("one RoundSettled: {:?}", names(&table));
+    assert_settled(&table);
+
+    let exits = app.shutdown().await;
+    assert_eq!(exits.len(), 1, "the player child stopped: {exits:?}");
+}
+
+/// A table of seed 21 created, Alice seated at 0 and Bob at 1, each buying
+/// in for 500 and betting 20.
+async fn seat_and_bet(app: &App) {
+    to_table(
+        app,
+        1,
+        v1::CreateTable {
+            name: "Main".into(),
+            min_bet: 10,
+            max_bet: 100,
+            min_buy_in: 100,
+            max_buy_in: 1000,
+            seats: 3,
+            decks: 1,
+            shoe_seed: 21,
+        },
+    )
+    .await;
+    for (n, player, seat) in [(2, ALICE, 0), (4, BOB, 1)] {
+        to_table(
+            app,
+            n,
+            v1::RequestSeat {
+                player_root: vec![player; 16].into(),
+                seat,
+                amount: 500,
+                request_id: vec![n; 16].into(),
+            },
+        )
+        .await;
+        to_table(
+            app,
+            n + 1,
+            v1::ConfirmSeat {
+                buy_in_id: vec![n; 16].into(),
+            },
+        )
+        .await;
+    }
+    to_table(
+        app,
+        6,
+        v1::PlaceBet {
+            seat: 0,
+            amount: 20,
+        },
+    )
+    .await;
+    to_table(
+        app,
+        7,
+        v1::PlaceBet {
+            seat: 1,
+            amount: 20,
+        },
+    )
+    .await;
+}
+
+/// The round settled once: both seats won, Alice's double paying 80 on 40
+/// (stack 540), Bob 40 on 20 (stack 520), the house down 60.
+fn assert_settled(table: &[Any]) {
+    let [settled] = &decoded::<v1::RoundSettled>(table)[..] else {
+        panic!("one RoundSettled: {:?}", names(table));
     };
     let outcomes: Vec<(i32, i64, Outcome, i64, i64)> = settled
         .outcomes
@@ -312,7 +326,4 @@ async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
         ]
     );
     assert_eq!(settled.house_delta, -60);
-
-    let exits = app.shutdown().await;
-    assert_eq!(exits.len(), 1, "the player child stopped: {exits:?}");
 }
