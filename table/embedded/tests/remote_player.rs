@@ -6,9 +6,9 @@
 //!
 //! Ignored by default: the first run needs `uv` and the network (uv fetches
 //! the player's dependencies, angzarr-client-python among them). Run it
-//! with `cargo test -p table-embedded --test remote_player -- --ignored`.
-//! The player's project is `$ANGZARR_PLAYER_DIR`, by default
-//! `~/workspace/worktrees/examples-python--player-bot/player`.
+//! with `ANGZARR_PLAYER_DIR=<examples-python>/player cargo test -p
+//! table-embedded --test remote_player -- --ignored`: the player's project
+//! is `$ANGZARR_PLAYER_DIR`, which must be set (there is no default).
 //!
 //! The hand is seed 21's (one deck): Alice 4♣ 6♠ and Bob A♣ 5♠ against
 //! the dealer's 9♦, Q♦ in the hole. The bot plays a simplified basic
@@ -41,14 +41,43 @@ fn cover(domain: &str, b: u8) -> Cover {
     }
 }
 
-/// The player bot's project directory.
+/// The player bot's project directory, `$ANGZARR_PLAYER_DIR`
+/// ([`player_dir_from`]); panics, saying what to set, when it is unset.
 fn player_dir() -> PathBuf {
-    match std::env::var_os("ANGZARR_PLAYER_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None => {
-            let home = std::env::var_os("HOME").expect("HOME is set");
-            PathBuf::from(home).join("workspace/worktrees/examples-python--player-bot/player")
-        }
+    player_dir_from(std::env::var_os("ANGZARR_PLAYER_DIR"))
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// The player's project directory, from `ANGZARR_PLAYER_DIR`'s value
+/// (`var`): the directory it names, or, unset or empty, why not.
+fn player_dir_from(var: Option<std::ffi::OsString>) -> Result<PathBuf, String> {
+    match var {
+        Some(dir) if !dir.is_empty() => Ok(PathBuf::from(dir)),
+        _ => Err(
+            "ANGZARR_PLAYER_DIR is not set: set it to the player's project, \
+                  the `player` directory of an examples-python checkout \
+                  (ANGZARR_PLAYER_DIR=<examples-python>/player)"
+                .to_string(),
+        ),
+    }
+}
+
+/// Where the player's project is, from `ANGZARR_PLAYER_DIR`'s value: set
+/// and not empty, that directory; unset or empty, an error saying what to
+/// set. There is no default: a guessed checkout goes stale, and a test run
+/// against a stale player is a test of the wrong code.
+#[test]
+fn the_player_dir_is_angzarr_player_dir_and_unset_says_what_to_set() {
+    assert_eq!(
+        player_dir_from(Some("/checkouts/examples-python/player".into())),
+        Ok(PathBuf::from("/checkouts/examples-python/player"))
+    );
+    for unset in [None, Some("".into())] {
+        let error = player_dir_from(unset).unwrap_err();
+        assert!(
+            error.contains("ANGZARR_PLAYER_DIR") && error.contains("examples-python"),
+            "{error}"
+        );
     }
 }
 
@@ -92,7 +121,7 @@ fn register(registry: &mut Registry) {
 }
 
 /// A driver's command `n` to the table.
-fn to_table<M: Message + Name>(app: &App, n: u8, command: M) {
+async fn to_table<M: Message + Name>(app: &App, n: u8, command: M) {
     let book = CommandBook {
         cover: Some(cover("table", TABLE)),
         page: Some(CommandPage {
@@ -111,14 +140,15 @@ fn to_table<M: Message + Name>(app: &App, n: u8, command: M) {
         },
         command_id: Uuid::from_bytes([0xe0 | n; 16]),
     };
-    if let Err(failure) = app.handle(book, &sampled) {
+    if let Err(failure) = app.handle(book, &sampled).await {
         panic!("command {n} ({}) failed: {failure:?}", M::full_name());
     }
 }
 
 /// The payloads of the stream `cover` names.
-fn payloads(app: &App, cover: &Cover) -> Vec<Any> {
+async fn payloads(app: &App, cover: &Cover) -> Vec<Any> {
     app.events(cover)
+        .await
         .expect("the stream reads")
         .into_iter()
         .filter_map(|page| page.payload)
@@ -147,17 +177,19 @@ fn names(payloads: &[Any]) -> Vec<&str> {
 }
 
 /// (seat, action) of each MoveDecided in a player's stream.
-fn moves(app: &App, player: u8) -> Vec<(i32, MoveAction)> {
-    decoded::<v1::MoveDecided>(&payloads(app, &cover("player", player)))
+async fn moves(app: &App, player: u8) -> Vec<(i32, MoveAction)> {
+    decoded::<v1::MoveDecided>(&payloads(app, &cover("player", player)).await)
         .into_iter()
         .map(|m| (m.seat, MoveAction::try_from(m.action).expect("an action")))
         .collect()
 }
 
-#[test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs uv, and the network the first time"]
-fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
-    let app = run(config(), register).expect("the application starts with the player child");
+async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
+    let app = run(config(), register)
+        .await
+        .expect("the application starts with the player child");
 
     to_table(
         &app,
@@ -172,7 +204,8 @@ fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
             decks: 1,
             shoe_seed: 21,
         },
-    );
+    )
+    .await;
     for (n, player, seat) in [(2, ALICE, 0), (4, BOB, 1)] {
         to_table(
             &app,
@@ -183,14 +216,16 @@ fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
                 amount: 500,
                 request_id: vec![n; 16].into(),
             },
-        );
+        )
+        .await;
         to_table(
             &app,
             n + 1,
             v1::ConfirmSeat {
                 buy_in_id: vec![n; 16].into(),
             },
-        );
+        )
+        .await;
     }
     to_table(
         &app,
@@ -199,7 +234,8 @@ fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
             seat: 0,
             amount: 20,
         },
-    );
+    )
+    .await;
     to_table(
         &app,
         7,
@@ -207,16 +243,17 @@ fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
             seat: 1,
             amount: 20,
         },
-    );
+    )
+    .await;
     // The deal sets off the whole loop: TurnStarted, DecideMove to the
     // player, MoveDecided, back to the table, until the round settles.
-    to_table(&app, 8, v1::DealRound {});
+    to_table(&app, 8, v1::DealRound {}).await;
 
     // Each seat's own player was asked, and decided by basic strategy
     // (EU-1606, EU-1608, EU-1609).
-    assert_eq!(moves(&app, ALICE), [(0, MoveAction::DoubleDown)]);
+    assert_eq!(moves(&app, ALICE).await, [(0, MoveAction::DoubleDown)]);
     assert_eq!(
-        moves(&app, BOB),
+        moves(&app, BOB).await,
         [
             (1, MoveAction::Hit),
             (1, MoveAction::Hit),
@@ -226,7 +263,7 @@ fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
 
     // The table's history, from the deal: each move came back as the
     // table's command, and the round settled.
-    let table = payloads(&app, &cover("table", TABLE));
+    let table = payloads(&app, &cover("table", TABLE)).await;
     let from_deal: Vec<&str> = names(&table)
         .into_iter()
         .skip_while(|name| *name != "RoundDealt")
@@ -280,6 +317,6 @@ fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
     );
     assert_eq!(settled.house_delta, -60);
 
-    let exits = app.shutdown();
+    let exits = app.shutdown().await;
     assert_eq!(exits.len(), 1, "the player child stopped: {exits:?}");
 }

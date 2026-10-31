@@ -14,13 +14,14 @@ examples-proto = { path = "proto" }
 agg-table = { path = "table/agg" }
 table-player-policies = { path = "table/policies" }
 # angzarr-embedded (angzarr's in-app runtime) and its markup, pinned by hash
-# on its main. Its angzarr-proto and angzarr-ports pins are the
-# angzarr-project rev the angzarr-project submodule is checked out at, so one
-# spec is in the graph.
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "22d3266030cc99a0182d384fc6dd2eb715315fe3" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "22d3266030cc99a0182d384fc6dd2eb715315fe3" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "22d3266030cc99a0182d384fc6dd2eb715315fe3" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "22d3266030cc99a0182d384fc6dd2eb715315fe3" }
+# on its main. Its angzarr-proto and angzarr-ports pins are angzarr core's
+# crates, at a core commit whose own angzarr-project submodule is the rev this
+# repository's angzarr-project submodule is checked out at, so one spec is in
+# the graph.
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e2810b47fcfce7ad97f063f33252d1d44a53d263" }
 bytes = "1"
 prost = "0.14"
 prost-build = "0.14"

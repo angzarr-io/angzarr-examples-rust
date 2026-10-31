@@ -21,3 +21,6 @@ prost.workspace = true
 agg-table = { workspace = true, features = ["test-support"] }
 # The remote Python player, hosted as a child process (tests/remote_player.rs).
 angzarr-embedded-host.workspace = true
+# The host's App is async, on the caller's runtime, which is tokio's
+# (angzarr-embedded-host's own, already in the graph through it).
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

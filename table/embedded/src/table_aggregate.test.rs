@@ -40,6 +40,16 @@ use super::TableAggregate;
 use crate::TableRefused;
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
+/// Polls `f` to completion with a waker that does nothing: angzarr-embedded's
+/// pipeline is async, and with no store its futures are ready at once.
+fn ready<F: std::future::Future>(f: F) -> F::Output {
+    use std::task::{Context, Poll, Waker};
+    match std::pin::pin!(f).poll(&mut Context::from_waker(Waker::noop())) {
+        Poll::Ready(out) => out,
+        Poll::Pending => panic!("the in-memory pipeline is ready at once"),
+    }
+}
+
 // ---------------------------------------------------------------- the events
 
 macro_rules! table_events {
@@ -182,10 +192,13 @@ impl Harness {
             },
             command_id: id(n),
         };
-        match self
-            .stream
-            .execute(book, &self.registry, &sampled, &self.dead_letters, &mut [])?
-        {
+        match ready(self.stream.execute(
+            book,
+            &self.registry,
+            &sampled,
+            &self.dead_letters,
+            &mut [],
+        ))? {
             Executed::Applied(events) => Ok(events
                 .iter()
                 .map(|e| Ev::from_any(&e.event().to_any()))
@@ -1560,9 +1573,10 @@ fn eu_1500_the_last_action_plays_the_dealer_and_settles_in_the_same_step() {
 /// A shoe the dealer runs out of is a bug, never a business answer: a
 /// round never runs the shoe out (AHR-4: DealRound replaces a shoe that
 /// could). The step that settles fails the whole decision as a keyed bug,
-/// UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out` as its cause
-/// and its round as `cause.round`, never English, dead-lettered under the
-/// kernel's own code, and nothing is recorded.
+/// ROUTER_REASON_UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out`
+/// as its cause and its round as `cause.round`, never English,
+/// dead-lettered under that key as the spec spells it (decisions 14.44,
+/// 14.48), and nothing is recorded.
 #[test]
 fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
     // Exactly the four cards dealt: Alice's 10 9, the dealer's 5 up and 6
@@ -1582,7 +1596,7 @@ fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
     assert!(
         matches!(
             &failure,
-            Failure::Kernel(KernelError::Router(e)) if e.code == "UNHANDLED_HANDLER_ERROR"
+            Failure::Kernel(KernelError::Router(e)) if e.code == "ROUTER_REASON_UNHANDLED_HANDLER_ERROR"
         ),
         "a bug, not a refusal: {failure:?}"
     );
@@ -1599,15 +1613,15 @@ fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
     assert_eq!(lines.len(), 1, "dead-lettered once: {lines:?}");
     assert!(
         lines[0].contains(
-            "angzarr-embedded-next-unhandled-handler-error cause=examples-table-shoe-ran-out \
+            "ROUTER_REASON_UNHANDLED_HANDLER_ERROR cause=examples-table-shoe-ran-out \
              cause.round=1"
         ),
         "keyed, its round the arg: {}",
         lines[0]
     );
     assert!(
-        !lines[0].contains("UNHANDLED_HANDLER_ERROR") && !lines[0].contains("ran out in"),
-        "no retired code and no English: {}",
+        !lines[0].contains(" UNHANDLED_HANDLER_ERROR") && !lines[0].contains("ran out in"),
+        "no unprefixed key and no English: {}",
         lines[0]
     );
     assert_eq!(table.state(), &before, "nothing recorded");
