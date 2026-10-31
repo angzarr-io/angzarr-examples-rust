@@ -4,7 +4,7 @@
 //! is Python, a child process angzarr-embedded-host registers as the
 //! "player" domain.
 
-use angzarr_embedded::next::markup::{CommandTarget, Decides, EventSource};
+use angzarr_embedded::markup::{CommandTarget, Decides, EventSource};
 use examples_proto::{domain, v1};
 use prost::Name;
 

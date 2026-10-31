@@ -18,9 +18,9 @@
 
 use std::path::PathBuf;
 
-use angzarr_embedded::next::v1::{command_page, Command, CommandBook, CommandPage, Cover, Uuid};
-use angzarr_embedded::next::{pack, type_name, Any, Sampled, Timestamp};
-use angzarr_embedded_host::{run, App};
+use angzarr_embedded::v1::{command_page, Command, CommandBook, CommandPage, Cover, Uuid};
+use angzarr_embedded::{pack, type_name, Any, Sampled, Timestamp};
+use angzarr_embedded_host::{run_with, App, HostConfig, Languages};
 use examples_proto::v1::{self, seat_outcome::Outcome, MoveAction};
 use prost::{Message, Name};
 use table_embedded::register;
@@ -81,48 +81,39 @@ fn the_player_dir_is_angzarr_player_dir_and_unset_says_what_to_set() {
     }
 }
 
-/// The application's angzarr.toml, in angzarr-embedded-host's strict shape
-/// (what `angzarr scaffold app --python player --in-memory` writes for the
-/// spec's table, player and policies protos): every component listed with
-/// its kind, the table and both policies (by their spec names, decision
-/// 14.50) in process, the player a Python child; an in-memory store.
-/// Written beside the test's other scratch files, in the target directory.
-fn config() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
-    let path = dir.join(format!("remote-player-{}.toml", std::process::id()));
+/// The application's host config, `angzarr.yaml` at `schema_version: 1`,
+/// in angzarr-embedded-host's strict shape (what `angzarr scaffold app
+/// --python player --in-memory` writes for the spec's table, player and
+/// policies protos): every component listed with its kind, the table and
+/// both policies (by their spec names, decision 14.50) in process, the
+/// player a Python child; an in-memory store. Parsed from the YAML here,
+/// so no file is written; [`run_with`] runs it.
+fn config() -> HostConfig {
     let text = format!(
-        r#"[[component]]
-name = "table"
-kind = "domain"
-language = "rust"
-
-[[component]]
-name = "player"
-kind = "domain"
-language = "python"
-entry = ["angzarr-player"]
-dir = {dir:?}
-
-[[component]]
-name = "policy-table-player"
-kind = "policy"
-language = "rust"
-
-[[component]]
-name = "policy-player-table"
-kind = "policy"
-language = "rust"
-
-[supervision]
-handshake_timeout_ms = 300000
-
-[store]
-in_memory = true
+        r#"schema_version: 1
+component:
+  - name: table
+    kind: domain
+    language: rust
+  - name: player
+    kind: domain
+    language: python
+    entry: [angzarr-player]
+    dir: {dir:?}
+  - name: policy-table-player
+    kind: policy
+    language: rust
+  - name: policy-player-table
+    kind: policy
+    language: rust
+supervision:
+  handshake_timeout_ms: 300000
+store:
+  in_memory: true
 "#,
         dir = player_dir().display().to_string(),
     );
-    std::fs::write(&path, text).expect("the config is written");
-    path
+    HostConfig::from_yaml(&text, "remote_player.rs").expect("the host config loads")
 }
 
 /// A driver's command `n` to the table.
@@ -192,7 +183,7 @@ async fn moves(app: &App, player: u8) -> Vec<(i32, MoveAction)> {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs uv, and the network the first time"]
 async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
-    let app = run(config(), register)
+    let app = run_with(config(), Languages::builtin(), register)
         .await
         .expect("the application starts with the player child");
 

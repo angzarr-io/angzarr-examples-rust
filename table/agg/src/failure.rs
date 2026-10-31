@@ -2,7 +2,7 @@
 //! (its reason code, and the values it names as its other fields), or a
 //! bug.
 
-use angzarr_embedded_diagnostic::Diagnostic;
+use angzarr_diagnostic::Diagnostic;
 use examples_proto::domain::{Failed, TableRefused, TableRefusedReason};
 
 /// A refusal for `reason`, naming no value yet: set the fields it names

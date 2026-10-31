@@ -4,9 +4,9 @@
 //! pinned here.
 
 use agg_table::test_support::{card, cards};
-use angzarr_embedded::next::markup::PolicyContext;
-use angzarr_embedded::next::v1::{Cover, EventRef, Uuid};
-use angzarr_embedded::next::{pack, Timestamp};
+use angzarr_embedded::markup::PolicyContext;
+use angzarr_embedded::v1::{Cover, EventRef, Uuid};
+use angzarr_embedded::{pack, Timestamp};
 use examples_proto::v1::{self, SeatHand};
 
 use super::TablePlayerPolicy;

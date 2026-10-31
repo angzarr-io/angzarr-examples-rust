@@ -19,6 +19,13 @@
 //! [`register`] registers the table and both policies, beside the remote
 //! player (`angzarr_embedded_host::run(config, register)`).
 
+// The generated code (angzarr-build a94c0f4) names the diagnostic crate by its
+// old name, `::angzarr_embedded_diagnostic`, which embedded no longer has; it
+// is core's angzarr-diagnostic now. This alias goes when angzarr-build moves
+// to the angzarr-cli tip whose generator names `::angzarr_embedded`'s
+// re-export.
+extern crate angzarr_diagnostic as angzarr_embedded_diagnostic;
+
 pub use agg_table::table_aggregate;
 pub use examples_proto::domain;
 
@@ -51,7 +58,7 @@ pub use table_player_policy::TablePlayerPolicy;
 
 /// Registers the table (its generated registration) and both policies. The
 /// player domain is the child's, registered by the host.
-pub fn register(registry: &mut angzarr_embedded::next::Registry) {
+pub fn register(registry: &mut angzarr_embedded::Registry) {
     generated::register(registry);
     registry.policy(TablePlayerPolicy).policy(PlayerTablePolicy);
 }

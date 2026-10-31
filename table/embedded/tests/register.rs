@@ -1,8 +1,8 @@
 //! What `register` registers and how the remote player is named, without
 //! the Python bot (`tests/remote_player.rs`, ignored, plays a hand with it).
 
-use angzarr_embedded::next::markup::{CommandTarget, EventSource};
-use angzarr_embedded::next::Registry;
+use angzarr_embedded::markup::{CommandTarget, EventSource};
+use angzarr_embedded::Registry;
 use table_embedded::{register, Player};
 
 /// The table, its generated registration, and both policies, in order;

@@ -26,7 +26,7 @@ deny = ["angzarr_client::**"]
 name = "the-table-names-the-runtime-only-through-its-generated-layer"
 why = "agg-table is the table's logic: its generated interface implemented over the generated domain layer, whose context and failure types are the only runtime it names; it marks nothing up and links no framework directly, so the generated adapter is the one place the markup is"
 from = ["agg_table::**"]
-allow = ["agg_table::**", "examples_proto::**", "angzarr_embedded_diagnostic::**"]
+allow = ["agg_table::**", "examples_proto::**", "angzarr_diagnostic::**"]
 deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
 
 [[rule]]

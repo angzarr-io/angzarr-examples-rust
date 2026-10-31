@@ -9,7 +9,7 @@ description = "The blackjack table aggregate: the deterministic shoe and the tab
 [dependencies]
 examples-proto.workspace = true
 # A wire conversion's error is reported as the table's bug by its code.
-angzarr-embedded-diagnostic.workspace = true
+angzarr-diagnostic.workspace = true
 uuid.workspace = true
 
 [features]

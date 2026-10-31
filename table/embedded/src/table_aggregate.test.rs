@@ -22,22 +22,22 @@
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards};
 use agg_table::Table;
-use angzarr_embedded::next::markup::{Failed, MARKUP_RULES_VERSION};
-use angzarr_embedded::next::v1::event_meta::Causation;
-use angzarr_embedded::next::v1::{
+use angzarr_embedded::markup::Failed;
+use angzarr_embedded::v1::event_meta::Causation;
+use angzarr_embedded::v1::{
     command_page, Command, CommandBook, CommandPage, ConflictResolution, Cover, EventMeta,
     EventPage, Handling, Uuid,
 };
-use angzarr_embedded::next::{
-    pack, type_name, Any, Executed, Failure, KernelError, MemoryDeadLetters, Payload, Registry,
-    Rejected, Sampled, Stream, Timestamp,
+use angzarr_embedded::{
+    pack, type_name, Any, Domain, Executed, Failure, KernelError, MemoryDeadLetters, Payload,
+    Registry, Rejected, Sampled, Stream, Timestamp,
 };
 use examples_proto::v1::{self, seat_outcome::Outcome, table_state::Phase, Card, SeatHand};
 use prost::{Message, Name};
 
 use crate::domain::{TableAggregateEvent, TableRefused, TableRefusedReason};
 use crate::TableAggregate;
-use angzarr_embedded_diagnostic::{Arg, Diagnostic, Report};
+use angzarr_diagnostic::{Arg, Diagnostic, Report};
 
 /// Polls `f` to completion with a waker that does nothing: angzarr-embedded's
 /// pipeline is async, and with no store its futures are ready at once.
@@ -144,7 +144,7 @@ fn given(events: Vec<Ev>) -> Harness {
                     seconds: sequence as i64,
                     nanos: 0,
                 }),
-                rules_version: MARKUP_RULES_VERSION.to_string(),
+                rules_version: <TableAggregate as Domain>::RULES_VERSION.to_string(),
                 ..EventMeta::default()
             }),
             sequence: sequence as u64,
@@ -2492,11 +2492,11 @@ fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
     };
     let report = rejected.report();
     let reason = not_confirmable(then.clone());
-    assert_eq!(report.code(), "angzarr-embedded-next-command-refused");
+    assert_eq!(report.code(), "angzarr-embedded-command-refused");
     assert_eq!(
         report.to_string(),
         format!(
-            "angzarr-embedded-next-command-refused refusal_type={}",
+            "angzarr-embedded-command-refused refusal_type={}",
             v1::SeatNotConfirmable::full_name()
         )
     );
@@ -2562,7 +2562,7 @@ fn seed_21_settles_alice_540_bob_520_house_minus_60() {
 fn every_rejection_code_keeps_its_diagnostic_code_and_reason() {
     // Every Reason table.proto declares, in its order: 1, 2, .. until the
     // first number it does not.
-    let shown: Vec<(&str, String)> = (1..)
+    let shown: Vec<(String, String)> = (1..)
         .map_while(|n| TableRefusedReason::try_from(n).ok())
         .map(|reason| {
             let refused = TableRefused {
@@ -2575,10 +2575,13 @@ fn every_rejection_code_keeps_its_diagnostic_code_and_reason() {
                 min_bet: None,
                 max_bet: None,
             };
-            (refused.code(), reason_of(&refused))
+            (refused.code().to_string(), reason_of(&refused))
         })
         .collect();
-    let shown: Vec<(&str, &str)> = shown.iter().map(|(c, r)| (*c, r.as_str())).collect();
+    let shown: Vec<(&str, &str)> = shown
+        .iter()
+        .map(|(c, r)| (c.as_str(), r.as_str()))
+        .collect();
     assert_eq!(
         shown,
         [

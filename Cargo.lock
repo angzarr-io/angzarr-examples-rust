@@ -6,7 +6,7 @@ version = 4
 name = "agg-table"
 version = "0.1.0"
 dependencies = [
- "angzarr-embedded-diagnostic",
+ "angzarr-diagnostic",
  "examples-proto",
  "uuid",
 ]
@@ -33,7 +33,7 @@ source = "git+https://github.com/angzarr-io/angzarr-cli?rev=a94c0f4ea97cd588e94f
 dependencies = [
  "angzarr-codegen",
  "angzarr-embedded-diagnostic",
- "angzarr-proto",
+ "angzarr-proto 0.1.0 (git+https://github.com/angzarr-io/angzarr?rev=6741a98ba2ed07124546ae3ed1a4531fbcd9a26c)",
  "prost-build",
 ]
 
@@ -53,13 +53,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "angzarr-diagnostic"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
+
+[[package]]
 name = "angzarr-embedded"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=760797e58eaf4f20ebe416dc24ec18e10c8f0991#760797e58eaf4f20ebe416dc24ec18e10c8f0991"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=77e62062765446d0a339f05bcb69a9593a30b94e#77e62062765446d0a339f05bcb69a9593a30b94e"
 dependencies = [
- "angzarr-embedded-diagnostic",
+ "angzarr-diagnostic",
  "angzarr-ports",
- "angzarr-proto",
+ "angzarr-proto 0.1.0 (git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe)",
  "angzarr-router",
  "prost",
  "prost-types",
@@ -73,20 +78,19 @@ source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=760797e58eaf4f2
 [[package]]
 name = "angzarr-embedded-host"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=760797e58eaf4f20ebe416dc24ec18e10c8f0991#760797e58eaf4f20ebe416dc24ec18e10c8f0991"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=77e62062765446d0a339f05bcb69a9593a30b94e#77e62062765446d0a339f05bcb69a9593a30b94e"
 dependencies = [
+ "angzarr-diagnostic",
  "angzarr-embedded",
- "angzarr-embedded-diagnostic",
- "angzarr-proto",
+ "angzarr-embedded-host-config",
+ "angzarr-proto 0.1.0 (git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe)",
  "angzarr-router",
  "angzarr-store-sqlite",
  "hyper-util",
  "libc",
  "prost",
  "prost-types",
- "serde",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tonic",
  "tonic-build",
  "tonic-health",
@@ -96,9 +100,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "angzarr-embedded-host-config"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=77e62062765446d0a339f05bcb69a9593a30b94e#77e62062765446d0a339f05bcb69a9593a30b94e"
+dependencies = [
+ "angzarr-yaml",
+ "serde",
+]
+
+[[package]]
 name = "angzarr-embedded-macros"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=760797e58eaf4f20ebe416dc24ec18e10c8f0991#760797e58eaf4f20ebe416dc24ec18e10c8f0991"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=77e62062765446d0a339f05bcb69a9593a30b94e#77e62062765446d0a339f05bcb69a9593a30b94e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -108,9 +121,10 @@ dependencies = [
 [[package]]
 name = "angzarr-ports"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=6741a98ba2ed07124546ae3ed1a4531fbcd9a26c#6741a98ba2ed07124546ae3ed1a4531fbcd9a26c"
+source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
 dependencies = [
- "angzarr-proto",
+ "angzarr-diagnostic",
+ "angzarr-proto 0.1.0 (git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe)",
  "prost",
  "prost-types",
 ]
@@ -128,11 +142,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "angzarr-proto"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
+dependencies = [
+ "bytes",
+ "prost",
+ "prost-build",
+ "prost-types",
+ "uuid",
+]
+
+[[package]]
 name = "angzarr-router"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-router?rev=3f8a6f201405a18dbb43a5f485ded9568475e41b#3f8a6f201405a18dbb43a5f485ded9568475e41b"
+source = "git+https://github.com/angzarr-io/angzarr-router?rev=6a736aed134fd64b7b0b83dc21641bbc2d6ff91f#6a736aed134fd64b7b0b83dc21641bbc2d6ff91f"
 dependencies = [
- "angzarr-proto",
+ "angzarr-ports",
+ "angzarr-proto 0.1.0 (git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe)",
  "heck 0.5.0",
  "prost",
  "prost-build",
@@ -143,7 +170,7 @@ dependencies = [
 [[package]]
 name = "angzarr-store-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=760797e58eaf4f20ebe416dc24ec18e10c8f0991#760797e58eaf4f20ebe416dc24ec18e10c8f0991"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=77e62062765446d0a339f05bcb69a9593a30b94e#77e62062765446d0a339f05bcb69a9593a30b94e"
 dependencies = [
  "angzarr-ports",
  "prost",
@@ -152,6 +179,15 @@ dependencies = [
  "sea-query-binder",
  "sqlx",
  "tokio",
+]
+
+[[package]]
+name = "angzarr-yaml"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
+dependencies = [
+ "angzarr-diagnostic",
+ "serde",
 ]
 
 [[package]]
@@ -441,8 +477,8 @@ name = "examples-proto"
 version = "0.1.0"
 dependencies = [
  "angzarr-build",
+ "angzarr-diagnostic",
  "angzarr-embedded",
- "angzarr-embedded-diagnostic",
  "prost",
 ]
 
@@ -1891,8 +1927,8 @@ version = "0.1.0"
 dependencies = [
  "agg-table",
  "angzarr-build",
+ "angzarr-diagnostic",
  "angzarr-embedded",
- "angzarr-embedded-diagnostic",
  "angzarr-embedded-host",
  "angzarr-embedded-macros",
  "examples-proto",

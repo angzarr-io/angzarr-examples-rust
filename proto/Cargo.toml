@@ -10,7 +10,7 @@ description = "The blackjack example's generated io.angzarr.examples.v1 layer: i
 # The domain layer's DomainMessage impls, typed refusals' diagnostics and
 # the handlers' context and failure types are angzarr-embedded's.
 angzarr-embedded.workspace = true
-angzarr-embedded-diagnostic.workspace = true
+angzarr-diagnostic.workspace = true
 prost.workspace = true
 
 [build-dependencies]

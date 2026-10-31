@@ -14,7 +14,7 @@ table-player-policies.workspace = true
 examples-proto.workspace = true
 angzarr-embedded.workspace = true
 angzarr-embedded-macros.workspace = true
-angzarr-embedded-diagnostic.workspace = true
+angzarr-diagnostic.workspace = true
 prost.workspace = true
 
 [build-dependencies]

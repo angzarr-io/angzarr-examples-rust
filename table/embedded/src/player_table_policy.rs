@@ -6,8 +6,8 @@
 
 use std::convert::Infallible;
 
-use angzarr_embedded::next::markup::{Commands, PolicyContext};
-use angzarr_embedded::next::v1::Uuid;
+use angzarr_embedded::markup::{Commands, PolicyContext};
+use angzarr_embedded::v1::Uuid;
 use angzarr_embedded_macros::{on_event, policy};
 use table_player_policies::{PlayerTable, Policies, TableMove};
 
