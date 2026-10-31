@@ -20,7 +20,7 @@
 //! EU-1502/1503, are pinned again here at the aggregate.
 
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
-use agg_table::test_support::{card, cards};
+use agg_table::test_support::{card, cards, create_main, seed_21};
 use agg_table::Table;
 use angzarr_embedded::markup::Failed;
 use angzarr_embedded::v1::event_meta::Causation;
@@ -32,7 +32,9 @@ use angzarr_embedded::{
     pack, type_name, Any, Domain, Executed, Failure, KernelError, MemoryDeadLetters, Payload,
     Registry, Rejected, Sampled, Stream, Timestamp,
 };
-use examples_proto::v1::{self, seat_outcome::Outcome, table_state::Phase, Card, SeatHand};
+use examples_proto::v1::{
+    self, seat_outcome::Outcome, table_state::Phase, Card, MoveAction, SeatHand,
+};
 use prost::{Message, Name};
 
 use crate::domain::{TableAggregateEvent, TableRefused, TableRefusedReason};
@@ -60,6 +62,13 @@ macro_rules! table_events {
         }
 
         impl Ev {
+            /// The event's short type name, e.g. `"RoundDealt"`.
+            fn name(&self) -> &'static str {
+                match self {
+                    $(Ev::$name(_) => stringify!($name),)*
+                }
+            }
+
             fn to_any(&self) -> Any {
                 match self {
                     $(Ev::$name(event) => pack(event),)*
@@ -305,19 +314,6 @@ fn main_created() -> v1::TableCreated {
         max_buy_in: 1000,
         seats: 3,
         decks: 1,
-    }
-}
-
-fn create_main(seed: u64) -> v1::CreateTable {
-    v1::CreateTable {
-        name: "Main".into(),
-        min_bet: 10,
-        max_bet: 100,
-        min_buy_in: 100,
-        max_buy_in: 1000,
-        seats: 3,
-        decks: 1,
-        shoe_seed: seed,
     }
 }
 
@@ -2506,49 +2502,43 @@ fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
 // ------------------------------------------------- characterization (red/table-generated)
 
 /// Characterization of the table's generated domain layer
-/// (red/table-generated): seed 21's hand played to settlement at the wire,
-/// with the moves the remote player's basic strategy makes
+/// (red/table-generated): seed 21's hand ([`seed_21`]) played to settlement
+/// at the wire, the moves the remote player's basic strategy makes
 /// (`tests/remote_player.rs`) sent by the test, so it runs without the
 /// Python child. Alice doubles her hard 10 and wins 540; Bob hits twice,
 /// stands on 20 and wins 520; the house is down 60.
 #[test]
 fn seed_21_settles_alice_540_bob_520_house_minus_60() {
     let mut table = given(vec![]);
-    table.when(create_main(21)).expect("created");
-    for (player, seat, buy_in) in [(ALICE, 0, B1), (BOB, 1, B2)] {
-        table
-            .when(request(player, seat, 500, buy_in))
-            .expect("held");
-        table.when(confirm(buy_in)).expect("seated");
+    table.when(seed_21::create_table()).expect("created");
+    for (request, confirm) in seed_21::seats() {
+        table.when(request).expect("held");
+        table.when(confirm).expect("seated");
     }
-    table.when(place(0, 20)).expect("bet");
-    table.when(place(1, 20)).expect("bet");
-    table.when(v1::DealRound {}).expect("dealt");
-    table.when(v1::DoubleDown { seat: 0 }).expect("doubled");
-    table.when(v1::Hit { seat: 1 }).expect("hit");
-    table.when(v1::Hit { seat: 1 }).expect("hit");
-    let last = table.when(v1::Stand { seat: 1 }).expect("stood");
+    for bet in seed_21::bets() {
+        table.when(bet).expect("bet");
+    }
+    let mut from_deal = table.when(v1::DealRound {}).expect("dealt");
+    for (_, seat, action) in seed_21::MOVES {
+        let then = match action {
+            MoveAction::Hit => table.when(v1::Hit { seat }),
+            MoveAction::Stand => table.when(v1::Stand { seat }),
+            MoveAction::DoubleDown => table.when(v1::DoubleDown { seat }),
+            MoveAction::Unspecified => panic!("seed 21 makes no unspecified move"),
+        };
+        from_deal.extend(then.expect("the move is taken"));
+    }
 
-    let settled = last
+    let names: Vec<&str> = from_deal.iter().map(Ev::name).collect();
+    assert_eq!(names, seed_21::FROM_DEAL);
+    let settled = from_deal
         .iter()
         .find_map(|e| match e {
-            Ev::RoundSettled(settled) => Some(settled.clone()),
+            Ev::RoundSettled(settled) => Some(settled),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("the stand settles the round: {last:?}"));
-    let outcomes: Vec<(i32, i64, Outcome, i64, i64)> = settled
-        .outcomes
-        .iter()
-        .map(|o| (o.seat, o.wager, o.outcome(), o.returned, o.stack_after))
-        .collect();
-    assert_eq!(
-        outcomes,
-        [
-            (0, 40, Outcome::Win, 80, 540),
-            (1, 20, Outcome::Win, 40, 520),
-        ]
-    );
-    assert_eq!(settled.house_delta, -60);
+        .expect("the last move settles the round");
+    seed_21::assert_settled(settled);
     assert_eq!(table.state().house_result, -60);
     assert_ledger_balances(table.state());
 }

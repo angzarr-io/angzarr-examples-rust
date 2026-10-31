@@ -10,24 +10,20 @@
 //! table-embedded --test remote_player -- --ignored`: the player's project
 //! is `$ANGZARR_PLAYER_DIR`, which must be set (there is no default).
 //!
-//! The hand is seed 21's (one deck): Alice 4♣ 6♠ and Bob A♣ 5♠ against
-//! the dealer's 9♦, Q♦ in the hole. The bot plays a simplified basic
-//! strategy: Alice doubles her hard 10 and draws A♥ (21); Bob hits his soft
-//! 16 (K♣, a hard 16), hits again against the 9 (4♦, 20) and stands. The
-//! dealer stands on 19; both win.
+//! The hand is seed 21's ([`seed_21`]): the bot's simplified basic strategy
+//! makes the moves the scenario names, and the round settles as it says.
 
 use std::path::PathBuf;
 
+use agg_table::test_support::seed_21::{self, ALICE, BOB};
 use angzarr_embedded::v1::{command_page, Command, CommandBook, CommandPage, Cover, Uuid};
 use angzarr_embedded::{pack, type_name, Any, Sampled, Timestamp};
 use angzarr_embedded_host::{run_with, App, HostConfig, Languages};
-use examples_proto::v1::{self, seat_outcome::Outcome, MoveAction};
+use examples_proto::v1::{self, MoveAction};
 use prost::{Message, Name};
 use table_embedded::register;
 
 const TABLE: u8 = 0x7a;
-const ALICE: u8 = 0xa1;
-const BOB: u8 = 0xb0;
 
 fn root(b: u8) -> Uuid {
     Uuid::from_bytes([b; 16])
@@ -116,29 +112,59 @@ store:
     HostConfig::from_yaml(&text, "remote_player.rs").expect("the host config loads")
 }
 
-/// A driver's command `n` to the table.
-async fn to_table<M: Message + Name>(app: &App, n: u8, command: M) {
-    let book = CommandBook {
-        cover: Some(cover("table", TABLE)),
-        page: Some(CommandPage {
-            body: Some(command_page::Body::Command(Command {
-                payload: Some(pack(&command)),
-            })),
-            command_id: Some(Uuid::from_bytes([0xd0 | n; 16])),
-            ..CommandPage::default()
-        }),
-        handling: None,
-    };
-    let sampled = Sampled {
-        now: Timestamp {
-            seconds: i64::from(n),
-            nanos: 0,
-        },
-        command_id: Uuid::from_bytes([0xe0 | n; 16]),
-    };
-    if let Err(failure) = app.handle(book, &sampled).await {
-        panic!("command {n} ({}) failed: {failure:?}", M::full_name());
+/// A driver of the table in an application: it numbers its commands from
+/// 1, and each command's ids and time follow from its number.
+struct Driver<'a> {
+    app: &'a App,
+    sent: u8,
+}
+
+impl<'a> Driver<'a> {
+    fn new(app: &'a App) -> Self {
+        Driver { app, sent: 0 }
     }
+
+    /// The driver's next command to the table, which must be accepted.
+    async fn send<M: Message + Name>(&mut self, command: M) {
+        self.sent += 1;
+        let n = self.sent;
+        let book = CommandBook {
+            cover: Some(cover("table", TABLE)),
+            page: Some(CommandPage {
+                body: Some(command_page::Body::Command(Command {
+                    payload: Some(pack(&command)),
+                })),
+                command_id: Some(Uuid::from_bytes([0xd0 | n; 16])),
+                ..CommandPage::default()
+            }),
+            handling: None,
+        };
+        let sampled = Sampled {
+            now: Timestamp {
+                seconds: i64::from(n),
+                nanos: 0,
+            },
+            command_id: Uuid::from_bytes([0xe0 | n; 16]),
+        };
+        if let Err(failure) = self.app.handle(book, &sampled).await {
+            panic!("command {n} ({}) failed: {failure:?}", M::full_name());
+        }
+    }
+}
+
+/// Seed 21's table opened and its round dealt: created, both players
+/// seated, both bets placed, then the deal.
+async fn deal_seed_21(app: &App) {
+    let mut table = Driver::new(app);
+    table.send(seed_21::create_table()).await;
+    for (request, confirm) in seed_21::seats() {
+        table.send(request).await;
+        table.send(confirm).await;
+    }
+    for bet in seed_21::bets() {
+        table.send(bet).await;
+    }
+    table.send(v1::DealRound {}).await;
 }
 
 /// The payloads of the stream `cover` names.
@@ -186,22 +212,15 @@ async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
     let app = run_with(config(), Languages::builtin(), register)
         .await
         .expect("the application starts with the player child");
-    seat_and_bet(&app).await;
     // The deal sets off the whole loop: TurnStarted, DecideMove to the
     // player, MoveDecided, back to the table, until the round settles.
-    to_table(&app, 8, v1::DealRound {}).await;
+    deal_seed_21(&app).await;
 
     // Each seat's own player was asked, and decided by basic strategy
     // (EU-1606, EU-1608, EU-1609).
-    assert_eq!(moves(&app, ALICE).await, [(0, MoveAction::DoubleDown)]);
-    assert_eq!(
-        moves(&app, BOB).await,
-        [
-            (1, MoveAction::Hit),
-            (1, MoveAction::Hit),
-            (1, MoveAction::Stand)
-        ]
-    );
+    for player in [ALICE, BOB] {
+        assert_eq!(moves(&app, player).await, seed_21::moves_of(player));
+    }
 
     // The table's history, from the deal: each move came back as the
     // table's command, and the round settled.
@@ -210,120 +229,20 @@ async fn eu_1605_to_1609_the_remote_player_plays_seed_21_to_settlement() {
         .into_iter()
         .skip_while(|name| *name != "RoundDealt")
         .collect();
-    assert_eq!(
-        from_deal,
-        [
-            "RoundDealt",
-            "TurnStarted",
-            "HandDoubled",
-            "TurnStarted",
-            "CardDealt",
-            "TurnStarted",
-            "CardDealt",
-            "TurnStarted",
-            "HandStood",
-            "DealerPlayed",
-            "RoundSettled",
-        ]
-    );
-    // Seat 0 is asked first, then seat 1 (EU-1609); a hand finished by a
-    // double is not asked again (EU-1608).
+    assert_eq!(from_deal, seed_21::FROM_DEAL);
+    // Each move was asked for by a turn: seat 0 first, then seat 1
+    // (EU-1609); a hand finished by a double is not asked again (EU-1608).
     let turns: Vec<i32> = decoded::<v1::TurnStarted>(&table)
         .iter()
         .map(|t| t.seat)
         .collect();
-    assert_eq!(turns, [0, 1, 1, 1]);
+    assert_eq!(turns, seed_21::MOVES.map(|(_, seat, _)| seat));
 
-    assert_settled(&table);
+    let [settled] = &decoded::<v1::RoundSettled>(&table)[..] else {
+        panic!("one RoundSettled: {:?}", names(&table));
+    };
+    seed_21::assert_settled(settled);
 
     let exits = app.shutdown().await;
     assert_eq!(exits.len(), 1, "the player child stopped: {exits:?}");
-}
-
-/// A table of seed 21 created, Alice seated at 0 and Bob at 1, each buying
-/// in for 500 and betting 20.
-async fn seat_and_bet(app: &App) {
-    to_table(
-        app,
-        1,
-        v1::CreateTable {
-            name: "Main".into(),
-            min_bet: 10,
-            max_bet: 100,
-            min_buy_in: 100,
-            max_buy_in: 1000,
-            seats: 3,
-            decks: 1,
-            shoe_seed: 21,
-        },
-    )
-    .await;
-    for (n, player, seat) in [(2, ALICE, 0), (4, BOB, 1)] {
-        to_table(
-            app,
-            n,
-            v1::RequestSeat {
-                player_root: vec![player; 16].into(),
-                seat,
-                amount: 500,
-                request_id: vec![n; 16].into(),
-            },
-        )
-        .await;
-        to_table(
-            app,
-            n + 1,
-            v1::ConfirmSeat {
-                buy_in_id: vec![n; 16].into(),
-            },
-        )
-        .await;
-    }
-    to_table(
-        app,
-        6,
-        v1::PlaceBet {
-            seat: 0,
-            amount: 20,
-        },
-    )
-    .await;
-    to_table(
-        app,
-        7,
-        v1::PlaceBet {
-            seat: 1,
-            amount: 20,
-        },
-    )
-    .await;
-}
-
-/// The round settled once: both seats won, Alice's double paying 80 on 40
-/// (stack 540), Bob 40 on 20 (stack 520), the house down 60.
-fn assert_settled(table: &[Any]) {
-    let [settled] = &decoded::<v1::RoundSettled>(table)[..] else {
-        panic!("one RoundSettled: {:?}", names(table));
-    };
-    let outcomes: Vec<(i32, i64, Outcome, i64, i64)> = settled
-        .outcomes
-        .iter()
-        .map(|o| {
-            (
-                o.seat,
-                o.wager,
-                Outcome::try_from(o.outcome).expect("an outcome"),
-                o.returned,
-                o.stack_after,
-            )
-        })
-        .collect();
-    assert_eq!(
-        outcomes,
-        [
-            (0, 40, Outcome::Win, 80, 540),
-            (1, 20, Outcome::Win, 40, 520),
-        ]
-    );
-    assert_eq!(settled.house_delta, -60);
 }

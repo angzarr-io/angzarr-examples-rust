@@ -13,8 +13,9 @@ angzarr-diagnostic.workspace = true
 uuid.workspace = true
 
 [features]
-# The spec's card notation (`test_support::cards("7♣ 3♥ K♣")`) for other crates'
-# tests; agg-table's own tests have it without the feature.
+# The spec's card notation (`test_support::cards("7♣ 3♥ K♣")`) and seed 21's
+# hand (`test_support::seed_21`) for other crates' tests; agg-table's own
+# tests have them without the feature.
 test-support = []
 
 [lints]

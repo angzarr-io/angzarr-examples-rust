@@ -1,7 +1,26 @@
 //! The spec's card notation, for tests: rank then suit, `A`, `2`..`10`,
-//! `J`, `Q`, `K` and `♣ ♦ ♥ ♠` (`shoe.feature`).
+//! `J`, `Q`, `K` and `♣ ♦ ♥ ♠` (`shoe.feature`); table "Main"
+//! ([`create_main`]); and [`seed_21`], the hand every driver of the table
+//! plays to settlement.
 
-use examples_proto::v1::{Card, Suit};
+use examples_proto::v1::{self, Card, Suit};
+
+pub mod seed_21;
+
+/// Creates table "Main" (round.feature) with its first shoe from `seed`:
+/// 3 seats, one deck, bets 10 to 100, buy-ins 100 to 1000.
+pub fn create_main(seed: u64) -> v1::CreateTable {
+    v1::CreateTable {
+        name: "Main".into(),
+        min_bet: 10,
+        max_bet: 100,
+        min_buy_in: 100,
+        max_buy_in: 1000,
+        seats: 3,
+        decks: 1,
+        shoe_seed: seed,
+    }
+}
 
 /// One card written as the spec writes it, e.g. `"10♦"`.
 pub fn card(text: &str) -> Card {
