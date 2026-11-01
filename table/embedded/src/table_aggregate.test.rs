@@ -2480,7 +2480,8 @@ fn a_seat_not_confirmable_displays_as_its_code_and_args() {
     );
 }
 
-/// A typed refusal is keyed COMMAND_REFUSED with its object's type as
+/// A typed refusal is keyed ROUTER_REASON_COMMAND_REFUSED, the spec key
+/// (decision 14.60), with its object's type as
 /// `refusal_type` (decision 14.37); its reason travels in the object.
 #[test]
 fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
@@ -2492,11 +2493,11 @@ fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
     };
     let report = rejected.report();
     let reason = not_confirmable(then.clone());
-    assert_eq!(report.code(), "angzarr-embedded-command-refused");
+    assert_eq!(report.code(), "ROUTER_REASON_COMMAND_REFUSED");
     assert_eq!(
         report.to_string(),
         format!(
-            "angzarr-embedded-command-refused refusal_type={}",
+            "ROUTER_REASON_COMMAND_REFUSED refusal_type={}",
             v1::SeatNotConfirmable::full_name()
         )
     );
