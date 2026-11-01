@@ -1,9 +1,11 @@
-//! Given/when/then on the marked-up table, through angzarr-embedded's whole
-//! in-memory pipeline (`Stream::execute`, its test fixture: check,
-//! identify, decode, decide, continuations, commit), with no store.
+//! Given/when/then on the marked-up table, through angzarr-embedded's test
+//! support (`angzarr_embedded::testing::Harness`): its kernel over an
+//! in-memory store (check, identify, decode, decide, continuations,
+//! commit).
 //!
-//! - **Given** events are replayed as stored pages through the registry's
-//!   factory and the markup's appliers ([`given`]).
+//! - **Given** events are recorded as stored pages, then folded through the
+//!   registry's factory and the markup's appliers ([`given`]); events are
+//!   the domain layer's generated `TableAggregateEvent`.
 //! - **When** a command is sent as a client sends it, packed in a
 //!   `CommandBook` ([`Harness::when`]).
 //! - **Then** the events of that one decision, decoded back to the
@@ -28,13 +30,10 @@ use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards, create_main, seed_21};
 use agg_table::Table;
 use angzarr_embedded::markup::{DomainMessage, Failed, Rejection, TypedRefusal};
-use angzarr_embedded::v1::event_meta::Causation;
-use angzarr_embedded::v1::{
-    CommandBook, ConflictResolution, Cover, EventMeta, EventPage, Handling, Uuid,
-};
+use angzarr_embedded::testing::{Harness as Kernel, Samples};
+use angzarr_embedded::v1::{CommandBook, ConflictResolution, Cover, Handling, Uuid};
 use angzarr_embedded::{
-    pack, type_name, Any, CommandBookExt, Domain, Executed, Failure, KernelError,
-    MemoryDeadLetters, Payload, Registry, Rejected, Sampled, Stream, Timestamp,
+    pack, type_name, CommandBookExt, Domain, Failure, KernelError, Payload, Registry, Rejected,
 };
 use examples_proto::v1::{
     self, seat_outcome::Outcome, table_state::Phase, Card, MoveAction, SeatHand,
@@ -45,69 +44,21 @@ use crate::domain::{TableAggregateEvent, TableRefused, TableRefusedReason};
 use crate::TableAggregate;
 use angzarr_diagnostic::{Arg, Diagnostic, Report};
 
-/// Polls `f` to completion with a waker that does nothing: angzarr-embedded's
-/// pipeline is async, and with no store its futures are ready at once.
-fn ready<F: std::future::Future>(f: F) -> F::Output {
-    use std::task::{Context, Poll, Waker};
-    match std::pin::pin!(f).poll(&mut Context::from_waker(Waker::noop())) {
-        Poll::Ready(out) => out,
-        Poll::Pending => panic!("the in-memory pipeline is ready at once"),
-    }
-}
-
 // ---------------------------------------------------------------- the events
 
-macro_rules! table_events {
-    ($($name:ident),* $(,)?) => {
-        /// A table event as the generated type it travels as.
-        #[derive(Clone, Debug, PartialEq)]
-        enum Ev {
-            $($name(v1::$name),)*
-        }
+/// A table event: the domain layer's generated, nameable payload.
+type Ev = TableAggregateEvent;
 
-        impl Ev {
-            /// The event's short type name, e.g. `"RoundDealt"`.
-            fn name(&self) -> &'static str {
-                match self {
-                    $(Ev::$name(_) => stringify!($name),)*
-                }
-            }
-
-            fn to_any(&self) -> Any {
-                match self {
-                    $(Ev::$name(event) => pack(event),)*
-                }
-            }
-
-            fn from_any(any: &Any) -> Ev {
-                let name = type_name(&any.type_url);
-                $(
-                    if name == v1::$name::full_name() {
-                        return Ev::$name(v1::$name::decode(&any.value[..]).expect("decodes"));
-                    }
-                )*
-                panic!("not a table event: {}", any.type_url)
-            }
-        }
-    };
+/// `event` as the wire message it travels as: what a test compares with
+/// the wire values it writes.
+fn wire<T: DomainMessage>(event: &T) -> T::Wire {
+    event.to_wire()
 }
 
-table_events!(
-    TableCreated,
-    ShoeShuffled,
-    SeatHeld,
-    SeatReleased,
-    PlayerSeated,
-    PlayerCashedOut,
-    BetPlaced,
-    RoundDealt,
-    TurnStarted,
-    CardDealt,
-    HandStood,
-    HandDoubled,
-    DealerPlayed,
-    RoundSettled,
-);
+/// The table event a wire message is, as the store reads it back.
+fn ev<M: Message + Name>(event: M) -> Ev {
+    Ev::from_any(&pack(&event)).expect("a table event")
+}
 
 // ---------------------------------------------------------------- the harness
 
@@ -136,42 +87,24 @@ fn id(n: u32) -> Uuid {
     Uuid::from_bytes((0xc0de_0000_0000_0000_0000_0000_0000_0000_u128 + u128::from(n)).to_be_bytes())
 }
 
-/// The table stream with `events` already recorded.
+/// The table stream with `events` already recorded, through
+/// angzarr-embedded's test support: the kernel over an in-memory store.
 struct Harness {
-    registry: Registry,
-    stream: Stream<TableAggregate>,
+    kernel: Kernel<TableAggregate>,
     commands: u32,
-    dead_letters: MemoryDeadLetters,
+    /// The table as the store now folds to.
+    table: TableAggregate,
 }
 
-/// The table after `events`, replayed as stored pages (recorded before any
-/// command a test sends).
+/// The table after `events`, recorded before any command a test sends.
 fn given(events: Vec<Ev>) -> Harness {
-    let registry = registry();
-    let pages: Vec<EventPage> = events
-        .iter()
-        .enumerate()
-        .map(|(sequence, event)| EventPage {
-            payload: Some(event.to_any()),
-            meta: Some(EventMeta {
-                causation: Some(Causation::CommandId(id(0))),
-                correlation_id: Some(id(0)),
-                recorded_at: Some(Timestamp {
-                    seconds: sequence as i64,
-                    nanos: 0,
-                }),
-                rules_version: <TableAggregate as Domain>::RULES_VERSION.to_string(),
-                ..EventMeta::default()
-            }),
-            sequence: sequence as u64,
-        })
-        .collect();
-    let stream = Stream::replay(cover(), &pages, &registry).expect("the given events replay");
+    let mut kernel = Kernel::new(registry(), cover()).with_samples(Samples::starting_at(999));
+    kernel.given(events);
+    let table = kernel.state();
     Harness {
-        registry,
-        stream,
+        kernel,
         commands: 0,
-        dead_letters: MemoryDeadLetters::new(),
+        table,
     }
 }
 
@@ -186,32 +119,31 @@ impl Harness {
     /// a conflict resolution.
     fn when_handled<M: Message + Name>(&mut self, command: M, handling: Option<Handling>) -> Then {
         self.commands += 1;
-        let n = self.commands;
         let book = CommandBook {
             handling,
-            ..CommandBook::command(cover(), pack(&command)).with_id(id(n))
+            ..CommandBook::command(cover(), pack(&command)).with_id(id(self.commands))
         };
-        let sampled = Sampled {
-            now: Timestamp {
-                seconds: 1_000 + i64::from(n),
-                nanos: 0,
-            },
-            command_id: id(n),
-        };
-        match ready(
-            self.stream
-                .execute(book, &self.registry, &sampled, &self.dead_letters),
-        )? {
-            Executed::Applied(events) => Ok(events
-                .iter()
-                .map(|e| Ev::from_any(&e.event().to_any()))
-                .collect()),
-            Executed::Duplicate(_) => panic!("command {n} is new"),
-        }
+        let then = self.kernel.when_book(book).result();
+        self.table = self.kernel.state();
+        then
     }
 
     fn state(&self) -> &v1::TableState {
-        self.stream.state().state()
+        self.table.state()
+    }
+
+    /// The table aggregate itself, as the store folds to.
+    fn aggregate(&self) -> TableAggregate {
+        self.table.clone()
+    }
+
+    /// Every event the stream holds, in order.
+    fn recorded(&self) -> Vec<Ev> {
+        let pages = self.kernel.pages();
+        pages
+            .iter()
+            .map(|page| Ev::from_any(page.payload.as_ref().unwrap()).unwrap())
+            .collect()
     }
 }
 
@@ -316,7 +248,7 @@ fn shoe_beginning(text: &str) -> Vec<Card> {
 }
 
 fn shoe_one(cards: Vec<Card>) -> Ev {
-    Ev::ShoeShuffled(v1::ShoeShuffled {
+    ev(v1::ShoeShuffled {
         shoe_number: 1,
         seed: 42,
         decks: 1,
@@ -325,7 +257,7 @@ fn shoe_one(cards: Vec<Card>) -> Ev {
 }
 
 fn held(buy_in: u8, player: u8, seat: i32, amount: i64) -> Ev {
-    Ev::SeatHeld(v1::SeatHeld {
+    ev(v1::SeatHeld {
         buy_in_id: bytes(buy_in),
         player_root: bytes(player),
         seat,
@@ -334,7 +266,7 @@ fn held(buy_in: u8, player: u8, seat: i32, amount: i64) -> Ev {
 }
 
 fn seated(buy_in: u8, player: u8, seat: i32, stack: i64) -> Ev {
-    Ev::PlayerSeated(v1::PlayerSeated {
+    ev(v1::PlayerSeated {
         buy_in_id: bytes(buy_in),
         player_root: bytes(player),
         seat,
@@ -344,14 +276,14 @@ fn seated(buy_in: u8, player: u8, seat: i32, stack: i64) -> Ev {
 
 /// Table "Main" exists, its shoe shuffled.
 fn main_table() -> Vec<Ev> {
-    vec![Ev::TableCreated(main_created()), shoe_one(shuffle(42, 1))]
+    vec![ev(main_created()), shoe_one(shuffle(42, 1))]
 }
 
 /// round.feature's background: Alice at seat 0 and Bob at seat 1, each
 /// with `stacks`, and a shoe beginning `shoe`.
 fn background_with(shoe: &str, stacks: (i64, i64)) -> Vec<Ev> {
     vec![
-        Ev::TableCreated(main_created()),
+        ev(main_created()),
         shoe_one(shoe_beginning(shoe)),
         held(B1, ALICE, 0, stacks.0),
         seated(B1, ALICE, 0, stacks.0),
@@ -374,7 +306,7 @@ fn player(seat: i32) -> u8 {
 
 /// A bet of `amount` on round 1 by the background's player at `seat`.
 fn bet(seat: i32, amount: i64, stack_after: i64) -> Ev {
-    Ev::BetPlaced(v1::BetPlaced {
+    ev(v1::BetPlaced {
         round: 1,
         seat,
         player_root: bytes(player(seat)),
@@ -394,7 +326,7 @@ fn hand(seat: i32, text: &str, total: u32, soft: bool, blackjack: bool) -> SeatH
 }
 
 fn dealt(hands: Vec<SeatHand>, up: &str, hole: &str, turn: i32) -> Ev {
-    Ev::RoundDealt(v1::RoundDealt {
+    ev(v1::RoundDealt {
         round: 1,
         hands,
         dealer_up: Some(card(up)),
@@ -416,7 +348,7 @@ fn turn(
     stack: i64,
     wager: i64,
 ) -> Ev {
-    Ev::TurnStarted(v1::TurnStarted {
+    ev(v1::TurnStarted {
         round: 1,
         seat,
         player_root: bytes(player(seat)),
@@ -429,7 +361,7 @@ fn turn(
 }
 
 fn card_dealt(seat: i32, text: &str, total: u32, soft: bool, busted: bool, next: i32) -> Ev {
-    Ev::CardDealt(v1::CardDealt {
+    ev(v1::CardDealt {
         seat,
         card: Some(card(text)),
         total,
@@ -440,7 +372,7 @@ fn card_dealt(seat: i32, text: &str, total: u32, soft: bool, busted: bool, next:
 }
 
 fn stood(seat: i32, total: u32, next: i32) -> Ev {
-    Ev::HandStood(v1::HandStood {
+    ev(v1::HandStood {
         seat,
         total,
         next_turn: next,
@@ -449,7 +381,7 @@ fn stood(seat: i32, total: u32, next: i32) -> Ev {
 
 /// The dealer's play: `hole` revealed, `drawn` drawn, ending on `total`.
 fn dealer(hole: &str, drawn: &str, total: u32, soft: bool, busted: bool, bj: bool) -> Ev {
-    Ev::DealerPlayed(v1::DealerPlayed {
+    ev(v1::DealerPlayed {
         round: 1,
         hole: Some(card(hole)),
         drawn: cards(drawn),
@@ -476,7 +408,7 @@ fn outcome(seat: i32, wager: i64, outcome: Outcome, returned: i64, after: i64) -
 fn settled(outcomes: Vec<v1::SeatOutcome>) -> Ev {
     let wagers: i64 = outcomes.iter().map(|o| o.wager).sum();
     let returned: i64 = outcomes.iter().map(|o| o.returned).sum();
-    Ev::RoundSettled(v1::RoundSettled {
+    ev(v1::RoundSettled {
         round: 1,
         outcomes,
         house_delta: wagers - returned,
@@ -495,8 +427,8 @@ fn eu_1440_creating_a_table_shuffles_its_first_shoe_from_the_seed() {
     assert_eq!(
         events,
         vec![
-            Ev::TableCreated(main_created()),
-            Ev::ShoeShuffled(v1::ShoeShuffled {
+            ev(main_created()),
+            ev(v1::ShoeShuffled {
                 shoe_number: 1,
                 seed: 42,
                 decks: 1,
@@ -587,7 +519,7 @@ fn eu_1443_a_seat_request_holds_the_seat_for_the_buy_in() {
 #[test]
 fn eu_1444_repeating_a_seat_request_changes_nothing() {
     let mut table = given(vec![
-        Ev::TableCreated(main_created()),
+        ev(main_created()),
         shoe_one(shuffle(42, 1)),
         held(B1, ALICE, 0, 500),
     ]);
@@ -993,8 +925,8 @@ fn eu_1496_a_player_blackjack_is_paid_three_to_two_at_once() {
 fn shoe_running_out(seed: u64, left: usize, bettors: i32) -> Vec<Ev> {
     let full = shuffle(seed, 1);
     let mut events = vec![
-        Ev::TableCreated(main_created()),
-        Ev::ShoeShuffled(v1::ShoeShuffled {
+        ev(main_created()),
+        ev(v1::ShoeShuffled {
             shoe_number: 1,
             seed,
             decks: 1,
@@ -1024,7 +956,7 @@ fn eu_1502_the_shoe_is_replaced_before_a_round_that_could_run_it_out() {
         if reshuffles {
             assert_eq!(
                 events[0],
-                Ev::ShoeShuffled(v1::ShoeShuffled {
+                ev(v1::ShoeShuffled {
                     shoe_number: 2,
                     seed: seed_2,
                     decks: 1,
@@ -1054,7 +986,7 @@ fn eu_1503_a_replacement_shoe_deals_in_the_order_its_seed_decides() {
         panic!("expected ShoeShuffled then RoundDealt, got {events:?}");
     };
     assert_eq!((shuffled.shoe_number, shuffled.seed), (2, seed_2));
-    assert_eq!(round.hands[0].cards, vec![shoe_2[0], shoe_2[2]]);
+    assert_eq!(wire(round).hands[0].cards, vec![shoe_2[0], shoe_2[2]]);
 }
 
 // ================================================================ Hit, Stand, DoubleDown
@@ -1068,9 +1000,10 @@ fn dealt_round(shoe: &str, stacks: (i64, i64), seats: &[i32], round: Ev) -> Vec<
     // The TurnStarted the deal records when its turn names a seat.
     let first = match &round {
         Ev::RoundDealt(r) if r.turn >= 0 => {
+            let r = wire(r);
             let hand = r.hands.iter().find(|h| h.seat == r.turn).expect("dealt");
             let left = stack(r.turn) - 20;
-            Some(Ev::TurnStarted(v1::TurnStarted {
+            Some(ev(v1::TurnStarted {
                 round: 1,
                 seat: r.turn,
                 player_root: bytes(player(r.turn)),
@@ -1229,7 +1162,7 @@ fn eu_1486_doubling_doubles_the_wager_deals_one_card_and_ends_the_hand() {
     assert_eq!(
         events,
         vec![
-            Ev::HandDoubled(v1::HandDoubled {
+            ev(v1::HandDoubled {
                 seat: 0,
                 added: 20,
                 card: Some(card("K♥")),
@@ -1451,7 +1384,7 @@ fn eu_1497_standing_hands_are_paid_by_comparing_with_the_dealer() {
             shoe,
             (500, 500),
             &[0],
-            Ev::RoundDealt(v1::RoundDealt {
+            ev(v1::RoundDealt {
                 round: 1,
                 hands: vec![alice],
                 dealer_up: Some(top[1]),
@@ -1529,7 +1462,7 @@ fn eu_1499_a_doubled_hand_is_paid_on_the_doubled_wager() {
             0,
         ),
     );
-    events.push(Ev::HandDoubled(v1::HandDoubled {
+    events.push(ev(v1::HandDoubled {
         seat: 0,
         added: 20,
         card: Some(card("K♥")),
@@ -1593,11 +1526,11 @@ fn eu_1500_the_last_action_plays_the_dealer_and_settles_in_the_same_step() {
 /// round never runs the shoe out (AHR-4: DealRound replaces a shoe that
 /// could). The step that settles fails the whole decision as a keyed bug,
 /// ROUTER_REASON_UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out`
-/// as its cause and its round as `cause.round`, never English,
-/// dead-lettered under that key as the spec spells it (decisions 14.44,
-/// 14.48), and nothing is recorded.
+/// as its cause and its round as `cause.round`, never English (decisions
+/// 14.44, 14.48), answered to the caller, which holds it, so not
+/// dead-lettered, and nothing is recorded.
 #[test]
-fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
+fn a_dealer_who_runs_out_of_shoe_is_a_bug_answered_to_its_caller() {
     // Exactly the four cards dealt: Alice's 10 9, the dealer's 5 up and 6
     // in the hole, 11, who must draw from an empty shoe.
     let mut events = dealt_round(
@@ -1628,21 +1561,16 @@ fn a_dealer_who_runs_out_of_shoe_is_a_dead_lettered_bug() {
         ),
         "the bug's code its cause, the round its arg: {failure:?}"
     );
-    let lines = table.dead_letters.lines();
-    assert_eq!(lines.len(), 1, "dead-lettered once: {lines:?}");
     assert!(
-        lines[0].contains(
-            "ROUTER_REASON_UNHANDLED_HANDLER_ERROR cause=examples-table-shoe-ran-out \
-             cause.round=1"
-        ),
-        "keyed, its round the arg: {}",
-        lines[0]
+        failure.dead_letters().is_empty(),
+        "answered to its caller, so not dead-lettered: {failure:?}"
     );
+    let said = failure.to_string();
     assert!(
-        !lines[0].contains(" UNHANDLED_HANDLER_ERROR") && !lines[0].contains("ran out in"),
-        "no unprefixed key and no English: {}",
-        lines[0]
+        said.contains("cause=examples-table-shoe-ran-out cause.round=1"),
+        "keyed, its round the arg: {said}"
     );
+    assert!(!said.contains("ran out in"), "no English: {said}");
     assert_eq!(table.state(), &before, "nothing recorded");
 }
 
@@ -1688,10 +1616,10 @@ fn eu_1507_a_turn_never_shows_the_dealers_hole_card_or_the_shoe() {
 
     let events = table.when(v1::DealRound {}).expect("dealt");
 
-    let turns: Vec<&v1::TurnStarted> = events
+    let turns: Vec<v1::TurnStarted> = events
         .iter()
         .filter_map(|e| match e {
-            Ev::TurnStarted(t) => Some(t),
+            Ev::TurnStarted(t) => Some(wire(t)),
             _ => None,
         })
         .collect();
@@ -1860,7 +1788,7 @@ fn assert_step_idempotent(
 fn bets_on(shoe: &str) -> TableAggregate {
     let mut events = background(shoe);
     events.extend([bet(0, 20, 480), bet(1, 20, 480)]);
-    given(events).stream.state().clone()
+    given(events).aggregate()
 }
 
 #[test]
@@ -1882,7 +1810,7 @@ fn the_deal_step_does_nothing_when_re_run_after_a_dealer_blackjack_dealt() {
 #[test]
 fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
     // A turn to announce, then a round to settle.
-    let on_turn = given(two_hands_low("")).stream.state().clone();
+    let on_turn = given(two_hands_low("")).aggregate();
     assert_step_idempotent(on_turn, Table::after_action);
 
     let mut events = two_hands_low("10♥");
@@ -1891,7 +1819,7 @@ fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
         turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
         stood(1, 8, -1),
     ]);
-    let settled = assert_step_idempotent(given(events).stream.state().clone(), Table::after_action);
+    let settled = assert_step_idempotent(given(events).aggregate(), Table::after_action);
     assert_eq!(settled.state().phase(), Phase::Idle);
 }
 
@@ -1911,7 +1839,7 @@ fn eu_1453_releasing_a_held_seat_frees_it() {
 
     assert_eq!(
         events,
-        vec![Ev::SeatReleased(v1::SeatReleased {
+        vec![ev(v1::SeatReleased {
             buy_in_id: bytes(B1),
             player_root: bytes(ALICE),
             seat: 0,
@@ -1967,7 +1895,7 @@ fn eu_1460_leaving_cashes_out_the_whole_stack_and_frees_the_seat() {
 
     assert_eq!(
         events,
-        vec![Ev::PlayerCashedOut(v1::PlayerCashedOut {
+        vec![ev(v1::PlayerCashedOut {
             cashout_id: cashout_id(4),
             player_root: bytes(ALICE),
             seat: 0,
@@ -2013,12 +1941,7 @@ fn eu_1461_every_kind_of_table_event_moves_the_cash_out_position_by_one() {
     const CAROL: u8 = 0xca;
     const B3: u8 = 0x03;
     let mut table = given(background("2♣ 9♦ 4♣ 7♠ 3♥ 5♥ 5♣ 10♦ 6♦ 8♠ K♥"));
-    let mut recorded: Vec<Ev> = table
-        .stream
-        .events()
-        .iter()
-        .map(|e| Ev::from_any(&e.event().to_any()))
-        .collect();
+    let mut recorded: Vec<Ev> = table.recorded();
     let mut record = |table: &mut Harness, then: Then| {
         recorded.extend(then.expect("accepted"));
         assert_eq!(
@@ -2146,7 +2069,7 @@ fn prepared(head: u64, resolution: ConflictResolution) -> Option<Handling> {
 }
 
 fn head(table: &Harness) -> u64 {
-    table.stream.events().len() as u64
+    table.recorded().len() as u64
 }
 
 #[test]
@@ -2188,6 +2111,7 @@ fn ea_0024_two_hits_for_one_hand_at_the_same_moment_deal_exactly_one_card() {
     let Ev::RoundDealt(round) = &dealt[0] else {
         panic!("expected RoundDealt, got {dealt:?}");
     };
+    let round = wire(round);
     assert_eq!(
         (round.hands[0].cards.clone(), round.dealer_up),
         (cards("7♦ 4♦"), Some(card("9♣")))
@@ -2200,7 +2124,7 @@ fn ea_0024_two_hits_for_one_hand_at_the_same_moment_deal_exactly_one_card() {
 
     let first = first.expect("one hit lands");
     assert!(
-        matches!(&first[0], Ev::CardDealt(c) if c.card == Some(card("8♦"))),
+        matches!(&first[0], Ev::CardDealt(c) if wire(c).card == Some(card("8♦"))),
         "the 8♦: {first:?}"
     );
     // Out of date, and retryable.
@@ -2438,7 +2362,7 @@ fn a_table_bug_displays_as_its_code_and_args() {
     );
     events[1] = shoe_one(cards("10♣ 5♦ 9♥ 6♠"));
     events.push(stood(0, 19, -1));
-    let table = given(events).stream.state().0.clone();
+    let table = given(events).aggregate().0;
 
     let Err(Failed::Bug(bug)) = table.after_action() else {
         panic!("the dealer's draw from an empty shoe is a bug");
@@ -2514,16 +2438,16 @@ fn seed_21_settles_alice_540_bob_520_house_minus_60() {
         from_deal.extend(then.expect("the move is taken"));
     }
 
-    let names: Vec<&str> = from_deal.iter().map(Ev::name).collect();
+    let names: Vec<String> = from_deal.iter().map(kind).collect();
     assert_eq!(names, seed_21::FROM_DEAL);
     let settled = from_deal
         .iter()
         .find_map(|e| match e {
-            Ev::RoundSettled(settled) => Some(settled),
+            Ev::RoundSettled(settled) => Some(wire(settled)),
             _ => None,
         })
         .expect("the last move settles the round");
-    seed_21::assert_settled(settled);
+    seed_21::assert_settled(&settled);
     assert_eq!(table.state().house_result, -60);
     assert_ledger_balances(table.state());
 }

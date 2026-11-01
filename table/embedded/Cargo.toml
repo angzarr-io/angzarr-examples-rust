@@ -22,8 +22,8 @@ angzarr-build.workspace = true
 
 [dev-dependencies]
 agg-table = { workspace = true, features = ["test-support"] }
-# The table's given/when/then runs the pipeline on one stream in memory
-# (`Stream::execute`), angzarr-embedded's test fixture.
+# The table's given/when/then is angzarr-embedded's test support
+# (`testing::Harness`: the kernel over an in-memory store).
 angzarr-embedded = { workspace = true, features = ["test-support"] }
 # The remote Python player, hosted as a child process (tests/remote_player.rs).
 angzarr-embedded-host.workspace = true
