@@ -1,6 +1,6 @@
 //! Given/when/then on the marked-up table, through angzarr-embedded's whole
-//! in-memory pipeline (`Stream::execute`: check, identify, decode, decide,
-//! continuations, commit), with no store.
+//! in-memory pipeline (`Stream::execute`, its test fixture: check,
+//! identify, decode, decide, continuations, commit), with no store.
 //!
 //! - **Given** events are replayed as stored pages through the registry's
 //!   factory and the markup's appliers ([`given`]).
@@ -206,13 +206,10 @@ impl Harness {
             },
             command_id: id(n),
         };
-        match ready(self.stream.execute(
-            book,
-            &self.registry,
-            &sampled,
-            &self.dead_letters,
-            &mut [],
-        ))? {
+        match ready(
+            self.stream
+                .execute(book, &self.registry, &sampled, &self.dead_letters),
+        )? {
             Executed::Applied(events) => Ok(events
                 .iter()
                 .map(|e| Ev::from_any(&e.event().to_any()))
