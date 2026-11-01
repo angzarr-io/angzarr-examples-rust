@@ -16,8 +16,8 @@
 use std::path::PathBuf;
 
 use agg_table::test_support::seed_21::{self, ALICE, BOB};
-use angzarr_embedded::v1::{command_page, Command, CommandBook, CommandPage, Cover, Uuid};
-use angzarr_embedded::{pack, type_name, Any, Sampled, Timestamp};
+use angzarr_embedded::v1::{CommandBook, Cover, Uuid};
+use angzarr_embedded::{pack, type_name, Any, CommandBookExt, Sampled, Timestamp};
 use angzarr_embedded_host::{run_with, App, HostConfig, Languages};
 use examples_proto::v1::{self, MoveAction};
 use prost::{Message, Name};
@@ -128,17 +128,8 @@ impl<'a> Driver<'a> {
     async fn send<M: Message + Name>(&mut self, command: M) {
         self.sent += 1;
         let n = self.sent;
-        let book = CommandBook {
-            cover: Some(cover("table", TABLE)),
-            page: Some(CommandPage {
-                body: Some(command_page::Body::Command(Command {
-                    payload: Some(pack(&command)),
-                })),
-                command_id: Some(Uuid::from_bytes([0xd0 | n; 16])),
-                ..CommandPage::default()
-            }),
-            handling: None,
-        };
+        let book = CommandBook::command(cover("table", TABLE), pack(&command))
+            .with_id(Uuid::from_bytes([0xd0 | n; 16]));
         let sampled = Sampled {
             now: Timestamp {
                 seconds: i64::from(n),

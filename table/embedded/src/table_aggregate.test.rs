@@ -27,15 +27,14 @@
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards, create_main, seed_21};
 use agg_table::Table;
-use angzarr_embedded::markup::Failed;
+use angzarr_embedded::markup::{DomainMessage, Failed, Rejection, TypedRefusal};
 use angzarr_embedded::v1::event_meta::Causation;
 use angzarr_embedded::v1::{
-    command_page, Command, CommandBook, CommandPage, ConflictResolution, Cover, EventMeta,
-    EventPage, Handling, Uuid,
+    CommandBook, ConflictResolution, Cover, EventMeta, EventPage, Handling, Uuid,
 };
 use angzarr_embedded::{
-    pack, type_name, Any, Domain, Executed, Failure, KernelError, MemoryDeadLetters, Payload,
-    Registry, Rejected, Sampled, Stream, Timestamp,
+    pack, type_name, Any, CommandBookExt, Domain, Executed, Failure, KernelError,
+    MemoryDeadLetters, Payload, Registry, Rejected, Sampled, Stream, Timestamp,
 };
 use examples_proto::v1::{
     self, seat_outcome::Outcome, table_state::Phase, Card, MoveAction, SeatHand,
@@ -189,15 +188,8 @@ impl Harness {
         self.commands += 1;
         let n = self.commands;
         let book = CommandBook {
-            cover: Some(cover()),
-            page: Some(CommandPage {
-                body: Some(command_page::Body::Command(Command {
-                    payload: Some(pack(&command)),
-                })),
-                command_id: Some(id(n)),
-                ..CommandPage::default()
-            }),
             handling,
+            ..CommandBook::command(cover(), pack(&command)).with_id(id(n))
         };
         let sampled = Sampled {
             now: Timestamp {
@@ -223,21 +215,26 @@ impl Harness {
     }
 }
 
-/// The table's typed refusal, `TableRefused`, as the refused caller
-/// receives it: the object packed beside the refusal, decoded.
+/// The table's typed refusal object, as the refused caller matches it:
+/// the table's own rejection, as its handler made it, a typed refusal of
+/// type `T`.
 #[track_caller]
-fn table_refused(then: Then) -> TableRefused {
+fn typed<T: DomainMessage>(then: Then) -> T {
     match then {
-        Err(Failure::Rejected(rejected)) => {
-            let any = rejected
-                .refusal_object()
-                .unwrap_or_else(|| panic!("a typed refusal is packed: {rejected:?}"));
-            assert_eq!(type_name(&any.type_url), v1::TableRefused::full_name());
-            TableRefused::try_from(v1::TableRefused::decode(&any.value[..]).expect("decodes"))
-                .expect("a TableRefused")
-        }
+        Err(failure @ Failure::Rejected(_)) => failure
+            .rejection::<<TableAggregate as Domain>::Rejection>()
+            .and_then(Rejection::typed)
+            .and_then(TypedRefusal::object::<T>)
+            .unwrap_or_else(|| panic!("a typed refusal of its type: {failure:?}")),
         other => panic!("expected the table to refuse, got {other:?}"),
     }
+}
+
+/// The table's typed refusal, `TableRefused`, as the refused caller
+/// receives it.
+#[track_caller]
+fn table_refused(then: Then) -> TableRefused {
+    typed(then)
 }
 
 /// A diagnostic's `reason` arg: a table refusal's `ErrorInfo.reason`.
@@ -262,21 +259,7 @@ fn refused(then: Then) -> String {
 /// The reason of ConfirmSeat's typed refusal.
 #[track_caller]
 fn not_confirmable(then: Then) -> String {
-    match then {
-        Err(Failure::Rejected(rejected)) => {
-            let any = rejected
-                .refusal_object()
-                .unwrap_or_else(|| panic!("a typed refusal is packed: {rejected:?}"));
-            assert_eq!(
-                type_name(&any.type_url),
-                v1::SeatNotConfirmable::full_name()
-            );
-            v1::SeatNotConfirmable::decode(&any.value[..])
-                .expect("decodes")
-                .reason
-        }
-        other => panic!("expected SeatNotConfirmable, got {other:?}"),
-    }
+    typed::<crate::domain::SeatNotConfirmable>(then).reason
 }
 
 /// Ledger rule L2: `sum(stacks) + sum(wagers) + house_result = chips_in -
