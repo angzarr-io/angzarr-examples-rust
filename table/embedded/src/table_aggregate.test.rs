@@ -7,7 +7,9 @@
 //!   registry's factory and the markup's appliers ([`given`]); events are
 //!   the domain layer's generated `TableAggregateEvent`.
 //! - **When** a command is sent as a client sends it, packed in a
-//!   `CommandBook` ([`Harness::when`]).
+//!   `CommandBook` ([`Harness::when`]), or a fact, as a policy's arrives
+//!   ([`Harness::when_fact`]: ReleaseSeat, a fact the table declares,
+//!   angzarr decision 14.69).
 //! - **Then** the events of that one decision, decoded back to the
 //!   generated types, or the refusal: the typed `TableRefused`'s reason
 //!   ([`refused`]) or ConfirmSeat's typed `SeatNotConfirmable`
@@ -31,7 +33,10 @@ use agg_table::test_support::{card, cards, create_main, seed_21};
 use agg_table::Table;
 use angzarr_embedded::markup::{DomainMessage, Failed, Rejection, TypedRefusal};
 use angzarr_embedded::testing::{Harness as Kernel, Samples};
-use angzarr_embedded::v1::{CommandBook, ConflictResolution, Cover, Handling, Uuid};
+use angzarr_embedded::v1::{
+    command_page, CommandBook, CommandPage, ConflictResolution, Cover, Fact, FactOrigin, Handling,
+    Uuid,
+};
 use angzarr_embedded::{
     pack, type_name, CommandBookExt, Domain, Failure, KernelError, Payload, Registry, Rejected,
 };
@@ -124,6 +129,30 @@ impl Harness {
         let book = CommandBook {
             handling,
             ..CommandBook::command(cover(), pack(&command)).with_id(id(self.commands))
+        };
+        let then = self.kernel.when_book(book).result();
+        self.table = self.kernel.state();
+        then
+    }
+
+    /// Deliver `fact`, the `n`th of the test's facts, as its policy's
+    /// arrives: in the Fact arm, its origin's external id its own. The
+    /// events it records, never a refusal.
+    fn when_fact<M: Message + Name>(&mut self, fact: M) -> Then {
+        self.commands += 1;
+        let book = CommandBook {
+            cover: Some(cover()),
+            page: Some(CommandPage {
+                body: Some(command_page::Body::Fact(Fact {
+                    payload: Some(pack(&fact)),
+                })),
+                fact_origin: Some(FactOrigin {
+                    external_id: format!("fact-{}", self.commands),
+                    description: "the buy-in's compensation".to_string(),
+                }),
+                ..CommandPage::default()
+            }),
+            ..CommandBook::default()
         };
         let then = self.kernel.when_book(book).result();
         self.table = self.kernel.state();
@@ -1837,7 +1866,7 @@ fn eu_1453_releasing_a_held_seat_frees_it() {
         buy_in_id: bytes(B1),
         reason: "funds were refused".into(),
     };
-    let events = table.when(release).expect("released");
+    let events = table.when_fact(release).expect("released");
 
     assert_eq!(
         events,
@@ -1863,7 +1892,7 @@ fn eu_1454_releasing_a_seat_that_is_no_longer_held_changes_nothing() {
         buy_in_id: bytes(0x09),
         reason: "funds were refused".into(),
     };
-    assert_eq!(table.when(release).expect("ok"), vec![]);
+    assert_eq!(table.when_fact(release).expect("ok"), vec![]);
 }
 
 // ================================================================ LeaveTable
@@ -1955,7 +1984,7 @@ fn eu_1461_every_kind_of_table_event_moves_the_cash_out_position_by_one() {
 
     let then = table.when(request(CAROL, 2, 500, B3));
     record(&mut table, then);
-    let then = table.when(v1::ReleaseSeat {
+    let then = table.when_fact(v1::ReleaseSeat {
         buy_in_id: bytes(B3),
         reason: "funds were refused".into(),
     });
