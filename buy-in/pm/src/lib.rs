@@ -12,4 +12,6 @@ pub use examples_proto::v1 as wire;
 
 mod buy_in_process_manager_impl;
 
-pub use buy_in_process_manager_impl::BuyInProcessManagerImpl;
+pub use buy_in_process_manager_impl::{
+    compensation, BuyInProcessManagerImpl, Failure, HOLD_FUNDS, HOLD_SEAT, LATE_HOLD,
+};

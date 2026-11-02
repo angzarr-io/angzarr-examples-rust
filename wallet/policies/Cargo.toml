@@ -8,6 +8,8 @@ description = "policy-table-wallet: a settled round as each seat's round result 
 
 [dependencies]
 examples-proto.workspace = true
+# The refusal of a command it never sends is its bug: a code!.
+angzarr-diagnostic.workspace = true
 
 [lints]
 workspace = true

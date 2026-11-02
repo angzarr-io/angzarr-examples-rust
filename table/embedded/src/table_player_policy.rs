@@ -1,14 +1,16 @@
 //! policy-table-player: each TurnStarted asks the seat's player to decide,
-//! table-player-policies' [`TablePlayer`] in angzarr-embedded's markup.
+//! table-player-policies' [`TablePlayer`] in angzarr-embedded's markup. A
+//! refusal of DecideMove is translated into the table's
+//! RecordMoveUndecided (angzarr decision 14.76).
 
 use std::convert::Infallible;
 
-use angzarr_embedded::markup::{Commands, PolicyContext};
+use angzarr_embedded::markup::{CommandContext, Commands, PolicyContext, Refusal};
 use angzarr_embedded::v1::Uuid;
-use angzarr_embedded_macros::{on_event, policy};
+use angzarr_embedded_macros::{on_event, on_refused, policy};
 use table_player_policies::{Policies, TablePlayer};
 
-use crate::domain::TurnStarted;
+use crate::domain::{DecideMove, DecideMoveRefused, TableAggregateFact, TurnStarted};
 use crate::{PlayerAggregate, TableAggregate};
 
 pub struct TablePlayerPolicy;
@@ -28,6 +30,17 @@ impl TablePlayerPolicy {
             },
             ask.command,
         ))
+    }
+
+    #[on_refused(DecideMove)]
+    fn decide_move_refused(
+        &self,
+        refusal: &Refusal<DecideMove>,
+        _ctx: &CommandContext,
+    ) -> Result<TableAggregateFact, Infallible> {
+        let undecided =
+            Policies.decide_move_refused(refusal.command(), refusal.refusal::<DecideMoveRefused>());
+        Ok(undecided.into())
     }
 }
 

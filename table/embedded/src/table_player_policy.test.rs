@@ -123,3 +123,49 @@ fn eu_1601_the_request_follows_the_turn_field_for_field() {
     };
     assert_eq!(commands.orders(), [(root(0xb0), pack(&decide))]);
 }
+
+// ================================================================ a refused DecideMove
+
+/// The player refusing DecideMove (it never does in play) is translated
+/// into the table's RecordMoveUndecided for the move's round and seat
+/// (angzarr decision 14.76).
+#[test]
+fn a_refused_decide_move_is_the_tables_undecided_move() {
+    use angzarr_embedded::markup::{CommandContext, Refusal};
+    use angzarr_embedded::v1::{refusal_response, EventBook, RefusalResponse};
+
+    use crate::domain::{DecideMove, RecordMoveUndecided, TableAggregateFact};
+
+    let command = DecideMove::try_from(v1::DecideMove {
+        round: 3,
+        seat: 1,
+        dealer_up: Some(card("9♦")),
+        ..v1::DecideMove::default()
+    })
+    .expect("a DecideMove");
+    let typed = RefusalResponse {
+        reason: Some(refusal_response::Reason::Refusal(pack(
+            &v1::DecideMoveRefused {
+                reason: "NO_MODEL".into(),
+            },
+        ))),
+    };
+    let refusal = Refusal::new(EventBook::default(), command.clone(), typed);
+    let fact = TablePlayerPolicy
+        .decide_move_refused(&refusal, &CommandContext::default())
+        .expect("translated");
+    let expected = |reason: &str| {
+        TableAggregateFact::RecordMoveUndecided(RecordMoveUndecided {
+            round: 3,
+            seat: 1,
+            reason: reason.to_string(),
+        })
+    };
+    assert_eq!(fact, expected("NO_MODEL"));
+    // A refusal with no typed object: the move undecided, no reason.
+    let untyped = Refusal::new(EventBook::default(), command, RefusalResponse::default());
+    let fact = TablePlayerPolicy
+        .decide_move_refused(&untyped, &CommandContext::default())
+        .expect("translated");
+    assert_eq!(fact, expected(""));
+}

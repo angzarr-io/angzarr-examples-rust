@@ -146,3 +146,77 @@ fn eu_1604_a_decision_with_no_action_is_not_a_move_decided() {
         "the action it decided, MOVE_ACTION_UNSPECIFIED: {args:?}"
     );
 }
+
+// ================================================================ a refused move
+
+/// The table's refusal of `command`, typed with `reason` when one is given.
+fn refusal_of<C>(
+    command: C,
+    reason: Option<v1::table_refused::Reason>,
+) -> angzarr_embedded::markup::Refusal<C> {
+    use angzarr_embedded::v1::{refusal_response, EventBook, RefusalResponse};
+    let response = RefusalResponse {
+        reason: reason.map(|r| {
+            refusal_response::Reason::Refusal(pack(&v1::TableRefused {
+                reason: r.into(),
+                seat: Some(0),
+                ..v1::TableRefused::default()
+            }))
+        }),
+    };
+    angzarr_embedded::markup::Refusal::new(EventBook::default(), command, response)
+}
+
+/// The player's fact of the refusal of `action` at seat 0, for `reason`.
+fn move_refused(action: MoveAction, reason: &str) -> crate::domain::PlayerAggregateFact {
+    crate::domain::RecordMoveRefused::try_from(v1::RecordMoveRefused {
+        seat: 0,
+        action: action.into(),
+        reason: reason.to_string(),
+    })
+    .expect("a RecordMoveRefused")
+    .into()
+}
+
+/// The table refusing a move the player decided (it never does in play)
+/// is translated into the player's RecordMoveRefused, with the table's
+/// code (angzarr decision 14.76).
+#[test]
+fn a_refused_move_is_the_players_record_of_it() {
+    use angzarr_embedded::markup::CommandContext;
+    use v1::table_refused::Reason;
+
+    use crate::domain::{DoubleDown, Hit, Stand};
+
+    let ctx = CommandContext::default();
+    let not_your_turn = Some(Reason::NotYourTurn);
+    let hit = refusal_of(Hit { seat: 0 }, not_your_turn);
+    assert_eq!(
+        PlayerTablePolicy
+            .hit_refused(&hit, &ctx)
+            .expect("translated"),
+        move_refused(MoveAction::Hit, "NOT_YOUR_TURN")
+    );
+    let stand = refusal_of(Stand { seat: 0 }, Some(Reason::NoRoundInProgress));
+    assert_eq!(
+        PlayerTablePolicy
+            .stand_refused(&stand, &ctx)
+            .expect("translated"),
+        move_refused(MoveAction::Stand, "NO_ROUND_IN_PROGRESS")
+    );
+    let double = refusal_of(DoubleDown { seat: 0 }, Some(Reason::DoubleNotAllowed));
+    assert_eq!(
+        PlayerTablePolicy
+            .double_down_refused(&double, &ctx)
+            .expect("translated"),
+        move_refused(MoveAction::DoubleDown, "DOUBLE_NOT_ALLOWED")
+    );
+    // No typed refusal: the move refused, no code.
+    let untyped = refusal_of(Hit { seat: 0 }, None);
+    assert_eq!(
+        PlayerTablePolicy
+            .hit_refused(&untyped, &ctx)
+            .expect("translated"),
+        move_refused(MoveAction::Hit, "")
+    );
+}

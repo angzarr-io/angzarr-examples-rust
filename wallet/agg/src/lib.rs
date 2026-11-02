@@ -14,7 +14,7 @@
 pub use examples_proto::domain;
 pub use examples_proto::v1 as wire;
 
-pub mod reason;
+mod refusal;
 pub mod upcast;
 mod wallet_aggregate_impl;
 

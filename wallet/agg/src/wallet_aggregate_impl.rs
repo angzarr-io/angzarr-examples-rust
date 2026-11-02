@@ -7,20 +7,24 @@
 //! after every event: `bankroll >= sum(open holds) >= 0`, and `bankroll =
 //! deposited - withdrawn - to_tables + from_tables`.
 //!
-//! The facts (CaptureFunds, ReleaseHold, RecordRoundResult,
-//! AwardLoyaltyPoints) are recorded and never refused (decision 14.69), and
-//! wallet.proto declares each to record exactly one event. One that changes
-//! nothing (a hold already closed or never opened, a round already
-//! recorded) records its event with what the wallet holds, and the event's
-//! fold changes nothing: an event of no effect, until the spec lets a fact
-//! record nothing. HoldFunds is the same for a hold already opened under
-//! the same id.
+//! Every handling returns a list of the wallet's events (angzarr decision
+//! 14.75). The facts (CaptureFunds, ReleaseHold, RecordRoundResult,
+//! AwardLoyaltyPoints) are recorded and never refused (decision 14.69);
+//! one that changes nothing (a hold already closed or never opened, a
+//! round already recorded) records nothing. HoldFunds is the same for a
+//! hold already opened under the same id. A client command refuses with
+//! the typed `WalletRefused`.
 
 use angzarr_diagnostic::code;
 
 use crate::domain::*;
-use crate::reason;
+use crate::refusal::refused;
 use crate::wire::{hold, Hold, RoundResult, WalletState};
+
+/// The wallet's events, as a handling returns them.
+type Events = Vec<WalletAggregateEvent>;
+/// What a client command decides.
+type Decided = Result<Events, Failed<WalletRefused>>;
 
 /// The state the `apply_` methods fold.
 #[derive(Clone, Debug, Default)]
@@ -38,22 +42,30 @@ fn round_key(table_root: &[u8], round: u32) -> String {
     format!("{}/{round}", hex(table_root))
 }
 
-fn positive(amount: i64) -> Result<(), Rejection> {
+fn positive(amount: i64) -> Result<(), WalletRefused> {
     match amount > 0 {
         true => Ok(()),
-        false => Err(Rejection::new(reason::AMOUNT_NOT_POSITIVE).arg("amount", amount)),
+        false => Err(WalletRefused {
+            amount: Some(amount),
+            ..refused(WalletRefusedReason::AmountNotPositive)
+        }),
     }
 }
 
 /// A display name and an email, both given.
-fn identified(display_name: &str, email: &str) -> Result<(), Rejection> {
+fn identified(display_name: &str, email: &str) -> Result<(), WalletRefused> {
     if display_name.is_empty() {
-        return Err(Rejection::new(reason::DISPLAY_NAME_REQUIRED));
+        return Err(refused(WalletRefusedReason::DisplayNameRequired));
     }
     if email.is_empty() {
-        return Err(Rejection::new(reason::EMAIL_REQUIRED));
+        return Err(refused(WalletRefusedReason::EmailRequired));
     }
     Ok(())
+}
+
+/// `event` alone, as a handling's list.
+fn one(event: impl Into<WalletAggregateEvent>) -> Events {
+    vec![event.into()]
 }
 
 impl WalletAggregateImpl {
@@ -71,16 +83,16 @@ impl WalletAggregateImpl {
             .sum()
     }
 
-    fn registered(&self) -> Result<(), Rejection> {
+    fn registered(&self) -> Result<(), WalletRefused> {
         match self.state.registered {
             true => Ok(()),
-            false => Err(Rejection::new(reason::WALLET_NOT_FOUND)),
+            false => Err(refused(WalletRefusedReason::WalletNotFound)),
         }
     }
 
-    fn unregistered(&self) -> Result<(), Rejection> {
+    fn unregistered(&self) -> Result<(), WalletRefused> {
         match self.state.registered {
-            true => Err(Rejection::new(reason::WALLET_ALREADY_EXISTS)),
+            true => Err(refused(WalletRefusedReason::WalletAlreadyExists)),
             false => Ok(()),
         }
     }
@@ -107,98 +119,71 @@ impl WalletAggregateImpl {
 }
 
 impl WalletAggregate for WalletAggregateImpl {
-    fn register_wallet(
-        &self,
-        cmd: &RegisterWallet,
-        _ctx: &Context,
-    ) -> Result<WalletRegistered, Failed<Rejection>> {
+    fn register_wallet(&self, cmd: &RegisterWallet, _ctx: &Context) -> Decided {
         self.unregistered()?;
         identified(&cmd.display_name, &cmd.email)?;
-        Ok(WalletRegistered {
+        Ok(one(WalletRegistered {
             display_name: cmd.display_name.clone(),
             email: cmd.email.clone(),
-        })
+        }))
     }
 
-    fn import_wallet(
-        &self,
-        cmd: &ImportWallet,
-        _ctx: &Context,
-    ) -> Result<WalletImported, Failed<Rejection>> {
+    fn import_wallet(&self, cmd: &ImportWallet, _ctx: &Context) -> Decided {
         self.unregistered()?;
         identified(&cmd.display_name, &cmd.email)?;
-        Ok(WalletImported {
+        Ok(one(WalletImported {
             display_name: cmd.display_name.clone(),
             email: cmd.email.clone(),
             legacy_id: cmd.legacy_id.clone(),
-        })
+        }))
     }
 
-    fn update_profile(
-        &self,
-        cmd: &UpdateProfile,
-        _ctx: &Context,
-    ) -> Result<ProfileUpdated, Failed<Rejection>> {
+    fn update_profile(&self, cmd: &UpdateProfile, _ctx: &Context) -> Decided {
         self.registered()?;
         if cmd.display_name.is_empty() {
-            return Err(Rejection::new(reason::DISPLAY_NAME_REQUIRED).into());
+            return Err(refused(WalletRefusedReason::DisplayNameRequired).into());
         }
-        Ok(ProfileUpdated {
+        Ok(one(ProfileUpdated {
             display_name: cmd.display_name.clone(),
-        })
+        }))
     }
 
-    fn deposit_funds(
-        &self,
-        cmd: &DepositFunds,
-        _ctx: &Context,
-    ) -> Result<FundsDeposited, Failed<Rejection>> {
+    fn deposit_funds(&self, cmd: &DepositFunds, _ctx: &Context) -> Decided {
         self.registered()?;
         positive(cmd.amount)?;
-        Ok(FundsDeposited { amount: cmd.amount })
+        Ok(one(FundsDeposited { amount: cmd.amount }))
     }
 
-    fn withdraw_funds(
-        &self,
-        cmd: &WithdrawFunds,
-        _ctx: &Context,
-    ) -> Result<FundsWithdrawn, Failed<Rejection>> {
+    fn withdraw_funds(&self, cmd: &WithdrawFunds, _ctx: &Context) -> Decided {
         self.registered()?;
         positive(cmd.amount)?;
         let available = self.available();
         if cmd.amount > available {
-            return Err(Rejection::new(reason::INSUFFICIENT_AVAILABLE_FUNDS)
-                .arg("available", available)
-                .arg("requested", cmd.amount)
-                .into());
+            return Err(WalletRefused {
+                available: Some(available),
+                requested: Some(cmd.amount),
+                ..refused(WalletRefusedReason::InsufficientAvailableFunds)
+            }
+            .into());
         }
-        Ok(FundsWithdrawn { amount: cmd.amount })
+        Ok(one(FundsWithdrawn { amount: cmd.amount }))
     }
 
-    fn enroll_loyalty(
-        &self,
-        _cmd: &EnrollLoyalty,
-        _ctx: &Context,
-    ) -> Result<LoyaltyEnrolled, Failed<Rejection>> {
+    fn enroll_loyalty(&self, _cmd: &EnrollLoyalty, _ctx: &Context) -> Decided {
         self.registered()?;
-        Ok(LoyaltyEnrolled {})
+        Ok(one(LoyaltyEnrolled {}))
     }
 
     /// The buy-in's hold. Its one typed refusal is InsufficientFunds; a
     /// hold for no wallet, of nothing, or reusing a hold's id for another
     /// hold is the buy-in's bug (which of these is a refusal waits on the
     /// buy-in refusal ruling, R2). A hold already opened under its id, the
-    /// same hold, records it again and changes nothing.
+    /// same hold, records nothing.
     fn hold_funds(
         &self,
         cmd: &HoldFunds,
         _ctx: &Context,
-    ) -> Result<FundsHeld, Failed<InsufficientFunds>> {
-        let held = FundsHeld {
-            hold_id: cmd.hold_id.clone(),
-            table_root: cmd.table_root.clone(),
-            amount: cmd.amount,
-        };
+    ) -> Result<Events, Failed<InsufficientFunds>> {
         if !self.state.registered {
             return Err(Failed::bug(&Bug::new(code!("hold-for-no-wallet"))));
         }
@@ -208,7 +193,7 @@ impl WalletAggregate for WalletAggregateImpl {
         }
         if let Some(hold) = self.state.holds.get(&hex(&cmd.hold_id)) {
             return match (hold.amount, &hold.table_root[..]) == (cmd.amount, &cmd.table_root[..]) {
-                true => Ok(held),
+                true => Ok(Vec::new()),
                 false => Err(Failed::bug(&Bug::new(code!("hold-conflict")))),
             };
         }
@@ -220,46 +205,65 @@ impl WalletAggregate for WalletAggregateImpl {
             }
             .into());
         }
-        Ok(held)
+        Ok(one(FundsHeld {
+            hold_id: cmd.hold_id.clone(),
+            table_root: cmd.table_root.clone(),
+            amount: cmd.amount,
+        }))
     }
 
-    fn capture_funds(&self, fact: &CaptureFunds, _ctx: &Context) -> FundsCaptured {
-        let hold = self.open_hold(&fact.hold_id).cloned().unwrap_or_default();
-        FundsCaptured {
-            hold_id: fact.hold_id.clone(),
-            table_root: hold.table_root,
-            amount: hold.amount,
+    /// An open hold spent; a hold not open (already closed, or never
+    /// placed) records nothing.
+    fn capture_funds(&self, fact: &CaptureFunds, _ctx: &Context) -> Events {
+        self.open_hold(&fact.hold_id)
+            .map(|hold| {
+                one(FundsCaptured {
+                    hold_id: fact.hold_id.clone(),
+                    table_root: hold.table_root.clone(),
+                    amount: hold.amount,
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    /// An open hold closed unspent; a hold not open records nothing.
+    fn release_hold(&self, fact: &ReleaseHold, _ctx: &Context) -> Events {
+        self.open_hold(&fact.hold_id)
+            .map(|hold| {
+                one(HoldReleased {
+                    hold_id: fact.hold_id.clone(),
+                    amount: hold.amount,
+                    reason: fact.reason.clone(),
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    /// A round's result, once: the same round again records nothing.
+    fn record_round_result(&self, fact: &RecordRoundResult, _ctx: &Context) -> Events {
+        let key = round_key(&fact.table_root, fact.round);
+        if self.state.round_results.contains_key(&key) {
+            return Vec::new();
         }
-    }
-
-    fn release_hold(&self, fact: &ReleaseHold, _ctx: &Context) -> HoldReleased {
-        let amount = self.open_hold(&fact.hold_id).map_or(0, |h| h.amount);
-        HoldReleased {
-            hold_id: fact.hold_id.clone(),
-            amount,
-            reason: fact.reason.clone(),
-        }
-    }
-
-    fn record_round_result(&self, fact: &RecordRoundResult, _ctx: &Context) -> RoundResultRecorded {
-        RoundResultRecorded {
+        one(RoundResultRecorded {
             table_root: fact.table_root.clone(),
             round: fact.round,
             wager: fact.wager,
             net: fact.net,
-        }
+        })
     }
 
-    fn award_loyalty_points(
-        &self,
-        fact: &AwardLoyaltyPoints,
-        _ctx: &Context,
-    ) -> LoyaltyPointsAwarded {
-        LoyaltyPointsAwarded {
+    /// A round's points, once: the same round again records nothing.
+    fn award_loyalty_points(&self, fact: &AwardLoyaltyPoints, _ctx: &Context) -> Events {
+        let key = round_key(&fact.table_root, fact.round);
+        if self.state.loyalty_awards.contains_key(&key) {
+            return Vec::new();
+        }
+        one(LoyaltyPointsAwarded {
             table_root: fact.table_root.clone(),
             round: fact.round,
             points: fact.points,
-        }
+        })
     }
 
     fn apply_wallet_registered(&mut self, event: &WalletRegistered) {

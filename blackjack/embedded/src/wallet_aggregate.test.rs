@@ -9,17 +9,15 @@
 //! - **When** a command is sent as a client sends it ([`Harness::when`]), a
 //!   book sent again as it was ([`Harness::when_again`]), or a fact, as a
 //!   policy's arrives ([`Harness::when_fact`]).
-//! - **Then** the events of that one handling, or its refusal: the
-//!   wallet's rejection key and args ([`rejected`]) or HoldFunds' typed
-//!   `InsufficientFunds`.
+//! - **Then** the events of that one handling (a list, none included:
+//!   angzarr decision 14.75), or its refusal: a client command's typed
+//!   `WalletRefused` ([`refusal`]) or HoldFunds' typed `InsufficientFunds`.
 
 // The harness's `Then` carries angzarr-embedded's `Failure` unboxed: its
 // size is not this crate's to choose.
 #![allow(clippy::result_large_err)]
 
-use agg_wallet::reason;
-use angzarr_diagnostic::{Arg, Diagnostic};
-use angzarr_embedded::markup::Rejection;
+use angzarr_embedded::markup::{BusinessStatus, Rejection};
 use angzarr_embedded::testing::{Harness as Kernel, Samples};
 use angzarr_embedded::v1::event_meta::Causation;
 use angzarr_embedded::v1::{
@@ -33,7 +31,7 @@ use examples_proto::v1::{self, hold::Status, WalletState};
 use prost::{Message, Name};
 
 use crate::adapters::WalletAggregate;
-use crate::domain::{InsufficientFunds, WalletAggregateEvent};
+use crate::domain::{InsufficientFunds, WalletAggregateEvent, WalletRefused, WalletRefusedReason};
 
 // ---------------------------------------------------------------- the events
 
@@ -197,37 +195,36 @@ trait ReadyNow: std::future::Future + Sized {
 
 impl<F: std::future::Future> ReadyNow for F {}
 
-/// The wallet's rejection, as the refused caller receives it: its key and
-/// its args, by name.
+/// A client command's typed refusal, as the refused caller receives it.
 #[track_caller]
-fn rejected(then: Then) -> (String, Vec<(String, String)>) {
+fn refusal(then: Then) -> WalletRefused {
     match then {
-        Err(failure @ Failure::Rejected(_)) => {
-            let rejection = failure
-                .rejection::<<WalletAggregate as Domain>::Rejection>()
-                .unwrap_or_else(|| panic!("the wallet's own rejection: {failure:?}"));
-            let args = rejection
-                .args()
-                .into_iter()
-                .map(|(name, arg)| (name.to_string(), text(&arg)))
-                .collect();
-            (rejection.code().to_string(), args)
-        }
+        Err(failure @ Failure::Rejected(_)) => failure
+            .rejection::<<WalletAggregate as Domain>::Rejection>()
+            .and_then(Rejection::typed)
+            .and_then(|typed| typed.object::<WalletRefused>())
+            .unwrap_or_else(|| panic!("a WalletRefused: {failure:?}")),
         other => panic!("expected the wallet to refuse, got {other:?}"),
     }
 }
 
-fn text(arg: &Arg) -> String {
-    match arg {
-        Arg::Str(s) => s.clone(),
-        other => format!("{other:?}"),
+/// The status a refusal is answered under.
+#[track_caller]
+fn status(then: Then) -> BusinessStatus {
+    match then {
+        Err(Failure::Rejected(rejected)) => rejected.status(),
+        other => panic!("expected the wallet to refuse, got {other:?}"),
     }
 }
 
-/// The key of the wallet's rejection.
-#[track_caller]
-fn rejected_key(then: Then) -> String {
-    rejected(then).0
+/// A refusal for `reason`, naming no value.
+fn refused(reason: WalletRefusedReason) -> WalletRefused {
+    WalletRefused {
+        reason,
+        amount: None,
+        available: None,
+        requested: None,
+    }
 }
 
 /// HoldFunds' typed refusal, as the refused policy receives it.
@@ -370,7 +367,10 @@ fn eu_1401_a_player_cannot_register_twice() {
 
     let then = wallet.when(register("Alice", "alice@example.com"));
 
-    assert_eq!(rejected_key(then), reason::WALLET_ALREADY_EXISTS);
+    assert_eq!(
+        refusal(then),
+        refused(WalletRefusedReason::WalletAlreadyExists)
+    );
 }
 
 #[test]
@@ -379,7 +379,10 @@ fn eu_1402_a_player_needs_a_display_name() {
 
     let then = wallet.when(register("", "alice@example.com"));
 
-    assert_eq!(rejected_key(then), reason::DISPLAY_NAME_REQUIRED);
+    assert_eq!(
+        refusal(then),
+        refused(WalletRefusedReason::DisplayNameRequired)
+    );
     assert!(!wallet.state().registered, "nothing is recorded");
 }
 
@@ -389,7 +392,7 @@ fn a_player_needs_an_email() {
 
     let then = wallet.when(register("Alice", ""));
 
-    assert_eq!(rejected_key(then), reason::EMAIL_REQUIRED);
+    assert_eq!(refusal(then), refused(WalletRefusedReason::EmailRequired));
 }
 
 #[test]
@@ -419,7 +422,7 @@ fn eu_1404_an_unregistered_player_cannot_change_their_profile() {
         display_name: "Ace".into(),
     });
 
-    assert_eq!(rejected_key(then), reason::WALLET_NOT_FOUND);
+    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
 }
 
 #[test]
@@ -430,7 +433,10 @@ fn a_display_name_cannot_be_changed_to_nothing() {
         display_name: String::new(),
     });
 
-    assert_eq!(rejected_key(then), reason::DISPLAY_NAME_REQUIRED);
+    assert_eq!(
+        refusal(then),
+        refused(WalletRefusedReason::DisplayNameRequired)
+    );
 }
 
 fn import(name: &str, email: &str, legacy: &str) -> v1::ImportWallet {
@@ -472,16 +478,22 @@ fn eu_1406_an_existing_player_cannot_be_imported_over() {
 
     let then = wallet.when(import("Alice", "alice@example.com", "L-1"));
 
-    assert_eq!(rejected_key(then), reason::WALLET_ALREADY_EXISTS);
+    assert_eq!(
+        refusal(then),
+        refused(WalletRefusedReason::WalletAlreadyExists)
+    );
 }
 
 #[test]
 fn an_import_needs_a_display_name_and_an_email() {
     let mut wallet = given_of(CAROL, vec![]);
     let then = wallet.when(import("", "carol@example.com", "L-77"));
-    assert_eq!(rejected_key(then), reason::DISPLAY_NAME_REQUIRED);
+    assert_eq!(
+        refusal(then),
+        refused(WalletRefusedReason::DisplayNameRequired)
+    );
     let then = wallet.when(import("Carol", "", "L-77"));
-    assert_eq!(rejected_key(then), reason::EMAIL_REQUIRED);
+    assert_eq!(refusal(then), refused(WalletRefusedReason::EmailRequired));
 }
 
 // ================================================================ deposits and withdrawals
@@ -508,14 +520,26 @@ fn eu_1408_a_deposit_must_be_positive() {
         let then = wallet.when(v1::DepositFunds { amount });
 
         assert_eq!(
-            rejected(then),
-            (
-                reason::AMOUNT_NOT_POSITIVE.to_string(),
-                vec![("amount".to_string(), amount.to_string())]
-            ),
+            refusal(then),
+            WalletRefused {
+                amount: Some(amount),
+                ..refused(WalletRefusedReason::AmountNotPositive)
+            },
             "a deposit of {amount}"
         );
     }
+}
+
+/// A code wallet.proto marks INVALID_ARGUMENT is refused under it, the
+/// rest under FAILED_PRECONDITION (decision 14.52).
+#[test]
+fn each_refusal_is_answered_under_its_codes_status() {
+    let mut wallet = given(vec![registered("Alice")]);
+    let then = wallet.when(v1::DepositFunds { amount: 0 });
+    assert_eq!(status(then), BusinessStatus::InvalidArgument);
+    let mut wallet = given(vec![]);
+    let then = wallet.when(v1::DepositFunds { amount: 10 });
+    assert_eq!(status(then), BusinessStatus::FailedPrecondition);
 }
 
 #[test]
@@ -524,7 +548,7 @@ fn eu_1409_an_unregistered_player_cannot_deposit() {
 
     let then = wallet.when(v1::DepositFunds { amount: 1000 });
 
-    assert_eq!(rejected_key(then), reason::WALLET_NOT_FOUND);
+    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
 }
 
 #[test]
@@ -550,14 +574,12 @@ fn eu_1411_a_withdrawal_cannot_touch_held_funds() {
     let then = wallet.when(v1::WithdrawFunds { amount: 400 });
 
     assert_eq!(
-        rejected(then),
-        (
-            reason::INSUFFICIENT_AVAILABLE_FUNDS.to_string(),
-            vec![
-                ("available".to_string(), "300".to_string()),
-                ("requested".to_string(), "400".to_string()),
-            ]
-        )
+        refusal(then),
+        WalletRefused {
+            available: Some(300),
+            requested: Some(400),
+            ..refused(WalletRefusedReason::InsufficientAvailableFunds)
+        }
     );
     assert_funds(&wallet.state(), 1000, 300);
 }
@@ -581,7 +603,13 @@ fn eu_1412_a_withdrawal_must_be_positive() {
 
     let then = wallet.when(v1::WithdrawFunds { amount: 0 });
 
-    assert_eq!(rejected_key(then), reason::AMOUNT_NOT_POSITIVE);
+    assert_eq!(
+        refusal(then),
+        WalletRefused {
+            amount: Some(0),
+            ..refused(WalletRefusedReason::AmountNotPositive)
+        }
+    );
 }
 
 #[test]
@@ -590,7 +618,7 @@ fn an_unregistered_player_cannot_withdraw() {
 
     let then = wallet.when(v1::WithdrawFunds { amount: 10 });
 
-    assert_eq!(rejected_key(then), reason::WALLET_NOT_FOUND);
+    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
 }
 
 // ================================================================ buy-in holds
@@ -626,17 +654,16 @@ fn eu_1415_repeating_an_identical_hold_changes_nothing() {
     assert_funds(&wallet.state(), 1000, 500);
 }
 
-/// The same hold under another id: wallet.proto declares HoldFunds to
-/// record one event, so it is recorded again, and changes nothing.
+/// The same hold under another id records nothing (decision 14.75).
 #[test]
-fn the_same_hold_under_another_id_changes_nothing() {
+fn the_same_hold_under_another_id_records_nothing() {
     let mut events = alice_with_1000();
     events.push(held(B1, 500));
     let mut wallet = given(events);
 
     let events = wallet.when(hold(B1, 500)).expect("the request succeeds");
 
-    assert_eq!(events, vec![held(B1, 500)]);
+    assert_eq!(events, vec![]);
     assert_funds(&wallet.state(), 1000, 500);
 }
 
@@ -706,6 +733,37 @@ fn eu_1417_capturing_a_hold_spends_it() {
 }
 
 #[test]
+fn eu_1418_capturing_the_same_hold_again_changes_nothing() {
+    let mut events = alice_with_1000();
+    events.push(held(B1, 500));
+    events.push(ev(v1::FundsCaptured {
+        hold_id: bytes(B1),
+        table_root: bytes(MAIN),
+        amount: 500,
+    }));
+    let mut wallet = given(events);
+
+    let events = wallet.when_fact(capture(B1)).expect("the request succeeds");
+
+    assert_eq!(events, vec![], "records nothing");
+    let state = wallet.state();
+    assert_funds(&state, 500, 500);
+    assert_balances(&state);
+}
+
+/// CaptureFunds is a fact: the wallet never refuses it, and a capture of
+/// a hold it does not have records nothing (decision 14.75).
+#[test]
+fn eu_1419_capturing_a_hold_that_was_never_placed_records_nothing() {
+    let mut wallet = given(alice_with_1000());
+
+    let events = wallet.when_fact(capture(0xb9)).expect("never refused");
+
+    assert_eq!(events, vec![], "the wallet records nothing");
+    assert_funds(&wallet.state(), 1000, 1000);
+}
+
+#[test]
 fn eu_1420_releasing_a_hold_restores_what_is_available() {
     let mut events = alice_with_1000();
     events.push(held(B1, 500));
@@ -730,6 +788,28 @@ fn eu_1420_releasing_a_hold_restores_what_is_available() {
     assert_funds(&state, 1000, 1000);
     assert_eq!(state.holds[&hex(B1)].status(), Status::Released);
     assert_balances(&state);
+}
+
+#[test]
+fn eu_1421_releasing_a_hold_that_is_already_closed_changes_nothing() {
+    let mut events = alice_with_1000();
+    events.push(held(B1, 500));
+    events.push(ev(v1::HoldReleased {
+        hold_id: bytes(B1),
+        amount: 500,
+        reason: "the seat was refused".into(),
+    }));
+    let mut wallet = given(events);
+
+    let events = wallet
+        .when_fact(v1::ReleaseHold {
+            hold_id: bytes(B1),
+            reason: "the seat was refused".into(),
+        })
+        .expect("the request succeeds");
+
+    assert_eq!(events, vec![], "records nothing");
+    assert_funds(&wallet.state(), 1000, 1000);
 }
 
 #[test]
@@ -775,7 +855,7 @@ fn an_unregistered_player_cannot_join_the_loyalty_programme() {
 
     let then = wallet.when(v1::EnrollLoyalty {});
 
-    assert_eq!(rejected_key(then), reason::WALLET_NOT_FOUND);
+    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
 }
 
 fn award(round: u32, points: i64) -> v1::AwardLoyaltyPoints {
@@ -803,6 +883,55 @@ fn eu_1432_loyalty_points_are_awarded_to_members() {
     let state = wallet.state();
     assert!(state.loyalty_enrolled);
     assert_eq!(state.loyalty_points, 20);
+}
+
+#[test]
+fn eu_1434_the_same_rounds_points_are_awarded_only_once() {
+    let mut wallet = given(vec![
+        registered("Alice"),
+        ev(v1::LoyaltyEnrolled {}),
+        ev(v1::LoyaltyPointsAwarded {
+            table_root: bytes(MAIN),
+            round: 1,
+            points: 20,
+        }),
+    ]);
+
+    let events = wallet
+        .when_fact(award(1, 20))
+        .expect("the request succeeds");
+
+    assert_eq!(events, vec![], "records nothing");
+    let state = wallet.state();
+    assert!(state.loyalty_enrolled);
+    assert_eq!(state.loyalty_points, 20);
+}
+
+#[test]
+fn eu_1435_a_round_result_is_recorded_once_per_round() {
+    let recorded = ev(v1::RoundResultRecorded {
+        table_root: bytes(MAIN),
+        round: 1,
+        wager: 20,
+        net: 20,
+    });
+    let mut wallet = given(vec![registered("Alice"), recorded]);
+
+    let events = wallet
+        .when_fact(v1::RecordRoundResult {
+            table_root: bytes(MAIN),
+            round: 1,
+            wager: 20,
+            net: 20,
+        })
+        .expect("the request succeeds");
+
+    assert_eq!(events, vec![], "records nothing");
+    assert_eq!(
+        wallet.state().round_results.len(),
+        1,
+        "1 recorded round result"
+    );
 }
 
 #[test]
@@ -846,14 +975,12 @@ fn eu_1437_a_deposit_recorded_by_an_older_version_still_counts() {
     // the stored pages alone would not): 500 available, all of it.
     let then = wallet.when(v1::WithdrawFunds { amount: 501 });
     assert_eq!(
-        rejected(then),
-        (
-            reason::INSUFFICIENT_AVAILABLE_FUNDS.to_string(),
-            vec![
-                ("available".to_string(), "500".to_string()),
-                ("requested".to_string(), "501".to_string()),
-            ]
-        )
+        refusal(then),
+        WalletRefused {
+            available: Some(500),
+            requested: Some(501),
+            ..refused(WalletRefusedReason::InsufficientAvailableFunds)
+        }
     );
     wallet
         .when(v1::WithdrawFunds { amount: 500 })

@@ -37,7 +37,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "angzarr-build"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-cli?rev=5f5987c513800533f700ae994450e6ce5d7022f5#5f5987c513800533f700ae994450e6ce5d7022f5"
+source = "git+https://github.com/angzarr-io/angzarr-cli?rev=ad7b4f2ea4c091ca7c48f51fb71015a35214b04f#ad7b4f2ea4c091ca7c48f51fb71015a35214b04f"
 dependencies = [
  "angzarr-codegen",
  "angzarr-diagnostic",
@@ -48,7 +48,7 @@ dependencies = [
 [[package]]
 name = "angzarr-codegen"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-cli?rev=5f5987c513800533f700ae994450e6ce5d7022f5#5f5987c513800533f700ae994450e6ce5d7022f5"
+source = "git+https://github.com/angzarr-io/angzarr-cli?rev=ad7b4f2ea4c091ca7c48f51fb71015a35214b04f#ad7b4f2ea4c091ca7c48f51fb71015a35214b04f"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-embedded-host-config",
@@ -310,6 +310,7 @@ dependencies = [
 name = "buy-in-policies"
 version = "0.1.0"
 dependencies = [
+ "angzarr-diagnostic",
  "examples-proto",
 ]
 
@@ -2431,6 +2432,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "wallet-policies"
 version = "0.1.0"
 dependencies = [
+ "angzarr-diagnostic",
  "examples-proto",
 ]
 

@@ -6,11 +6,14 @@
 //!
 //! - a buy-in that goes through: the seat held, the money held, the seat
 //!   confirmed, the money spent (EU-1550 to EU-1553, EU-1561);
-//! - a buy-in rolled back: the seat's hold is released meanwhile (another
-//!   writer's SeatReleased lands on the table while the wallet holds the
-//!   money), so the table cannot confirm the seat, and the held money is
-//!   released (EU-1563, its undo a fact the wallet cannot refuse; EU-1612,
-//!   the seat released again records nothing more);
+//! - buy-ins rolled back by their compensation (angzarr decision 14.74):
+//!   the seat's hold is released meanwhile (another writer's SeatReleased
+//!   lands on the table while the wallet holds the money), so the table
+//!   cannot confirm the seat, and the held money, then the seat, are
+//!   released (EU-1563, EU-1610, each undo a fact its side cannot refuse;
+//!   EU-1612, the seat released again records nothing more); a wallet that
+//!   cannot fund the buy-in fails it and frees the seat (EU-1562); money
+//!   held after the buy-in failed is released at once (EU-1611);
 //! - two buy-ins in different conversations (EU-1559);
 //! - a settled round reaching each seat's wallet (EU-1541, EU-1542).
 
@@ -350,7 +353,7 @@ fn append(store: &MemoryStore, cover: &Cover, event: &impl Name) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn eu_1563_a_buy_in_whose_seat_is_released_meanwhile_rolls_back_and_frees_the_money() {
+async fn eu_1563_eu_1610_a_buy_in_whose_seat_is_released_meanwhile_rolls_back_newest_first() {
     let app = app().await;
     let mut client = open(&app, &[(ALICE, "Alice")]).await;
     // While the wallet holds the money (the buy-in's third write: the
@@ -380,10 +383,17 @@ async fn eu_1563_a_buy_in_whose_seat_is_released_meanwhile_rolls_back_and_frees_
         names(&app, &cover("table", MAIN)).await,
         ["TableCreated", "ShoeShuffled", "SeatHeld", "SeatReleased"]
     );
-    // The buy-in failed because the seat could not be confirmed ...
+    // The buy-in failed because the seat could not be confirmed, and undid
+    // every step it completed, newest first: the money, then the seat ...
     assert_eq!(
         names(&app, &cover("buy-in", C1)).await,
-        ["BuyInStarted", "BuyInFundsHeld", "BuyInSeatLost"]
+        [
+            "BuyInStarted",
+            "BuyInFundsHeld",
+            "BuyInSeatLost",
+            "HoldReleaseDue",
+            "SeatReleaseDue"
+        ]
     );
     let state = buy_in(&app, C1).await;
     assert_eq!(
@@ -403,6 +413,9 @@ async fn eu_1563_a_buy_in_whose_seat_is_released_meanwhile_rolls_back_and_frees_
     );
     let alice = wallet(&app, ALICE).await;
     assert_eq!((alice.bankroll, available(&alice)), (1000, 1000));
+    // ... and the table was told to release the seat, already released
+    // meanwhile: it records nothing more (EU-1612).
+    assert_eq!(names(&app, &cover("table", MAIN)).await.len(), 4);
 
     // EU-1612: the seat released again records nothing more.
     client
@@ -415,6 +428,108 @@ async fn eu_1563_a_buy_in_whose_seat_is_released_meanwhile_rolls_back_and_frees_
         )
         .await;
     assert_eq!(names(&app, &cover("table", MAIN)).await.len(), 4);
+}
+
+/// Alice's wallet registered with `deposit`.
+async fn alice_with<'a>(app: &'a TheApp, deposit: i64) -> Client<'a> {
+    let mut client = Client::new(app);
+    client.send(cover("table", MAIN), create_main()).await;
+    let wallet = cover("wallet", ALICE);
+    let register = v1::RegisterWallet {
+        display_name: "Alice".into(),
+        email: "alice@example.com".into(),
+    };
+    client.send(wallet.clone(), register).await;
+    client
+        .send(wallet, v1::DepositFunds { amount: deposit })
+        .await;
+    client
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn eu_1562_a_wallet_that_cannot_fund_the_buy_in_fails_it_and_frees_the_seat() {
+    let app = app().await;
+    let mut client = alice_with(&app, 300).await;
+
+    client
+        .send_in(cover("table", MAIN), request(ALICE, 0, B1), Some(C1))
+        .await;
+
+    // The wallet refused the hold and recorded nothing for it.
+    assert_eq!(
+        names(&app, &cover("wallet", ALICE)).await,
+        ["WalletRegistered", "FundsDeposited"]
+    );
+    // The buy-in failed because the funds were insufficient, and undid the
+    // one step it completed: the seat.
+    assert_eq!(
+        names(&app, &cover("buy-in", C1)).await,
+        ["BuyInStarted", "BuyInFailed", "SeatReleaseDue"]
+    );
+    let state = buy_in(&app, C1).await;
+    assert_eq!(
+        (state.phase(), state.failure_reason.as_str()),
+        (Phase::Failed, "INSUFFICIENT_AVAILABLE_FUNDS")
+    );
+    let failed = payloads(&pages(&app, &cover("buy-in", C1)).await);
+    let [failed] = &decoded::<v1::BuyInFailed>(&failed)[..] else {
+        panic!("one BuyInFailed");
+    };
+    assert_eq!((failed.available, failed.requested), (300, 500));
+    // The table was told to release the seat, which it could not refuse.
+    assert_eq!(
+        names(&app, &cover("table", MAIN)).await,
+        ["TableCreated", "ShoeShuffled", "SeatHeld", "SeatReleased"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn eu_1611_money_held_after_the_buy_in_failed_is_released_at_once() {
+    let app = app().await;
+    let mut client = alice_with(&app, 300).await;
+    client
+        .send_in(cover("table", MAIN), request(ALICE, 0, B1), Some(C1))
+        .await;
+    assert_eq!(buy_in(&app, C1).await.phase(), Phase::Failed);
+    // The wallet's money arrives late, after the buy-in failed: Bob pays
+    // in for Alice, and policy-wallet-buy-in reports the hold.
+    client
+        .send(cover("wallet", ALICE), v1::DepositFunds { amount: 700 })
+        .await;
+    client
+        .send_in(
+            cover("wallet", ALICE),
+            v1::HoldFunds {
+                hold_id: bytes(B1),
+                table_root: bytes(MAIN),
+                amount: 500,
+            },
+            Some(C1),
+        )
+        .await;
+
+    // Recorded apart, and undone at once: the hold is released ...
+    assert_eq!(
+        names(&app, &cover("buy-in", C1)).await,
+        [
+            "BuyInStarted",
+            "BuyInFailed",
+            "SeatReleaseDue",
+            "BuyInLateFundsHeld",
+            "HoldReleaseDue"
+        ]
+    );
+    assert_eq!(
+        buy_in(&app, C1).await.phase(),
+        Phase::Failed,
+        "still failed"
+    );
+    let alice = wallet(&app, ALICE).await;
+    assert_eq!((alice.bankroll, available(&alice)), (1000, 1000));
+    // ... and the table is not asked to confirm the seat.
+    let table = payloads(&pages(&app, &cover("table", MAIN)).await);
+    assert!(decoded::<v1::PlayerSeated>(&table).is_empty());
+    assert_eq!(table.len(), 4, "the table records nothing more");
 }
 
 // ================================================================ two conversations

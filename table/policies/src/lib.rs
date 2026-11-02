@@ -8,8 +8,10 @@
 //! (decision 14.36).
 
 use examples_proto::domain::{
-    DecideMove, DoubleDown, Hit, MoveAction, MoveDecided, Stand, TurnStarted,
+    DecideMove, DecideMoveRefused, DoubleDown, Hit, MoveAction, MoveDecided, RecordMoveRefused,
+    RecordMoveUndecided, Stand, TableRefused, TurnStarted,
 };
+use examples_proto::v1;
 
 /// A command for the stream at `root`.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +27,15 @@ pub trait TablePlayer {
     /// `can_double`, stack and wager unchanged, and `table_root` the
     /// event's own stream root.
     fn turn_started(&self, table_root: &[u8], event: &TurnStarted) -> To<DecideMove>;
+
+    /// The player refused to decide `command` (angzarr decision 14.76):
+    /// the table's RecordMoveUndecided for its round and seat, with the
+    /// player's reason (empty when it gave none).
+    fn decide_move_refused(
+        &self,
+        command: &DecideMove,
+        refusal: Option<DecideMoveRefused>,
+    ) -> RecordMoveUndecided;
 }
 
 /// The table's command for a decided move.
@@ -42,6 +53,21 @@ pub trait PlayerTable {
     /// MOVE_ACTION_UNSPECIFIED, or an action the table does not know, is not
     /// a domain value (a player bug the harness reports as it decodes it).
     fn move_decided(&self, event: &MoveDecided) -> To<TableMove>;
+
+    /// The table refused `command`, a move this policy sent (angzarr
+    /// decision 14.76): the player's RecordMoveRefused for its seat and
+    /// action, with the table's code (empty when it gave no typed refusal).
+    fn move_refused(&self, command: &TableMove, refusal: Option<TableRefused>)
+        -> RecordMoveRefused;
+}
+
+/// A refusal's code, the wire name of its reason without its prefix
+/// (`NOT_YOUR_TURN`), as the rejection carries it.
+fn code(refusal: &TableRefused) -> String {
+    let wire = v1::TableRefused::from(refusal.clone());
+    v1::table_refused::Reason::try_from(wire.reason)
+        .map(|r| r.as_str_name().trim_start_matches("REASON_").to_string())
+        .unwrap_or_default()
 }
 
 /// The policies' one implementation.
@@ -49,6 +75,18 @@ pub trait PlayerTable {
 pub struct Policies;
 
 impl TablePlayer for Policies {
+    fn decide_move_refused(
+        &self,
+        command: &DecideMove,
+        refusal: Option<DecideMoveRefused>,
+    ) -> RecordMoveUndecided {
+        RecordMoveUndecided {
+            round: command.round,
+            seat: command.seat,
+            reason: refusal.map(|r| r.reason).unwrap_or_default(),
+        }
+    }
+
     fn turn_started(&self, table_root: &[u8], event: &TurnStarted) -> To<DecideMove> {
         let hand = event.hand.clone();
         To {
@@ -70,6 +108,23 @@ impl TablePlayer for Policies {
 }
 
 impl PlayerTable for Policies {
+    fn move_refused(
+        &self,
+        command: &TableMove,
+        refusal: Option<TableRefused>,
+    ) -> RecordMoveRefused {
+        let (seat, action) = match command {
+            TableMove::Hit(hit) => (hit.seat, MoveAction::Hit),
+            TableMove::Stand(stand) => (stand.seat, MoveAction::Stand),
+            TableMove::DoubleDown(double) => (double.seat, MoveAction::DoubleDown),
+        };
+        RecordMoveRefused {
+            seat,
+            action,
+            reason: refusal.as_ref().map(code).unwrap_or_default(),
+        }
+    }
+
     fn move_decided(&self, event: &MoveDecided) -> To<TableMove> {
         let seat = event.seat;
         let command = match event.action {

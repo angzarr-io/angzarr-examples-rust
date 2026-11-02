@@ -2,17 +2,24 @@
 //! DoubleDown, table-player-policies' [`PlayerTable`] in angzarr-embedded's
 //! markup. A MoveDecided with no move the table knows does not decode as
 //! the domain's (MOVE_ACTION_UNSPECIFIED is the wire's absence): a player
-//! bug, which angzarr-embedded dead-letters by its code and args.
+//! bug, which angzarr-embedded dead-letters by its code and args. A
+//! refusal of a move is translated into the player's RecordMoveRefused
+//! (angzarr decision 14.76), so the player hears of it.
 
 use std::convert::Infallible;
 
-use angzarr_embedded::markup::{Commands, PolicyContext};
+use angzarr_embedded::markup::{CommandContext, Commands, PolicyContext, Refusal};
 use angzarr_embedded::v1::Uuid;
-use angzarr_embedded_macros::{on_event, policy};
+use angzarr_embedded_macros::{on_event, on_refused, policy};
 use table_player_policies::{PlayerTable, Policies, TableMove};
 
-use crate::domain::MoveDecided;
+use crate::domain::{DoubleDown, Hit, MoveDecided, PlayerAggregateFact, Stand, TableRefused};
 use crate::{PlayerAggregate, TableAggregate};
+
+/// The player's fact of the table's refusal of `command`.
+fn refused(command: TableMove, refusal: Option<TableRefused>) -> PlayerAggregateFact {
+    Policies.move_refused(&command, refusal).into()
+}
 
 pub struct PlayerTablePolicy;
 
@@ -33,6 +40,36 @@ impl PlayerTablePolicy {
             TableMove::Stand(stand) => Commands::none().to(root, stand),
             TableMove::DoubleDown(double) => Commands::none().to(root, double),
         })
+    }
+
+    #[on_refused(Hit)]
+    fn hit_refused(
+        &self,
+        refusal: &Refusal<Hit>,
+        _ctx: &CommandContext,
+    ) -> Result<PlayerAggregateFact, Infallible> {
+        let command = TableMove::Hit(refusal.command().clone());
+        Ok(refused(command, refusal.refusal::<TableRefused>()))
+    }
+
+    #[on_refused(Stand)]
+    fn stand_refused(
+        &self,
+        refusal: &Refusal<Stand>,
+        _ctx: &CommandContext,
+    ) -> Result<PlayerAggregateFact, Infallible> {
+        let command = TableMove::Stand(refusal.command().clone());
+        Ok(refused(command, refusal.refusal::<TableRefused>()))
+    }
+
+    #[on_refused(DoubleDown)]
+    fn double_down_refused(
+        &self,
+        refusal: &Refusal<DoubleDown>,
+        _ctx: &CommandContext,
+    ) -> Result<PlayerAggregateFact, Infallible> {
+        let command = TableMove::DoubleDown(refusal.command().clone());
+        Ok(refused(command, refusal.refusal::<TableRefused>()))
     }
 }
 

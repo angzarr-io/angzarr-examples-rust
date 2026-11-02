@@ -66,6 +66,7 @@ impl Table {
             E::HandDoubled(e) => self.apply_hand_doubled(e),
             E::DealerPlayed(e) => self.apply_dealer_played(e),
             E::RoundSettled(e) => self.apply_round_settled(e),
+            E::MoveUndecided(e) => self.apply_move_undecided(e),
         }
     }
 
@@ -326,19 +327,18 @@ fn wire(card: &Card) -> v1::Card {
 }
 
 impl TableAggregate for Table {
-    fn create_table(
-        &self,
-        cmd: &CreateTable,
-        _ctx: &Context,
-    ) -> Decided<(TableCreated, ShoeShuffled)> {
-        crate::create_table(&self.state, cmd)
+    fn create_table(&self, cmd: &CreateTable, _ctx: &Context) -> Decided<Events> {
+        let (created, shuffled) = crate::create_table(&self.state, cmd)?;
+        Ok(vec![created.into(), shuffled.into()])
     }
 
-    fn request_seat(&self, cmd: &RequestSeat, _ctx: &Context) -> Decided<Option<SeatHeld>> {
+    /// The seat held, or nothing when this buy-in already holds or seated
+    /// it (a repeat).
+    fn request_seat(&self, cmd: &RequestSeat, _ctx: &Context) -> Decided<Events> {
         self.exists()?;
         let key = hex(&cmd.request_id);
         if self.state.seat_holds.contains_key(&key) || self.state.confirmed_buy_ins.contains(&key) {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let state = &self.state;
         if cmd.seat < 0 || cmd.seat >= state.seats {
@@ -367,15 +367,16 @@ impl TableAggregate for Table {
             }
             .into());
         }
-        Ok(Some(SeatHeld {
+        let held = SeatHeld {
             buy_in_id: cmd.request_id.clone(),
             player_root: cmd.player_root.clone(),
             seat: cmd.seat,
             amount: cmd.amount,
-        }))
+        };
+        Ok(vec![held.into()])
     }
 
-    fn leave_table(&self, cmd: &LeaveTable, ctx: &Context) -> Decided<PlayerCashedOut> {
+    fn leave_table(&self, cmd: &LeaveTable, ctx: &Context) -> Decided<Events> {
         self.exists()?;
         // The cash-out id is derived from the table's root, the command's
         // stream's: the kernel only runs a handler for a well-formed root
@@ -399,15 +400,16 @@ impl TableAggregate for Table {
             }
             .into());
         }
-        Ok(PlayerCashedOut {
+        let cashed_out = PlayerCashedOut {
             cashout_id: cashout_id(&table_root, self.events).to_vec(),
             player_root: seat.player_root.clone(),
             seat: cmd.seat,
             amount: seat.stack,
-        })
+        };
+        Ok(vec![cashed_out.into()])
     }
 
-    fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Decided<BetPlaced> {
+    fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Decided<Events> {
         // PlaceBet is sent with AGGREGATE_HANDLES (table.proto). The table
         // decides against its full history, the window the bet did not see
         // included, so a second bet on the seat is its own ALREADY_BET; it
@@ -446,13 +448,14 @@ impl TableAggregate for Table {
         if cmd.amount > seat.stack {
             return Err(refused(TableRefusedReason::InsufficientStack).into());
         }
-        Ok(BetPlaced {
+        let placed = BetPlaced {
             round: state.round + 1,
             seat: cmd.seat,
             player_root: seat.player_root.clone(),
             amount: cmd.amount,
             stack_after: seat.stack - cmd.amount,
-        })
+        };
+        Ok(vec![placed.into()])
     }
 
     /// Whether the round can be dealt, and the new shoe first when it could
@@ -543,10 +546,10 @@ impl TableAggregate for Table {
         &self,
         cmd: &ConfirmSeat,
         _ctx: &Context,
-    ) -> Result<Option<PlayerSeated>, Failed<SeatNotConfirmable>> {
+    ) -> Result<Events, Failed<SeatNotConfirmable>> {
         let key = hex(&cmd.buy_in_id);
         if self.state.confirmed_buy_ins.contains(&key) {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let not_confirmable = |reason: &str| SeatNotConfirmable {
             reason: reason.to_string(),
@@ -559,18 +562,19 @@ impl TableAggregate for Table {
         if self.seat_of(&hold.player_root).is_some() {
             return Err(not_confirmable("PLAYER_ALREADY_SEATED").into());
         }
-        Ok(Some(PlayerSeated {
+        let seated = PlayerSeated {
             buy_in_id: cmd.buy_in_id.clone(),
             player_root: hold.player_root.clone(),
             seat: hold.seat,
             stack: hold.amount,
-        }))
+        };
+        Ok(vec![seated.into()])
     }
 
     /// The hold freed, or nothing when it no longer exists: a fact, the
     /// buy-in's compensation of its held seat, recorded and never refused
     /// (angzarr decision 14.69).
-    fn release_seat(&self, fact: &ReleaseSeat, _ctx: &Context) -> Option<SeatReleased> {
+    fn release_seat(&self, fact: &ReleaseSeat, _ctx: &Context) -> Events {
         self.state
             .seat_holds
             .get(&hex(&fact.buy_in_id))
@@ -580,6 +584,22 @@ impl TableAggregate for Table {
                 seat: hold.seat,
                 reason: fact.reason.clone(),
             })
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// The seat's player could not decide (policy-table-player's
+    /// translation of a refused DecideMove, angzarr decision 14.76):
+    /// recorded, and nothing else changes; what the table does then waits
+    /// on a ruling (table.proto).
+    fn record_move_undecided(&self, fact: &RecordMoveUndecided, _ctx: &Context) -> Events {
+        let undecided = MoveUndecided {
+            round: fact.round,
+            seat: fact.seat,
+            reason: fact.reason.clone(),
+        };
+        vec![undecided.into()]
     }
 
     fn apply_table_created(&mut self, event: &TableCreated) {
@@ -603,6 +623,10 @@ impl TableAggregate for Table {
                 amount: event.amount,
             },
         );
+    }
+
+    fn apply_move_undecided(&mut self, _event: &MoveUndecided) {
+        self.events += 1;
     }
 
     fn apply_seat_released(&mut self, event: &SeatReleased) {

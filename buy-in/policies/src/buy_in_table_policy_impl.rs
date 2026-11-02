@@ -5,15 +5,21 @@
 //!
 //! policy-buy-in-table: the buy-in's steps at the table, at the root its
 //! event names: confirm the seat (ConfirmSeat, a command), release it
-//! (ReleaseSeat, a fact: the undo of the held seat). ConfirmSeat's refusal
-//! is translated (buy_in.proto, TRANSLATE): the table's SeatNotConfirmable
+//! (ReleaseSeat, a fact: the undo of the held seat, on SeatReleaseDue).
+//! ConfirmSeat's refusal is translated: the table's SeatNotConfirmable
 //! becomes the buy-in's own SeatConfirmationRefused, so the buy-in never
-//! reads the table's types.
+//! reads the table's types. Every other table command it never sends.
 
 use crate::domain::*;
+use crate::never_sent::never_sent;
+
+/// The reason a rollback's undo carries to the table.
+pub const ROLLED_BACK: &str = "BUY_IN_ROLLED_BACK";
 
 #[derive(Clone, Debug, Default)]
 pub struct BuyInTablePolicyImpl;
+
+type Fact = Result<BuyInProcessManagerFact, Bug>;
 
 impl BuyInTablePolicy for BuyInTablePolicyImpl {
     fn buy_in_funds_held(
@@ -28,30 +34,102 @@ impl BuyInTablePolicy for BuyInTablePolicyImpl {
         Ok(vec![(event.table_root.clone(), confirm.into())])
     }
 
-    fn buy_in_failed(
+    fn seat_release_due(
         &self,
         _source: &[u8],
-        event: &BuyInFailed,
+        event: &SeatReleaseDue,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, TableAggregateOutput)>, Bug> {
         let release = ReleaseSeat {
             buy_in_id: event.buy_in_id.clone(),
-            reason: event.reason.clone(),
+            reason: ROLLED_BACK.to_string(),
         };
         Ok(vec![(event.table_root.clone(), release.into())])
     }
 
+    fn create_table_refused(
+        &self,
+        command: &CreateTable,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn request_seat_refused(
+        &self,
+        command: &RequestSeat,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn leave_table_refused(
+        &self,
+        command: &LeaveTable,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn place_bet_refused(
+        &self,
+        command: &PlaceBet,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn deal_round_refused(
+        &self,
+        command: &DealRound,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn hit_refused(
+        &self,
+        command: &Hit,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn stand_refused(
+        &self,
+        command: &Stand,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn double_down_refused(
+        &self,
+        command: &DoubleDown,
+        _refusal: Option<TableRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    /// The table could not confirm the seat: the buy-in's own fact of it.
     fn confirm_seat_refused(
         &self,
         command: &ConfirmSeat,
         refusal: Option<SeatNotConfirmable>,
         _ctx: &CommandContext,
-    ) -> Result<Option<BuyInProcessManagerFact>, Bug> {
-        let reason = refusal.map(|r| r.reason).unwrap_or_default();
+    ) -> Fact {
         let refused = SeatConfirmationRefused {
             buy_in_id: command.buy_in_id.clone(),
-            reason,
+            reason: refusal.map(|r| r.reason).unwrap_or_default(),
         };
-        Ok(Some(refused.into()))
+        Ok(refused.into())
     }
 }

@@ -24,11 +24,15 @@ use angzarr_embedded::{pack, Failure, Handled, Payload, Registry, Rejected, Time
 use examples_proto::v1::{self, buy_in_state::Phase, BuyInState};
 use prost::{Message, Name};
 
+use angzarr_embedded::markup::CommandTarget;
+use pm_buy_in::compensation;
+
 use crate::adapters::{BuyInProcessManager, TableAggregate};
 use crate::domain::{
     BuyInProcessManagerEvent, BuyInProcessManagerFact, BuyInProcessManagerOutput,
-    BuyInTablePolicy as _, BuyInWalletPolicy as _, TableAggregateEvent, TableAggregateOutput,
-    TableBuyInPolicy as _, TableWalletPolicy as _, WalletAggregateOutput, WalletBuyInPolicy as _,
+    BuyInTablePolicy as _, BuyInWalletPolicy as _, ReleaseHold, TableAggregateEvent,
+    TableAggregateOutput, TableBuyInPolicy as _, TableWalletPolicy as _, WalletAggregateOutput,
+    WalletBuyInPolicy as _,
 };
 use crate::{
     buy_in_table_policy_impl::BuyInTablePolicyImpl,
@@ -175,6 +179,7 @@ fn output_any(fact: &BuyInProcessManagerOutput) -> angzarr_embedded::Any {
         O::RecordPlayerSeated(f) => pack(&f.to_wire()),
         O::RecordFundsCaptured(f) => pack(&f.to_wire()),
         O::SeatConfirmationRefused(f) => pack(&f.to_wire()),
+        O::FundsHoldRefused(f) => pack(&f.to_wire()),
     }
 }
 
@@ -232,7 +237,66 @@ fn b1_funds_held() -> Ev {
     ev(v1::BuyInFundsHeld {
         buy_in_id: bytes(B1),
         table_root: bytes(MAIN),
+        player_root: bytes(ALICE),
     })
+}
+
+/// The undo of B1's held seat.
+fn seat_release_due() -> Ev {
+    ev(v1::SeatReleaseDue {
+        buy_in_id: bytes(B1),
+        table_root: bytes(MAIN),
+    })
+}
+
+/// The undo of B1's held funds.
+fn hold_release_due() -> Ev {
+    ev(v1::HoldReleaseDue {
+        buy_in_id: bytes(B1),
+        player_root: bytes(ALICE),
+    })
+}
+
+/// B1 failed for its funds: the wallet could hold 300 of 500.
+fn b1_failed() -> Ev {
+    ev(v1::BuyInFailed {
+        buy_in_id: bytes(B1),
+        table_root: bytes(MAIN),
+        reason: "INSUFFICIENT_AVAILABLE_FUNDS".into(),
+        available: 300,
+        requested: 500,
+    })
+}
+
+/// B1 failed for its seat.
+fn b1_seat_lost() -> Ev {
+    ev(v1::BuyInSeatLost {
+        buy_in_id: bytes(B1),
+        player_root: bytes(ALICE),
+        reason: "SEAT_HOLD_NOT_FOUND".into(),
+    })
+}
+
+/// The table told to release B1's seat, a fact it cannot refuse.
+fn release_seat() -> (Vec<u8>, TableAggregateOutput) {
+    (
+        bytes(MAIN),
+        TableAggregateOutput::ReleaseSeat(domain(v1::ReleaseSeat {
+            buy_in_id: bytes(B1),
+            reason: "BUY_IN_ROLLED_BACK".into(),
+        })),
+    )
+}
+
+/// Alice's wallet told to release B1's hold, a fact it cannot refuse.
+fn release_hold() -> (Vec<u8>, WalletAggregateOutput) {
+    (
+        bytes(ALICE),
+        WalletAggregateOutput::ReleaseHold(domain(v1::ReleaseHold {
+            hold_id: bytes(B1),
+            reason: "BUY_IN_ROLLED_BACK".into(),
+        })),
+    )
 }
 
 fn b1_seated() -> Ev {
@@ -303,7 +367,7 @@ fn asks_wallet(event: &Ev) -> Vec<(Vec<u8>, WalletAggregateOutput)> {
     let sent = match event {
         Ev::BuyInStarted(e) => BuyInWalletPolicyImpl.buy_in_started(&source, e, &ctx),
         Ev::BuyInSeated(e) => BuyInWalletPolicyImpl.buy_in_seated(&source, e, &ctx),
-        Ev::BuyInSeatLost(e) => BuyInWalletPolicyImpl.buy_in_seat_lost(&source, e, &ctx),
+        Ev::HoldReleaseDue(e) => BuyInWalletPolicyImpl.hold_release_due(&source, e, &ctx),
         _ => Ok(Vec::new()),
     };
     sent.expect("no bug")
@@ -315,7 +379,7 @@ fn asks_table(event: &Ev) -> Vec<(Vec<u8>, TableAggregateOutput)> {
     let source = bytes(C1);
     let sent = match event {
         Ev::BuyInFundsHeld(e) => BuyInTablePolicyImpl.buy_in_funds_held(&source, e, &ctx),
-        Ev::BuyInFailed(e) => BuyInTablePolicyImpl.buy_in_failed(&source, e, &ctx),
+        Ev::SeatReleaseDue(e) => BuyInTablePolicyImpl.seat_release_due(&source, e, &ctx),
         _ => Ok(Vec::new()),
     };
     sent.expect("no bug")
@@ -436,6 +500,64 @@ fn eu_1553_spent_money_completes_the_buy_in() {
 // ================================================================ a refusal
 
 #[test]
+fn eu_1562_a_wallet_that_cannot_fund_the_buy_in_fails_it_and_frees_the_seat() {
+    let mut buy_in = buy_in(vec![started()]);
+
+    // The wallet refuses HoldFunds with its typed refusal, and records
+    // nothing (tests/buy_in.rs); policy-buy-in-wallet translates it into
+    // the buy-in's fact.
+    let hold = domain(v1::HoldFunds {
+        hold_id: bytes(B1),
+        table_root: bytes(MAIN),
+        amount: 500,
+    });
+    let refusal = domain(v1::InsufficientFunds {
+        available: 300,
+        requested: 500,
+    });
+    let translated = BuyInWalletPolicyImpl
+        .hold_funds_refused(&hold, Some(refusal), &CommandContext::default())
+        .expect("translated, never declined");
+    let BuyInProcessManagerFact::FundsHoldRefused(fact) = translated else {
+        panic!("FundsHoldRefused, not {translated:?}");
+    };
+    assert_eq!(
+        fact.to_wire(),
+        v1::FundsHoldRefused {
+            buy_in_id: bytes(B1),
+            reason: "INSUFFICIENT_AVAILABLE_FUNDS".into(),
+            available: 300,
+            requested: 500,
+        }
+    );
+    let events = buy_in
+        .when(BuyInProcessManagerOutput::FundsHoldRefused(fact))
+        .expect("recorded");
+
+    // It fails, and its one completed step, the held seat, is undone.
+    assert_eq!(events, vec![b1_failed(), seat_release_due()]);
+    let state = buy_in.state();
+    assert_eq!(state.phase(), Phase::Failed);
+    assert_eq!(state.failure_reason, "INSUFFICIENT_AVAILABLE_FUNDS");
+    assert_eq!(asks(&events), (vec![release_seat()], vec![]));
+}
+
+/// A hold refused with no typed refusal is a bug: HoldFunds refuses with
+/// InsufficientFunds alone.
+#[test]
+fn a_hold_refused_untyped_is_the_policys_bug() {
+    let hold = domain(v1::HoldFunds {
+        hold_id: bytes(B1),
+        table_root: bytes(MAIN),
+        amount: 500,
+    });
+    let bug = BuyInWalletPolicyImpl
+        .hold_funds_refused(&hold, None, &CommandContext::default())
+        .expect_err("a bug");
+    assert_eq!(bug.key, buy_in_policies::HOLD_REFUSED_UNTYPED);
+}
+
+#[test]
 fn eu_1563_a_table_that_cannot_confirm_the_seat_fails_the_buy_in_and_frees_the_money() {
     let mut buy_in = buy_in(vec![started(), b1_funds_held()]);
 
@@ -449,8 +571,7 @@ fn eu_1563_a_table_that_cannot_confirm_the_seat_fails_the_buy_in_and_frees_the_m
     });
     let translated = BuyInTablePolicyImpl
         .confirm_seat_refused(&confirm, Some(refusal), &CommandContext::default())
-        .expect("no bug")
-        .expect("translated, never passed through");
+        .expect("translated, never declined");
     let BuyInProcessManagerFact::SeatConfirmationRefused(fact) = translated else {
         panic!("SeatConfirmationRefused, not {translated:?}");
     };
@@ -465,49 +586,113 @@ fn eu_1563_a_table_that_cannot_confirm_the_seat_fails_the_buy_in_and_frees_the_m
         .when(BuyInProcessManagerOutput::SeatConfirmationRefused(fact))
         .expect("recorded");
 
-    assert_eq!(
-        events,
-        vec![ev(v1::BuyInSeatLost {
-            buy_in_id: bytes(B1),
-            player_root: bytes(ALICE),
-            reason: "SEAT_HOLD_NOT_FOUND".into(),
-        })]
-    );
+    assert_eq!(events[0], b1_seat_lost());
     let state = buy_in.state();
     assert_eq!(state.phase(), Phase::Failed);
     assert_eq!(state.failure_reason, "SEAT_HOLD_NOT_FOUND");
+    assert_eq!(asks(&events).1, vec![release_hold()]);
+}
+
+#[test]
+fn eu_1610_a_failed_buy_in_undoes_every_step_it_completed_newest_first() {
+    let mut buy_in = buy_in(vec![started(), b1_funds_held()]);
+    let refused = domain(v1::SeatConfirmationRefused {
+        buy_in_id: bytes(B1),
+        reason: "SEAT_HOLD_NOT_FOUND".into(),
+    });
+
+    let events = buy_in
+        .when(BuyInProcessManagerOutput::SeatConfirmationRefused(refused))
+        .expect("recorded");
+
+    // The failed event, then the funds' undo, then the seat's.
+    assert_eq!(
+        events,
+        vec![b1_seat_lost(), hold_release_due(), seat_release_due()]
+    );
+    assert_eq!(buy_in.state().phase(), Phase::Failed);
+    let told: Vec<_> = events
+        .iter()
+        .map(|e| (asks_wallet(e), asks_table(e)))
+        .collect();
+    assert_eq!(
+        told,
+        vec![
+            (vec![], vec![]),
+            (vec![release_hold()], vec![]),
+            (vec![], vec![release_seat()]),
+        ],
+        "the wallet is told, and then the table"
+    );
+    // Neither can refuse what it is told: each undo is a fact of its
+    // destination, never one of its commands (decision 14.74).
+    assert!(compensation().warnings().is_empty());
+    assert!(!WalletAggregateOutput::command_types()
+        .contains(&"io.angzarr.examples.v1.ReleaseHold".to_string()));
+    assert!(!TableAggregateOutput::command_types()
+        .contains(&"io.angzarr.examples.v1.ReleaseSeat".to_string()));
+}
+
+#[test]
+fn eu_1611_money_held_after_the_buy_in_failed_is_released_at_once() {
+    let mut buy_in = buy_in(vec![started(), b1_failed(), seat_release_due()]);
+
+    let (_, held) = wallet_reports(funds_held(B1));
+    let events = buy_in.when(held).expect("recorded");
+
+    // A late hold, recorded apart from BuyInFundsHeld, and undone at once.
+    assert_eq!(
+        events,
+        vec![
+            ev(v1::BuyInLateFundsHeld {
+                buy_in_id: bytes(B1),
+                player_root: bytes(ALICE),
+            }),
+            hold_release_due(),
+        ]
+    );
+    assert_eq!(buy_in.state().phase(), Phase::Failed, "still failed");
     assert_eq!(
         asks(&events),
-        (
-            vec![],
-            vec![(
-                bytes(ALICE),
-                WalletAggregateOutput::ReleaseHold(domain(v1::ReleaseHold {
-                    hold_id: bytes(B1),
-                    reason: "SEAT_HOLD_NOT_FOUND".into(),
-                }))
-            )]
-        )
+        (vec![], vec![release_hold()]),
+        "the hold is released; the table is not asked to confirm"
     );
 }
 
-/// The wallet's refusal of HoldFunds is passed through: the buy-in has no
-/// fact to translate it into (EU-1562 waits on one, buy_in.proto).
+/// The failed events trigger nothing: only the undos do (decision 14.77).
 #[test]
-fn a_refused_hold_is_passed_through_to_the_buy_in() {
-    let hold = domain(v1::HoldFunds {
-        hold_id: bytes(B1),
-        table_root: bytes(MAIN),
-        amount: 500,
-    });
-    let refusal = domain(v1::InsufficientFunds {
-        available: 300,
-        requested: 500,
-    });
-    let translated = BuyInWalletPolicyImpl
-        .hold_funds_refused(&hold, Some(refusal), &CommandContext::default())
-        .expect("no bug");
-    assert_eq!(translated, None);
+fn a_failed_event_asks_nothing() {
+    assert_eq!(asks(&[b1_failed(), b1_seat_lost()]), (vec![], vec![]));
+}
+
+/// A refused undo records CompensationFailed for its step, the alert
+/// (decision 14.74, decision 38 (a)); the buy-in's undos are facts, so
+/// none is refused in play.
+#[test]
+fn a_refused_undo_records_compensation_failed_for_its_step() {
+    let buy_in = buy_in(vec![started(), b1_funds_held()]);
+
+    let alert = compensation().undo_refused::<ReleaseHold>(&buy_in.state());
+
+    assert_eq!(
+        alert,
+        Some(ev(v1::CompensationFailed {
+            buy_in_id: bytes(B1),
+            step: "hold funds".into(),
+        }))
+    );
+}
+
+/// A refusal of a table command the buy-in never sends is the policy's
+/// bug, naming the command: every command has a callback (decision 14.76).
+#[test]
+fn a_refusal_of_a_command_never_sent_is_a_bug() {
+    let hit = domain(v1::Hit { seat: 0 });
+    let bug = BuyInTablePolicyImpl
+        .hit_refused(&hit, None, &CommandContext::default())
+        .expect_err("never sent");
+    assert_eq!(bug.key, buy_in_policies::NEVER_SENT);
+    assert!(bug.args[0].1.ends_with("::Hit"), "{:?}", bug.args);
 }
 
 // ================================================================ robustness
@@ -729,27 +914,32 @@ fn each_seat_is_told_its_result_then_its_points_in_seat_order() {
     );
 }
 
-// ================================================================ what the folds keep
+// ================================================================ what is ignored
 
 #[test]
-fn a_fact_of_another_buy_in_leaves_this_one_where_it_was() {
-    // buy_in.proto declares each fact to record one event, so it is
-    // recorded; the buy-in does not move (EU-1557's "still waiting").
+fn eu_1557_news_about_a_different_buy_in_is_ignored() {
     let mut buy_in = buy_in(vec![started()]);
 
     let (_, held) = wallet_reports(funds_held(0x07));
-    buy_in.when(held).expect("recorded");
+    let events = buy_in.when(held).expect("handled");
 
-    assert_eq!(buy_in.state().phase(), Phase::AwaitingHold);
+    assert_eq!(events, vec![], "nothing recorded");
+    assert_eq!(
+        buy_in.state().phase(),
+        Phase::AwaitingHold,
+        "still waiting for funds"
+    );
+    assert_eq!(asks(&events), (vec![], vec![]), "nothing is asked");
 }
 
 #[test]
-fn a_fact_out_of_turn_leaves_the_buy_in_where_it_was() {
+fn a_fact_out_of_turn_records_nothing() {
     let mut buy_in = buy_in(vec![started()]);
 
     let (_, captured) = wallet_reports(funds_captured());
-    buy_in.when(captured).expect("recorded");
+    let events = buy_in.when(captured).expect("handled");
 
+    assert_eq!(events, vec![]);
     assert_eq!(buy_in.state().phase(), Phase::AwaitingHold);
 }
 
@@ -764,37 +954,4 @@ fn a_started_buy_in_keeps_its_seat() {
     })]);
 
     assert_eq!(buy_in.state().seat, 2);
-}
-
-/// The wallet's refusal of the hold (pass-through, buy_in.proto): the
-/// buy-in fails, and the held seat is released.
-#[test]
-fn a_buy_in_failed_for_its_funds_releases_its_seat() {
-    let failed = v1::BuyInFailed {
-        buy_in_id: bytes(B1),
-        table_root: bytes(MAIN),
-        reason: "INSUFFICIENT_AVAILABLE_FUNDS".into(),
-        available: 300,
-        requested: 500,
-    };
-    let buy_in = buy_in(vec![started(), ev(failed.clone())]);
-
-    let state = buy_in.state();
-    assert_eq!(
-        (state.phase(), state.failure_reason.as_str()),
-        (Phase::Failed, "INSUFFICIENT_AVAILABLE_FUNDS")
-    );
-    assert_eq!(
-        asks(&[ev(failed)]),
-        (
-            vec![(
-                bytes(MAIN),
-                TableAggregateOutput::ReleaseSeat(domain(v1::ReleaseSeat {
-                    buy_in_id: bytes(B1),
-                    reason: "INSUFFICIENT_AVAILABLE_FUNDS".into(),
-                }))
-            )],
-            vec![]
-        )
-    );
 }

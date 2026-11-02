@@ -19,7 +19,8 @@ fn register_registers_the_table_and_both_policies() {
     );
 }
 
-/// The player is sent DecideMove and read for MoveDecided, by full name.
+/// The player is sent DecideMove and read for MoveDecided and MoveRefused,
+/// by full name.
 #[test]
 fn the_player_is_named_by_its_command_and_event() {
     assert_eq!(<PlayerAggregate as CommandTarget>::DOMAIN, "player");
@@ -30,6 +31,9 @@ fn the_player_is_named_by_its_command_and_event() {
     assert_eq!(<PlayerAggregate as EventSource>::DOMAIN, "player");
     assert_eq!(
         <PlayerAggregate as EventSource>::event_types(),
-        ["io.angzarr.examples.v1.MoveDecided"]
+        [
+            "io.angzarr.examples.v1.MoveDecided",
+            "io.angzarr.examples.v1.MoveRefused"
+        ]
     );
 }

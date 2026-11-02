@@ -1895,6 +1895,34 @@ fn eu_1454_releasing_a_seat_that_is_no_longer_held_changes_nothing() {
     assert_eq!(table.when_fact(release).expect("ok"), vec![]);
 }
 
+// ================================================================ RecordMoveUndecided
+
+/// The player could not decide (policy-table-player's translation of a
+/// refused DecideMove, angzarr decision 14.76): the table records it and
+/// changes nothing else; it counts as an event folded.
+#[test]
+fn an_undecided_move_is_recorded_and_changes_nothing_else() {
+    let mut table = given(main_table());
+    let before = table.state().clone();
+
+    let undecided = v1::RecordMoveUndecided {
+        round: 1,
+        seat: 0,
+        reason: "NO_MODEL".into(),
+    };
+    let events = table.when_fact(undecided).expect("recorded");
+
+    assert_eq!(
+        events,
+        vec![ev(v1::MoveUndecided {
+            round: 1,
+            seat: 0,
+            reason: "NO_MODEL".into(),
+        })]
+    );
+    assert_eq!(table.state(), &before, "nothing else changes");
+}
+
 // ================================================================ LeaveTable
 
 /// Alice seated at seat 0 with `stack`, after table "Main" (event 3).

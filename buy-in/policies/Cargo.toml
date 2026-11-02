@@ -8,6 +8,8 @@ description = "The buy-in's four policies (to and from the table and the wallet)
 
 [dependencies]
 examples-proto.workspace = true
+# The refusal of a command a policy never sends is its bug: a code!.
+angzarr-diagnostic.workspace = true
 
 [lints]
 workspace = true

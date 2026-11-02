@@ -6,17 +6,28 @@
 //! policy-buy-in-wallet: the buy-in's steps at the wallet, at the player's
 //! root (the wallet shares it): hold the money (HoldFunds, a command), spend
 //! it (CaptureFunds, a fact), release it (ReleaseHold, a fact: the undo of
-//! the held money). The hold's id is the buy-in's.
+//! the held money, on HoldReleaseDue). The hold's id is the buy-in's.
 //!
-//! HoldFunds' refusal is passed through (the interface's default): the
-//! buy-in has no fact to translate it into, so it reaches the buy-in as
-//! the standard CommandRefused (EU-1562 waits on the buy-in's handling of
-//! it).
+//! HoldFunds' refusal is translated (angzarr decision 14.76): the wallet's
+//! InsufficientFunds becomes the buy-in's own FundsHoldRefused (EU-1562).
+//! Every other wallet command it never sends.
 
+use angzarr_diagnostic::code;
+
+use crate::buy_in_table_policy_impl::ROLLED_BACK;
 use crate::domain::*;
+use crate::never_sent::never_sent;
+
+/// The code a HoldFunds refusal carries: wallet.proto's.
+pub const INSUFFICIENT_AVAILABLE_FUNDS: &str = "INSUFFICIENT_AVAILABLE_FUNDS";
+
+/// The key of a HoldFunds refusal with no typed refusal: a bug.
+pub const HOLD_REFUSED_UNTYPED: &str = code!("hold-refused-untyped");
 
 #[derive(Clone, Debug, Default)]
 pub struct BuyInWalletPolicyImpl;
+
+type Fact = Result<BuyInProcessManagerFact, Bug>;
 
 impl BuyInWalletPolicy for BuyInWalletPolicyImpl {
     fn buy_in_started(
@@ -45,16 +56,89 @@ impl BuyInWalletPolicy for BuyInWalletPolicyImpl {
         Ok(vec![(event.player_root.clone(), capture.into())])
     }
 
-    fn buy_in_seat_lost(
+    fn hold_release_due(
         &self,
         _source: &[u8],
-        event: &BuyInSeatLost,
+        event: &HoldReleaseDue,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, WalletAggregateOutput)>, Bug> {
         let release = ReleaseHold {
             hold_id: event.buy_in_id.clone(),
-            reason: event.reason.clone(),
+            reason: ROLLED_BACK.to_string(),
         };
         Ok(vec![(event.player_root.clone(), release.into())])
+    }
+
+    fn register_wallet_refused(
+        &self,
+        command: &RegisterWallet,
+        _refusal: Option<WalletRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn import_wallet_refused(
+        &self,
+        command: &ImportWallet,
+        _refusal: Option<WalletRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn update_profile_refused(
+        &self,
+        command: &UpdateProfile,
+        _refusal: Option<WalletRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn deposit_funds_refused(
+        &self,
+        command: &DepositFunds,
+        _refusal: Option<WalletRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn withdraw_funds_refused(
+        &self,
+        command: &WithdrawFunds,
+        _refusal: Option<WalletRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    fn enroll_loyalty_refused(
+        &self,
+        command: &EnrollLoyalty,
+        _refusal: Option<WalletRefused>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        Err(never_sent(command))
+    }
+
+    /// The wallet could not fund the buy-in: the buy-in's own fact of it,
+    /// with what was available and asked for. HoldFunds refuses with
+    /// InsufficientFunds alone, so a refusal without it is a bug.
+    fn hold_funds_refused(
+        &self,
+        command: &HoldFunds,
+        refusal: Option<InsufficientFunds>,
+        _ctx: &CommandContext,
+    ) -> Fact {
+        let funds = refusal.ok_or_else(|| Bug::new(HOLD_REFUSED_UNTYPED))?;
+        let refused = FundsHoldRefused {
+            buy_in_id: command.hold_id.clone(),
+            reason: INSUFFICIENT_AVAILABLE_FUNDS.to_string(),
+            available: funds.available,
+            requested: funds.requested,
+        };
+        Ok(refused.into())
     }
 }
