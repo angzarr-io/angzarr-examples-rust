@@ -1,0 +1,13 @@
+[package]
+name = "wallet-policies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "policy-table-wallet: a settled round as each seat's round result and loyalty points, news for its wallet, implementing its generated interface"
+
+[dependencies]
+examples-proto.workspace = true
+
+[lints]
+workspace = true

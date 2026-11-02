@@ -49,3 +49,31 @@ why = "the table-player policies are plain functions over the generated domain t
 from = ["table_player_policies::**"]
 allow = ["table_player_policies::**", "examples_proto::**"]
 deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
+
+[[rule]]
+name = "the-wallet-names-the-runtime-only-through-its-generated-layer"
+why = "agg-wallet is the wallet's logic: its generated interface implemented over the generated domain layer, and its upcasting rule; it marks nothing up and links no framework directly"
+from = ["agg_wallet::**"]
+allow = ["agg_wallet::**", "examples_proto::**", "angzarr_diagnostic::**"]
+deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
+
+[[rule]]
+name = "the-buy-in-names-the-runtime-only-through-its-generated-layer"
+why = "pm-buy-in is the buy-in's logic over the generated domain layer, its compensation the domain layer's re-export; it marks nothing up and links no framework directly"
+from = ["pm_buy_in::**"]
+allow = ["pm_buy_in::**", "examples_proto::**", "angzarr_diagnostic::**"]
+deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
+
+[[rule]]
+name = "the-generated-policies-name-the-runtime-only-through-their-generated-layer"
+why = "the buy-in's policies and policy-table-wallet implement their generated interfaces over the generated domain layer; the generated adapters carry the markup"
+from = ["buy_in_policies::**", "wallet_policies::**"]
+allow = ["buy_in_policies::**", "wallet_policies::**", "examples_proto::**", "angzarr_diagnostic::**"]
+deny = ["angzarr_client::**", "angzarr_embedded::**", "angzarr_embedded_macros::**", "tonic::**"]
+
+[[rule]]
+name = "the-embedded-blackjack-is-generated-wiring-over-the-logic"
+why = "blackjack-embedded is the generated angzarr-embedded adapters and register() of the table, the wallet, the buy-in and their policies (build.rs) over their implementations; the logic stays in the logic crates, and it links no framework client"
+from = ["blackjack_embedded::**"]
+allow = ["blackjack_embedded::**", "agg_table::**", "agg_wallet::**", "pm_buy_in::**", "buy_in_policies::**", "wallet_policies::**", "examples_proto::**"]
+deny = ["angzarr_client::**", "tonic::**"]

@@ -1,0 +1,13 @@
+[package]
+name = "buy-in-policies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The buy-in's four policies (to and from the table and the wallet), implementing their generated interfaces"
+
+[dependencies]
+examples-proto.workspace = true
+
+[lints]
+workspace = true

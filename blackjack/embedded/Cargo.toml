@@ -1,0 +1,37 @@
+[package]
+name = "blackjack-embedded"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The blackjack table with wallets and buy-ins on angzarr-embedded: the table, the wallet, the buy-in process manager and their five policies, generated adapters over their implementations"
+# angzarr-embedded needs 1.85 (prost 0.14 through angzarr-proto).
+rust-version = "1.85"
+
+[dependencies]
+agg-table.workspace = true
+agg-wallet.workspace = true
+pm-buy-in.workspace = true
+buy-in-policies.workspace = true
+wallet-policies.workspace = true
+examples-proto.workspace = true
+angzarr-embedded.workspace = true
+angzarr-embedded-macros.workspace = true
+angzarr-diagnostic.workspace = true
+prost.workspace = true
+
+[build-dependencies]
+angzarr-build.workspace = true
+
+[dev-dependencies]
+agg-table = { workspace = true, features = ["test-support"] }
+# Given/when/then on one stream: angzarr-embedded's test support
+# (`testing::Harness`: the kernel over an in-memory store).
+angzarr-embedded = { workspace = true, features = ["test-support"] }
+# The whole application in process over an in-memory store
+# (tests/buy_in.rs): angzarr-embedded-host's App.
+angzarr-embedded-host.workspace = true
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "pm-buy-in"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The blackjack buy-in process manager: a held seat, then held funds, then a confirmed seat, then spent funds, implementing its generated interface"
+
+[dependencies]
+examples-proto.workspace = true
+
+[lints]
+workspace = true

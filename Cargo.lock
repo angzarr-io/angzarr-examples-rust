@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "agg-wallet"
+version = "0.1.0"
+dependencies = [
+ "angzarr-diagnostic",
+ "examples-proto",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -29,7 +37,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "angzarr-build"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-cli?rev=615229faa440278bb7f7872e318330861c58d076#615229faa440278bb7f7872e318330861c58d076"
+source = "git+https://github.com/angzarr-io/angzarr-cli?rev=c0e0232647e356cea9cd564981a002d1fd9ce694#c0e0232647e356cea9cd564981a002d1fd9ce694"
 dependencies = [
  "angzarr-codegen",
  "angzarr-diagnostic",
@@ -40,7 +48,7 @@ dependencies = [
 [[package]]
 name = "angzarr-codegen"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-cli?rev=615229faa440278bb7f7872e318330861c58d076#615229faa440278bb7f7872e318330861c58d076"
+source = "git+https://github.com/angzarr-io/angzarr-cli?rev=c0e0232647e356cea9cd564981a002d1fd9ce694#c0e0232647e356cea9cd564981a002d1fd9ce694"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-embedded-host-config",
@@ -271,12 +279,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "blackjack-embedded"
+version = "0.1.0"
+dependencies = [
+ "agg-table",
+ "agg-wallet",
+ "angzarr-build",
+ "angzarr-diagnostic",
+ "angzarr-embedded",
+ "angzarr-embedded-host",
+ "angzarr-embedded-macros",
+ "buy-in-policies",
+ "examples-proto",
+ "pm-buy-in",
+ "prost",
+ "tokio",
+ "wallet-policies",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "buy-in-policies"
+version = "0.1.0"
+dependencies = [
+ "examples-proto",
 ]
 
 [[package]]
@@ -1250,6 +1284,13 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "pm-buy-in"
+version = "0.1.0"
+dependencies = [
+ "examples-proto",
+]
 
 [[package]]
 name = "potential_utf"
@@ -2385,6 +2426,13 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "wallet-policies"
+version = "0.1.0"
+dependencies = [
+ "examples-proto",
+]
 
 [[package]]
 name = "want"

@@ -12,6 +12,8 @@ const PROTOS: &[&str] = &[
     "io/angzarr/examples/v1/table.proto",
     "io/angzarr/examples/v1/player.proto",
     "io/angzarr/examples/v1/policies.proto",
+    "io/angzarr/examples/v1/wallet.proto",
+    "io/angzarr/examples/v1/buy_in.proto",
 ];
 const INCLUDES: &[&str] = &["../angzarr-project/proto"];
 
