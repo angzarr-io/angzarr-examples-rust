@@ -36,7 +36,10 @@ pub mod adapters {
     include!(concat!(env!("OUT_DIR"), "/angzarr-adapters.rs"));
 }
 
-/// The table's generated registration.
+/// The table's generated registration. While angzarr-build is pinned
+/// before the registration answered `Result`, its registrations' unused
+/// answers are allowed here.
+#[allow(unused_must_use)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/angzarr-register.rs"));
 }
@@ -56,10 +59,16 @@ pub use stand_ins::PlayerAggregate;
 pub use table_player_policy::TablePlayerPolicy;
 
 /// Registers the table (its generated registration) and both policies. The
-/// player domain is the child's, registered by the host.
-pub fn register(registry: &mut angzarr_embedded::Registry) {
+/// player domain is the child's, registered by the host. Refused as the
+/// registry refuses a component.
+pub fn register(
+    registry: &mut angzarr_embedded::Registry,
+) -> Result<(), angzarr_embedded::Misconfigured> {
     generated::register(registry);
-    registry.policy(TablePlayerPolicy).policy(PlayerTablePolicy);
+    registry
+        .policy(TablePlayerPolicy)?
+        .policy(PlayerTablePolicy)?;
+    Ok(())
 }
 
 #[cfg(test)]

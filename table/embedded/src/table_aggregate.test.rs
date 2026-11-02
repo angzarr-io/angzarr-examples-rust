@@ -70,7 +70,9 @@ type When = dyn Fn(&mut Harness) -> Then;
 
 fn registry() -> Registry {
     let mut registry = Registry::new();
-    registry.aggregate::<TableAggregate>(TableAggregate::default);
+    registry
+        .aggregate::<TableAggregate>(TableAggregate::default)
+        .unwrap();
     registry
 }
 

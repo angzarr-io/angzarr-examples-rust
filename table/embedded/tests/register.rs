@@ -10,10 +10,11 @@ use table_embedded::{register, PlayerAggregate};
 #[test]
 fn register_registers_the_table_and_both_policies() {
     let mut registry = Registry::new();
-    register(&mut registry);
-    assert_eq!(registry.domains().collect::<Vec<_>>(), ["table"]);
+    register(&mut registry).unwrap();
+    let catalog = registry.catalog();
+    assert_eq!(catalog.domains().collect::<Vec<_>>(), ["table"]);
     assert_eq!(
-        registry.policy_names().collect::<Vec<_>>(),
+        catalog.policy_names().collect::<Vec<_>>(),
         ["policy-table-player", "policy-player-table"]
     );
 }
