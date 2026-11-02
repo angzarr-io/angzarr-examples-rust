@@ -1982,6 +1982,26 @@ fn eu_1461_a_cash_out_is_identified_by_the_table_and_its_position_in_the_history
     assert_eq!(cashed.cashout_id[..], cashout_id(5)[..]);
 }
 
+/// An undecided move occupies its place in the history: a cash-out after
+/// it is event 5, not 4 (angzarr decision 14.76's RecordMoveUndecided).
+#[test]
+fn an_undecided_move_counts_in_a_cash_outs_position() {
+    let mut events = alice_seated(640);
+    events.push(ev(v1::MoveUndecided {
+        round: 1,
+        seat: 0,
+        reason: "NO_MODEL".into(),
+    }));
+    let mut table = given(events);
+
+    let events = table.when(v1::LeaveTable { seat: 0 }).expect("left");
+
+    let [Ev::PlayerCashedOut(cashed)] = &events[..] else {
+        panic!("expected PlayerCashedOut, got {events:?}");
+    };
+    assert_eq!(cashed.cashout_id[..], cashout_id(5)[..]);
+}
+
 /// The kind of a table event, by its message name.
 fn kind(event: &Ev) -> String {
     type_name(&event.to_any().type_url)
