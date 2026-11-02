@@ -58,11 +58,7 @@ pub trait TableAggregate {
         ctx: &Context,
     ) -> Result<Option<PlayerSeated>, Failed<SeatNotConfirmable>>;
 
-    fn release_seat(
-        &self,
-        cmd: &ReleaseSeat,
-        ctx: &Context,
-    ) -> Result<Option<SeatReleased>, Failed<Rejection>>;
+    fn release_seat(&self, fact: &ReleaseSeat, ctx: &Context) -> Option<SeatReleased>;
 
     fn apply_table_created(&mut self, event: &TableCreated);
 

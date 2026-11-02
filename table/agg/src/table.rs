@@ -568,22 +568,19 @@ impl TableAggregate for Table {
         }))
     }
 
-    /// The hold freed, or nothing when it no longer exists; never refused.
-    fn release_seat(
-        &self,
-        cmd: &ReleaseSeat,
-        _ctx: &Context,
-    ) -> Result<Option<SeatReleased>, Failed<Rejection>> {
-        Ok(self
-            .state
+    /// The hold freed, or nothing when it no longer exists: a fact, the
+    /// buy-in's compensation of its held seat, recorded and never refused
+    /// (angzarr decision 14.69).
+    fn release_seat(&self, fact: &ReleaseSeat, _ctx: &Context) -> Option<SeatReleased> {
+        self.state
             .seat_holds
-            .get(&hex(&cmd.buy_in_id))
+            .get(&hex(&fact.buy_in_id))
             .map(|hold| SeatReleased {
-                buy_in_id: cmd.buy_in_id.clone(),
+                buy_in_id: fact.buy_in_id.clone(),
                 player_root: hold.player_root.clone(),
                 seat: hold.seat,
-                reason: cmd.reason.clone(),
-            }))
+                reason: fact.reason.clone(),
+            })
     }
 
     fn apply_table_created(&mut self, event: &TableCreated) {
