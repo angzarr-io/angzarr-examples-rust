@@ -124,10 +124,11 @@ mutation-test:
 # of this checkout's. The run's log is target/logs/mutation-push.log, its
 # mutants.out target/push-tree/mutants.out.
 #
-# Red tests (cargo-mutants' baseline fails, exit 4) cannot be judged: pushed
-# to a branch other than the default one they pass, with a warning that the
-# branch cannot merge until they pass; pushed to the default branch they are
-# refused. `lefthook` is ignored.
+# Red tests (cargo-mutants' baseline fails, exit 4) cannot be judged, so they
+# fail it on every branch, as does a run that found mutants and tested fewer
+# (`mutation-diff`): a mutation run that judged nothing has shown nothing. No
+# hook runs it, so failing it keeps no red commit off a branch (`push-check`
+# allows those). `lefthook` is ignored.
 [positional-arguments]
 mutation-push remote *lefthook:
     #!/usr/bin/env bash
@@ -206,12 +207,8 @@ mutation-push remote *lefthook:
         case "$rc" in
             0) echo "ok   mutation-push ($range): $(grep -E '^(pass|No mutants in diff)' "$log" | paste -sd ';' | sed 's/;/; /g')" ;;
             4)
-                if [ "$remote_ref" != "refs/heads/$default" ]; then
-                    echo "RED  mutation-push: $range not judged, the tests are red; allowed off $default, which $target cannot merge into until they pass"
-                else
-                    echo "FAIL mutation-push: $range: red tests cannot be pushed to $remote/$target (full log: target/logs/mutation-push.log)" >&2
-                    exit 1
-                fi ;;
+                echo "FAIL mutation-push: $range: the tests fail unmutated (cargo-mutants baseline), so no mutant can be judged; judge the commit that turns them green (full log: target/logs/mutation-push.log)" >&2
+                exit 1 ;;
             *)
                 echo "FAIL mutation-push: $range: below a crate's threshold, or the run failed (full log: target/logs/mutation-push.log)" >&2
                 grep -E '^(pass|FAIL)' "$log" | sed 's/^/  /' >&2 || true

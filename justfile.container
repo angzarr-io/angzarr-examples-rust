@@ -85,7 +85,8 @@ mutation-test: (_mutation "")
 # Mutation-test only the lines of the MUTATED crates that the diff PATCH
 # (relative to the checkout, a/ and b/ paths) changes, judged the same way:
 # the host `mutation-push`'s run (by hand), in the pushed commit's tree. Exits 4 when the
-# tests fail unmutated (cargo-mutants' baseline), so no mutant can be judged.
+# tests fail unmutated (cargo-mutants' baseline), so no mutant can be judged,
+# and 1 when it found mutants and tested fewer.
 mutation-diff PATCH: (_mutation PATCH)
 
 [private]
@@ -129,6 +130,17 @@ _mutation PATCH:
         4) echo "FAIL: the tests fail unmutated (cargo-mutants baseline); no mutant can be judged"; exit 4 ;;
         *) echo "FAIL: cargo mutants failed before a verdict (exit $rc)"; exit 1 ;;
     esac
+    # Every mutant found must have been tested: a run that found some and
+    # judged fewer has not shown the tests catch them, so it fails rather
+    # than passing on the ones it never ran. mutants.json lists those found,
+    # one top-level "name" each (this image has no jq); each outcome file a
+    # line per mutant judged.
+    found=$(grep -c '^    "name": ' mutants.out/mutants.json 2>/dev/null) || found=0
+    tested=$(cat mutants.out/caught.txt mutants.out/missed.txt mutants.out/timeout.txt mutants.out/unviable.txt 2>/dev/null | wc -l)
+    if [ "$tested" -ne "$found" ]; then
+        echo "FAIL: $found mutants found but $tested tested (cargo mutants exit $rc); nothing is judged until every one is"
+        exit 1
+    fi
     # Each outcome file holds a line per mutant, "<file>:<line>:<col>: ...".
     killed_files=$(cat mutants.out/caught.txt mutants.out/timeout.txt 2>/dev/null | cut -d: -f1)
     missed_files=$(cut -d: -f1 mutants.out/missed.txt 2>/dev/null)
