@@ -89,4 +89,5 @@ just up              # Kind cluster with coordinators + infrastructure
 
 ## License
 
-BSD-3-Clause
+Licensed under either of Apache License 2.0 or BSD 3-Clause, at your option
+([LICENSE-APACHE](LICENSE-APACHE), [LICENSE-BSD](LICENSE-BSD)).
