@@ -341,7 +341,6 @@ clean:
 # =============================================================================
 
 CLUSTER_NAME := "angzarr-test"
-COORDINATOR_VERSION := "latest"
 
 # OCI chart references
 CHART_REGISTRY := "oci://ghcr.io/angzarr-io/charts"
@@ -349,8 +348,8 @@ CHART_REGISTRY := "oci://ghcr.io/angzarr-io/charts"
 # Ensure we use Docker Engine, not Podman socket
 export DOCKER_HOST := ""
 
-# Create kind cluster with coordinators and infrastructure
-up: kind-create kind-load-coordinators deploy-infra
+# Create kind cluster with infrastructure
+up: kind-create deploy-infra
     @echo "=== Deployment complete ==="
     @just status
 
@@ -380,24 +379,6 @@ kind-create:
 # Delete kind cluster
 kind-delete:
     kind delete cluster --name {{CLUSTER_NAME}} || true
-
-# Pull and load coordinator sidecar images into kind
-kind-load-coordinators:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    coordinators=(
-        "angzarr-aggregate"
-        "angzarr-saga"
-        "angzarr-projector"
-        "angzarr-grpc-gateway"
-    )
-    for name in "${coordinators[@]}"; do
-        img="ghcr.io/angzarr-io/${name}:{{COORDINATOR_VERSION}}"
-        echo "Pulling $img..."
-        docker pull "$img"
-        echo "Loading $img into kind..."
-        kind load docker-image "$img" --name {{CLUSTER_NAME}}
-    done
 
 # Create namespace and apply base config
 setup-namespace:
