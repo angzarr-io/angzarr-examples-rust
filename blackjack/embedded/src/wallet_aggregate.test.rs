@@ -1,8 +1,8 @@
 //! Given/when/then on the marked-up wallet (wallet.feature, EU-1400 to
 //! EU-1439), through angzarr-embedded's test support
 //! (`angzarr_embedded::testing::Harness`): its kernel over an in-memory
-//! store, with the application's registration ([`crate::register`]), so the
-//! wallet's upcaster is the one the application runs.
+//! store, with the wallet registered alone, its upcaster the application's
+//! ([`crate::wallet_upcaster`]).
 //!
 //! - **Given** events are recorded as stored pages ([`given`]), or an older
 //!   version's page as it was stored ([`Harness::given_stored`]).
@@ -21,6 +21,7 @@ use agg_wallet::reason;
 use angzarr_diagnostic::{Arg, Diagnostic};
 use angzarr_embedded::markup::Rejection;
 use angzarr_embedded::testing::{Harness as Kernel, Samples};
+use angzarr_embedded::v1::event_meta::Causation;
 use angzarr_embedded::v1::{
     command_page, CommandBook, CommandPage, Cover, EventMeta, EventPage, Fact, FactOrigin, Uuid,
 };
@@ -61,9 +62,14 @@ fn hex(b: u8) -> String {
     format!("{b:02x}").repeat(16)
 }
 
+/// The wallet alone, with the upcaster the application gives it: what it
+/// records, its policies' reactions not run.
 fn registry() -> Registry {
     let mut registry = Registry::new();
-    crate::register(&mut registry).expect("the application registers");
+    registry
+        .aggregate::<WalletAggregate>(WalletAggregate::default)
+        .and_then(|r| r.upcast_with("wallet", crate::wallet_upcaster()))
+        .expect("the wallet registers");
     registry
 }
 
@@ -161,6 +167,12 @@ impl Harness {
             sequence: head,
             payload: Some(pack(&payload)),
             meta: Some(EventMeta {
+                causation: Some(Causation::CommandId(id(900))),
+                correlation_id: Some(id(900)),
+                recorded_at: Some(angzarr_embedded::Timestamp {
+                    seconds: 900,
+                    nanos: 0,
+                }),
                 rules_version: <WalletAggregate as Domain>::RULES_VERSION.to_string(),
                 ..EventMeta::default()
             }),
@@ -803,7 +815,20 @@ fn eu_1437_a_deposit_recorded_by_an_older_version_still_counts() {
         .when(v1::DepositFunds { amount: 200 })
         .expect("deposited");
 
-    let state = wallet.state();
-    assert_funds(&state, 500, 500);
-    assert_balances(&state);
+    // The kernel reads the older deposit through the upcaster (a replay of
+    // the stored pages alone would not): 500 available, all of it.
+    let then = wallet.when(v1::WithdrawFunds { amount: 501 });
+    assert_eq!(
+        rejected(then),
+        (
+            reason::INSUFFICIENT_AVAILABLE_FUNDS.to_string(),
+            vec![
+                ("available".to_string(), "500".to_string()),
+                ("requested".to_string(), "501".to_string()),
+            ]
+        )
+    );
+    wallet
+        .when(v1::WithdrawFunds { amount: 500 })
+        .expect("the whole bankroll is available");
 }

@@ -2,28 +2,51 @@
 //! TableBuyInPolicyImpl: the implementation of `TableBuyInPolicy`, the generated domain layer's
 //! interface, written once by `angzarr scaffold rust` and yours from then on:
 //! `--missing` adds the required methods it lacks, each `todo!()`.
+//!
+//! policy-table-buy-in: what the table reports to the buy-in of the
+//! conversation its event belongs to, the process manager's root being that
+//! correlation (buy_in.proto).
 
 use crate::domain::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct TableBuyInPolicyImpl;
 
+/// The buy-in the event belongs to: its conversation's.
+pub(crate) fn buy_in_of(ctx: &PolicyContext) -> Vec<u8> {
+    ctx.correlation_id().value.to_vec()
+}
+
 impl TableBuyInPolicy for TableBuyInPolicyImpl {
+    /// A held seat starts the buy-in, at this table (the event's own root).
     fn seat_held(
         &self,
-        _source: &[u8],
-        _event: &SeatHeld,
-        _ctx: &PolicyContext,
+        source: &[u8],
+        event: &SeatHeld,
+        ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
-        todo!()
+        let start = StartBuyIn {
+            buy_in_id: event.buy_in_id.clone(),
+            player_root: event.player_root.clone(),
+            table_root: source.to_vec(),
+            seat: event.seat,
+            amount: event.amount,
+        };
+        Ok(vec![(buy_in_of(ctx), start.into())])
     }
 
     fn player_seated(
         &self,
         _source: &[u8],
-        _event: &PlayerSeated,
-        _ctx: &PolicyContext,
+        event: &PlayerSeated,
+        ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
-        todo!()
+        let seated = RecordPlayerSeated {
+            buy_in_id: event.buy_in_id.clone(),
+            player_root: event.player_root.clone(),
+            seat: event.seat,
+            stack: event.stack,
+        };
+        Ok(vec![(buy_in_of(ctx), seated.into())])
     }
 }

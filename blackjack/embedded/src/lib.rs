@@ -49,7 +49,24 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/angzarr-register.rs"));
 }
 
-pub use generated::register;
+/// Registers every component (the generated registration), the wallet's
+/// older history read through its upcaster (agg-wallet's `upcast`).
+/// Refused as the registry refuses a component.
+pub fn register(
+    registry: &mut angzarr_embedded::Registry,
+) -> Result<(), angzarr_embedded::Misconfigured> {
+    generated::register(registry)?;
+    registry.upcast_with(WALLET, wallet_upcaster())?;
+    Ok(())
+}
+
+/// The wallet's domain.
+const WALLET: &str = <adapters::WalletAggregate as angzarr_embedded::Domain>::NAME;
+
+/// What the wallet reads its older history through: agg-wallet's rules.
+pub fn wallet_upcaster() -> angzarr_embedded::Upcaster {
+    angzarr_embedded::Upcaster::new(WALLET, WALLET).rule(agg_wallet::upcast::funds_deposited_v1)
+}
 
 #[cfg(test)]
 #[path = "buy_in.test.rs"]

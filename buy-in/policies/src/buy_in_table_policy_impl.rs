@@ -2,6 +2,13 @@
 //! BuyInTablePolicyImpl: the implementation of `BuyInTablePolicy`, the generated domain layer's
 //! interface, written once by `angzarr scaffold rust` and yours from then on:
 //! `--missing` adds the required methods it lacks, each `todo!()`.
+//!
+//! policy-buy-in-table: the buy-in's steps at the table, at the root its
+//! event names: confirm the seat (ConfirmSeat, a command), release it
+//! (ReleaseSeat, a fact: the undo of the held seat). ConfirmSeat's refusal
+//! is translated (buy_in.proto, TRANSLATE): the table's SeatNotConfirmable
+//! becomes the buy-in's own SeatConfirmationRefused, so the buy-in never
+//! reads the table's types.
 
 use crate::domain::*;
 
@@ -12,27 +19,39 @@ impl BuyInTablePolicy for BuyInTablePolicyImpl {
     fn buy_in_funds_held(
         &self,
         _source: &[u8],
-        _event: &BuyInFundsHeld,
+        event: &BuyInFundsHeld,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, TableAggregateOutput)>, Bug> {
-        todo!()
+        let confirm = ConfirmSeat {
+            buy_in_id: event.buy_in_id.clone(),
+        };
+        Ok(vec![(event.table_root.clone(), confirm.into())])
     }
 
     fn buy_in_failed(
         &self,
         _source: &[u8],
-        _event: &BuyInFailed,
+        event: &BuyInFailed,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, TableAggregateOutput)>, Bug> {
-        todo!()
+        let release = ReleaseSeat {
+            buy_in_id: event.buy_in_id.clone(),
+            reason: event.reason.clone(),
+        };
+        Ok(vec![(event.table_root.clone(), release.into())])
     }
 
     fn confirm_seat_refused(
         &self,
-        _command: &ConfirmSeat,
-        _refusal: Option<SeatNotConfirmable>,
+        command: &ConfirmSeat,
+        refusal: Option<SeatNotConfirmable>,
         _ctx: &CommandContext,
     ) -> Result<Option<BuyInProcessManagerFact>, Bug> {
-        todo!()
+        let reason = refusal.map(|r| r.reason).unwrap_or_default();
+        let refused = SeatConfirmationRefused {
+            buy_in_id: command.buy_in_id.clone(),
+            reason,
+        };
+        Ok(Some(refused.into()))
     }
 }

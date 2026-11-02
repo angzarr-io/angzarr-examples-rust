@@ -117,8 +117,9 @@ impl<'a> Client<'a> {
         self.send_in(to, command, None).await
     }
 
-    /// `fact` to `to`, as an outside writer records it.
-    async fn tell<M: Message + Name>(&mut self, to: Cover, fact: M) {
+    /// `fact` to `to`, as an outside writer records it, in the
+    /// conversation `correlation` when one is given.
+    async fn tell_in<M: Message + Name>(&mut self, to: Cover, fact: M, correlation: Option<u8>) {
         let (n, sampled) = self.sampled();
         let book = CommandBook {
             cover: Some(to),
@@ -130,6 +131,7 @@ impl<'a> Client<'a> {
                     external_id: format!("client-{n}"),
                     description: "an outside writer".into(),
                 }),
+                correlation_id: correlation.map(root),
                 ..CommandPage::default()
             }),
             ..CommandBook::default()
@@ -137,6 +139,10 @@ impl<'a> Client<'a> {
         if let Err(failure) = self.app.handle(book, &sampled).await {
             panic!("fact {n} ({}) failed: {failure:?}", M::full_name());
         }
+    }
+
+    async fn tell<M: Message + Name>(&mut self, to: Cover, fact: M) {
+        self.tell_in(to, fact, None).await
     }
 }
 
@@ -430,15 +436,19 @@ async fn eu_1559_two_buy_ins_in_different_conversations_do_not_interfere() {
         seat,
         amount: 500,
     };
-    client.tell(cover("buy-in", C1), start(B1, ALICE, 0)).await;
-    client.tell(cover("buy-in", C2), start(B2, BOB, 1)).await;
+    client
+        .tell_in(cover("buy-in", C1), start(B1, ALICE, 0), Some(C1))
+        .await;
+    client
+        .tell_in(cover("buy-in", C2), start(B2, BOB, 1), Some(C2))
+        .await;
 
     let held = v1::RecordFundsHeld {
         hold_id: bytes(B2),
         table_root: bytes(MAIN),
         amount: 500,
     };
-    client.tell(cover("buy-in", C2), held).await;
+    client.tell_in(cover("buy-in", C2), held, Some(C2)).await;
 
     assert_eq!(buy_in(&app, C2).await.phase(), Phase::AwaitingSeat);
     assert_eq!(buy_in(&app, C1).await.phase(), Phase::AwaitingHold);

@@ -77,9 +77,10 @@ test-acceptance: (_cargo "test" "--workspace" "--test" "'*'")
 # the longest prefix its file is under, and one under none fails the gate, so a
 # crate added to MUTATED gets a threshold first. 90% is the owner's bar for
 # every crate (2026-10-29).
-MUTATION_THRESHOLDS := "table/agg=90 table/policies=90 table/embedded=90"
-# The crates mutated: the aggregate, the player policies and the embedded host.
-MUTATED := "--package agg-table --package table-player-policies --package table-embedded"
+MUTATION_THRESHOLDS := "table/agg=90 table/policies=90 table/embedded=90 wallet/agg=90 wallet/policies=90 buy-in/pm=90 buy-in/policies=90 blackjack/embedded=90"
+# The crates mutated: the table, its player policies and its embedded host;
+# the wallet, the buy-in, their policies and their embedded host.
+MUTATED := "--package agg-table --package table-player-policies --package table-embedded --package agg-wallet --package wallet-policies --package pm-buy-in --package buy-in-policies --package blackjack-embedded"
 
 # Mutation-test the MUTATED crates (the full pass), judged per crate by
 # MUTATION_THRESHOLDS over viable mutants (caught or timed out = killed).

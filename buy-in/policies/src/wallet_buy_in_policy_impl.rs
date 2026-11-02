@@ -2,8 +2,12 @@
 //! WalletBuyInPolicyImpl: the implementation of `WalletBuyInPolicy`, the generated domain layer's
 //! interface, written once by `angzarr scaffold rust` and yours from then on:
 //! `--missing` adds the required methods it lacks, each `todo!()`.
+//!
+//! policy-wallet-buy-in: what the wallet reports to the buy-in of the
+//! conversation its event belongs to.
 
 use crate::domain::*;
+use crate::table_buy_in_policy_impl::buy_in_of;
 
 #[derive(Clone, Debug, Default)]
 pub struct WalletBuyInPolicyImpl;
@@ -12,18 +16,28 @@ impl WalletBuyInPolicy for WalletBuyInPolicyImpl {
     fn funds_held(
         &self,
         _source: &[u8],
-        _event: &FundsHeld,
-        _ctx: &PolicyContext,
+        event: &FundsHeld,
+        ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
-        todo!()
+        let held = RecordFundsHeld {
+            hold_id: event.hold_id.clone(),
+            table_root: event.table_root.clone(),
+            amount: event.amount,
+        };
+        Ok(vec![(buy_in_of(ctx), held.into())])
     }
 
     fn funds_captured(
         &self,
         _source: &[u8],
-        _event: &FundsCaptured,
-        _ctx: &PolicyContext,
+        event: &FundsCaptured,
+        ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
-        todo!()
+        let captured = RecordFundsCaptured {
+            hold_id: event.hold_id.clone(),
+            table_root: event.table_root.clone(),
+            amount: event.amount,
+        };
+        Ok(vec![(buy_in_of(ctx), captured.into())])
     }
 }

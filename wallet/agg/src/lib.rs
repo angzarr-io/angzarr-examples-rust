@@ -15,6 +15,7 @@ pub use examples_proto::domain;
 pub use examples_proto::v1 as wire;
 
 pub mod reason;
+pub mod upcast;
 mod wallet_aggregate_impl;
 
 pub use wallet_aggregate_impl::WalletAggregateImpl;

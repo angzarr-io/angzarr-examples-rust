@@ -88,9 +88,21 @@ fn context(domain: &str, stream: u8, correlation: u8) -> PolicyContext {
     )
 }
 
+/// The buy-in alone: what it records, its policies called by the tests.
 fn registry() -> Registry {
     let mut registry = Registry::new();
-    crate::register(&mut registry).expect("the application registers");
+    registry
+        .process_manager::<BuyInProcessManager>(BuyInProcessManager::default)
+        .expect("the buy-in registers");
+    registry
+}
+
+/// The table alone.
+fn table_registry() -> Registry {
+    let mut registry = Registry::new();
+    registry
+        .aggregate::<TableAggregate>(TableAggregate::default)
+        .expect("the table registers");
     registry
 }
 
@@ -130,6 +142,8 @@ impl BuyIn {
                     external_id: format!("report-{}", self.facts),
                     description: "a policy's report".to_string(),
                 }),
+                // The conversation the buy-in is tracked under.
+                correlation_id: Some(root(C1)),
                 ..CommandPage::default()
             }),
             ..CommandBook::default()
@@ -569,7 +583,7 @@ fn eu_1612_a_seat_released_twice_is_released_once() {
     let table_ev = |m: &dyn Fn() -> angzarr_embedded::Any| {
         TableAggregateEvent::from_any(&m()).expect("a table event")
     };
-    let mut table = Kernel::<TableAggregate>::new(registry(), cover("table", MAIN));
+    let mut table = Kernel::<TableAggregate>::new(table_registry(), cover("table", MAIN));
     table.given([
         table_ev(&|| pack(&created)),
         table_ev(&|| pack(&seat_held())),

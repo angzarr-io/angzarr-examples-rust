@@ -53,6 +53,27 @@ submodule; the submodule pin is the contract this repository implements.
   ANGZARR_PLAYER_DIR=<examples-python>/player \
     cargo test -p table-embedded --test remote_player -- --ignored
   ```
+- `wallet/agg` (`agg-wallet`) - the wallet aggregate (wallet.proto):
+  `WalletAggregateImpl`, implementing the generated
+  `domain::WalletAggregate` (`angzarr scaffold rust` wrote its stub), its
+  state the spec's `WalletState`; its rejection keys (`reason`) and the
+  upcasting rule for deposits older versions stored (`upcast`).
+- `wallet/policies` (`wallet-policies`) - policy-table-wallet: a settled
+  round as each seat's round result and loyalty points, facts for its
+  wallet.
+- `buy-in/pm` (`pm-buy-in`) - the buy-in process manager (buy_in.proto):
+  `BuyInProcessManagerImpl`, implementing `domain::BuyInProcessManager`,
+  tracked under the conversation (correlation) it started in.
+- `buy-in/policies` (`buy-in-policies`) - the buy-in's four policies: the
+  table's and the wallet's news to the buy-in, and the buy-in's steps to
+  them (ConfirmSeat's refusal translated into SeatConfirmationRefused).
+- `blackjack/embedded` (`blackjack-embedded`) - the table with wallets and
+  buy-ins on angzarr-embedded: the generated adapters and `register()` of
+  the table, the wallet, the buy-in and the five policies over their
+  implementations, the wallet's upcaster added. `tests/buy_in.rs` runs
+  buy-ins end to end on angzarr-embedded-host's `App` in process: one that
+  goes through, and one rolled back when the seat is released meanwhile.
+  table-embedded stays the bot table, seated by a driver with no buy-in.
 - `tools/archlint` - the module-layering linter for `archlint.toml`.
 
 ## Development

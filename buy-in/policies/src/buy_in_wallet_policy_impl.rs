@@ -2,6 +2,16 @@
 //! BuyInWalletPolicyImpl: the implementation of `BuyInWalletPolicy`, the generated domain layer's
 //! interface, written once by `angzarr scaffold rust` and yours from then on:
 //! `--missing` adds the required methods it lacks, each `todo!()`.
+//!
+//! policy-buy-in-wallet: the buy-in's steps at the wallet, at the player's
+//! root (the wallet shares it): hold the money (HoldFunds, a command), spend
+//! it (CaptureFunds, a fact), release it (ReleaseHold, a fact: the undo of
+//! the held money). The hold's id is the buy-in's.
+//!
+//! HoldFunds' refusal is passed through (the interface's default): the
+//! buy-in has no fact to translate it into, so it reaches the buy-in as
+//! the standard CommandRefused (EU-1562 waits on the buy-in's handling of
+//! it).
 
 use crate::domain::*;
 
@@ -12,27 +22,39 @@ impl BuyInWalletPolicy for BuyInWalletPolicyImpl {
     fn buy_in_started(
         &self,
         _source: &[u8],
-        _event: &BuyInStarted,
+        event: &BuyInStarted,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, WalletAggregateOutput)>, Bug> {
-        todo!()
+        let hold = HoldFunds {
+            hold_id: event.buy_in_id.clone(),
+            table_root: event.table_root.clone(),
+            amount: event.amount,
+        };
+        Ok(vec![(event.player_root.clone(), hold.into())])
     }
 
     fn buy_in_seated(
         &self,
         _source: &[u8],
-        _event: &BuyInSeated,
+        event: &BuyInSeated,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, WalletAggregateOutput)>, Bug> {
-        todo!()
+        let capture = CaptureFunds {
+            hold_id: event.buy_in_id.clone(),
+        };
+        Ok(vec![(event.player_root.clone(), capture.into())])
     }
 
     fn buy_in_seat_lost(
         &self,
         _source: &[u8],
-        _event: &BuyInSeatLost,
+        event: &BuyInSeatLost,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, WalletAggregateOutput)>, Bug> {
-        todo!()
+        let release = ReleaseHold {
+            hold_id: event.buy_in_id.clone(),
+            reason: event.reason.clone(),
+        };
+        Ok(vec![(event.player_root.clone(), release.into())])
     }
 }

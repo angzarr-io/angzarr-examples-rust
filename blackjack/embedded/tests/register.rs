@@ -12,7 +12,7 @@ fn register_registers_the_three_domains_and_their_five_policies() {
     let catalog = registry.catalog();
     assert_eq!(
         catalog.domains().collect::<Vec<_>>(),
-        ["table", "wallet", "buy-in"]
+        ["buy-in", "table", "wallet"]
     );
     assert_eq!(
         catalog.policy_names().collect::<Vec<_>>(),

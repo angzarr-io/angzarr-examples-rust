@@ -2,6 +2,11 @@
 //! TableWalletPolicyImpl: the implementation of `TableWalletPolicy`, the generated domain layer's
 //! interface, written once by `angzarr scaffold rust` and yours from then on:
 //! `--missing` adds the required methods it lacks, each `todo!()`.
+//!
+//! policy-table-wallet (policies.proto): on RoundSettled, for each outcome
+//! in seat order, to that outcome's player root (the wallet's) its
+//! RecordRoundResult, then its AwardLoyaltyPoints, one point per chip
+//! wagered: both facts, which the wallet records and never refuses.
 
 use crate::domain::*;
 
@@ -11,10 +16,28 @@ pub struct TableWalletPolicyImpl;
 impl TableWalletPolicy for TableWalletPolicyImpl {
     fn round_settled(
         &self,
-        _source: &[u8],
-        _event: &RoundSettled,
+        source: &[u8],
+        event: &RoundSettled,
         _ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, WalletAggregateOutput)>, Bug> {
-        todo!()
+        let news = event.outcomes.iter().flat_map(|outcome| {
+            let result = RecordRoundResult {
+                table_root: source.to_vec(),
+                round: event.round,
+                wager: outcome.wager,
+                net: outcome.net,
+            };
+            let points = AwardLoyaltyPoints {
+                table_root: source.to_vec(),
+                round: event.round,
+                points: outcome.wager,
+            };
+            let wallet = &outcome.player_root;
+            [
+                (wallet.clone(), result.into()),
+                (wallet.clone(), points.into()),
+            ]
+        });
+        Ok(news.collect())
     }
 }

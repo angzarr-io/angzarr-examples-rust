@@ -2,61 +2,125 @@
 //! BuyInProcessManagerImpl: the implementation of `BuyInProcessManager`, the generated domain layer's
 //! interface, written once by `angzarr scaffold rust` and yours from then on:
 //! `--missing` adds the required methods it lacks, each `todo!()`.
+//!
+//! The buy-in only coordinates: each fact it hears is recorded as the
+//! event that carries what its next step needs, and its policies turn that
+//! event into what the table or the wallet declares. It decides nothing.
+//!
+//! buy_in.proto declares each fact to record exactly one event, so a fact
+//! is always recorded; its fold moves the buy-in only from the phase that
+//! step completes, for this buy-in, so a fact out of turn (another buy-in's,
+//! or one in the wrong phase) leaves the buy-in where it was.
 
 use crate::domain::*;
+use crate::wire::{buy_in_state::Phase, BuyInState};
 
 /// The state the `apply_` methods fold.
 #[derive(Clone, Debug, Default)]
 pub struct BuyInProcessManagerImpl {
-    pub state: crate::wire::BuyInState,
+    pub state: BuyInState,
+}
+
+impl BuyInProcessManagerImpl {
+    /// `to`, if this buy-in is `buy_in_id` and is at `from`: the step that
+    /// moves it there is its own and its turn.
+    fn advance(&mut self, buy_in_id: &[u8], from: Phase, to: Phase) {
+        if self.state.buy_in_id == buy_in_id && self.state.phase() == from {
+            self.state.set_phase(to);
+        }
+    }
+
+    /// FAILED for `reason`, if this buy-in is `buy_in_id`.
+    fn fail(&mut self, buy_in_id: &[u8], reason: &str) {
+        if self.state.buy_in_id == buy_in_id {
+            self.state.set_phase(Phase::Failed);
+            self.state.failure_reason = reason.to_string();
+        }
+    }
 }
 
 impl BuyInProcessManager for BuyInProcessManagerImpl {
-    fn start_buy_in(&self, _fact: &StartBuyIn, _ctx: &Context) -> BuyInStarted {
-        todo!()
+    fn start_buy_in(&self, fact: &StartBuyIn, _ctx: &Context) -> BuyInStarted {
+        BuyInStarted {
+            buy_in_id: fact.buy_in_id.clone(),
+            player_root: fact.player_root.clone(),
+            table_root: fact.table_root.clone(),
+            seat: fact.seat,
+            amount: fact.amount,
+        }
     }
 
-    fn record_funds_held(&self, _fact: &RecordFundsHeld, _ctx: &Context) -> BuyInFundsHeld {
-        todo!()
+    fn record_funds_held(&self, fact: &RecordFundsHeld, _ctx: &Context) -> BuyInFundsHeld {
+        BuyInFundsHeld {
+            buy_in_id: fact.hold_id.clone(),
+            table_root: fact.table_root.clone(),
+        }
     }
 
-    fn record_player_seated(&self, _fact: &RecordPlayerSeated, _ctx: &Context) -> BuyInSeated {
-        todo!()
+    fn record_player_seated(&self, fact: &RecordPlayerSeated, _ctx: &Context) -> BuyInSeated {
+        BuyInSeated {
+            buy_in_id: fact.buy_in_id.clone(),
+            stack: fact.stack,
+            player_root: fact.player_root.clone(),
+        }
     }
 
-    fn record_funds_captured(&self, _fact: &RecordFundsCaptured, _ctx: &Context) -> BuyInCompleted {
-        todo!()
+    fn record_funds_captured(&self, fact: &RecordFundsCaptured, _ctx: &Context) -> BuyInCompleted {
+        BuyInCompleted {
+            buy_in_id: fact.hold_id.clone(),
+        }
     }
 
+    /// The table could not confirm the seat: the buy-in fails, and the
+    /// wallet is told to release the money its player's hold earmarks.
     fn seat_confirmation_refused(
         &self,
-        _fact: &SeatConfirmationRefused,
+        fact: &SeatConfirmationRefused,
         _ctx: &Context,
     ) -> BuyInSeatLost {
-        todo!()
+        BuyInSeatLost {
+            buy_in_id: fact.buy_in_id.clone(),
+            player_root: self.state.player_root.clone(),
+            reason: fact.reason.clone(),
+        }
     }
 
-    fn apply_buy_in_started(&mut self, _event: &BuyInStarted) {
-        todo!()
+    fn apply_buy_in_started(&mut self, event: &BuyInStarted) {
+        if self.state.phase() != Phase::Unspecified {
+            return;
+        }
+        self.state = BuyInState {
+            buy_in_id: event.buy_in_id.clone(),
+            player_root: event.player_root.clone(),
+            table_root: event.table_root.clone(),
+            seat: event.seat,
+            amount: event.amount,
+            ..BuyInState::default()
+        };
+        self.state.set_phase(Phase::AwaitingHold);
     }
 
-    fn apply_buy_in_funds_held(&mut self, _event: &BuyInFundsHeld) {
-        todo!()
+    fn apply_buy_in_funds_held(&mut self, event: &BuyInFundsHeld) {
+        self.advance(&event.buy_in_id, Phase::AwaitingHold, Phase::AwaitingSeat);
     }
 
-    fn apply_buy_in_seated(&mut self, _event: &BuyInSeated) {
-        todo!()
+    fn apply_buy_in_seated(&mut self, event: &BuyInSeated) {
+        self.advance(
+            &event.buy_in_id,
+            Phase::AwaitingSeat,
+            Phase::AwaitingCapture,
+        );
     }
 
-    fn apply_buy_in_completed(&mut self, _event: &BuyInCompleted) {
-        todo!()
+    fn apply_buy_in_completed(&mut self, event: &BuyInCompleted) {
+        self.advance(&event.buy_in_id, Phase::AwaitingCapture, Phase::Completed);
     }
 
-    fn apply_buy_in_failed(&mut self, _event: &BuyInFailed) {
-        todo!()
+    fn apply_buy_in_failed(&mut self, event: &BuyInFailed) {
+        self.fail(&event.buy_in_id, &event.reason);
     }
 
-    fn apply_buy_in_seat_lost(&mut self, _event: &BuyInSeatLost) {
-        todo!()
+    fn apply_buy_in_seat_lost(&mut self, event: &BuyInSeatLost) {
+        self.fail(&event.buy_in_id, &event.reason);
     }
 }
