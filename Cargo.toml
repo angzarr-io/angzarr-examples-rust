@@ -19,14 +19,14 @@ table-player-policies = { path = "table/policies" }
 # one angzarr-diagnostic, one angzarr-proto and one angzarr-ports are in the
 # graph. agg-table names diagnostics but never the runtime (archlint.toml),
 # so it takes core's crate directly rather than embedded's re-export.
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5a57be0b678992f8195d0a48b3acac7d701dc984" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5a57be0b678992f8195d0a48b3acac7d701dc984" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5a57be0b678992f8195d0a48b3acac7d701dc984" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
 angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "7225592247ae8d478dda64b5f154106b9b560b74" }
 # angzarr-cli's build.rs helpers: the generated wire types, domain layer,
 # adapters, register() and the remote player's stand-in, pinned by hash on
 # poc/local-wiring, at the angzarr-proto and angzarr-diagnostic above.
-angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "a1d8da7b3206c8aeb7c00843403990b4a5615fd8" }
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "615229faa440278bb7f7872e318330861c58d076" }
 prost = "0.14"
 prost-build = "0.14"
 # Matches the uuid angzarr-proto already brings into the graph.

@@ -23,9 +23,10 @@ submodule; the submodule pin is the contract this repository implements.
   `refusal_key` gives, e.g. `io-angzarr-examples-v1-tablerefused-already-bet`,
   its set fields its args) and `SeatNotConfirmable` among them.
 - `table/agg` (`agg-table`) - the table aggregate: `Table`, implementing
-  the table's interface `table_aggregate::TableAggregate` (written once by
-  `angzarr scaffold rust`, one method per command and event) over the
-  domain layer, its state the spec's `TableState`; the deterministic shoe
+  the table's interface `domain::TableAggregate` (examples-proto's
+  generated domain layer's, one method per command and event; `angzarr
+  scaffold rust` writes only its implementation's stub) over the domain
+  layer, its state the spec's `TableState`; the deterministic shoe
   (`cards.proto`) and the hand's value. Tests sit next to each module in
   `*.test.rs` and cite the spec's EU ids.
 - `table/policies` (`table-player-policies`) - the two policies between

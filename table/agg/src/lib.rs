@@ -1,7 +1,7 @@
 //! The blackjack table aggregate: [`Table`], implementing the table's
-//! generated interface, [`table_aggregate::TableAggregate`] (scaffolded by
-//! `angzarr scaffold rust`, one method per command and per event), over the
-//! generated domain layer ([`domain`], examples-proto's). Its state is the
+//! generated interface, [`domain::TableAggregate`] (examples-proto's
+//! generated domain layer's, one method per command and per event), over
+//! that domain layer ([`domain`]). Its state is the
 //! spec's `TableState`; its refusal, the spec's `TableRefused`, a reason
 //! code from table.proto and the values it names.
 //!
@@ -27,7 +27,6 @@ mod hand;
 pub mod shoe;
 mod state;
 mod table;
-pub mod table_aggregate;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 

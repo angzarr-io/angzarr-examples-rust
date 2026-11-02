@@ -68,3 +68,35 @@ fn the_legacy_table_event_enum_is_gone() {
         "state.rs keeps TableEvent"
     );
 }
+
+/// The table's interface is the generated domain layer's
+/// (`examples_proto::domain::TableAggregate`), regenerated with the protos:
+/// no hand-kept copy of it remains beside its implementation (item S).
+#[test]
+fn the_tables_interface_is_generated_not_kept_by_hand() {
+    let interface = Path::new(env!("CARGO_MANIFEST_DIR")).join("../agg/src/table_aggregate.rs");
+    assert!(
+        !interface.exists(),
+        "{} is a hand-kept interface; the domain layer generates it",
+        interface.display()
+    );
+}
+
+/// The generated modules carry the allowances generated code needs, so no
+/// include site of this workspace carries one by hand (item S).
+#[test]
+fn no_include_site_carries_an_allowance_for_generated_code() {
+    for path in [
+        crate_file("src/lib.rs"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proto/src/lib.rs"),
+    ] {
+        let source = std::fs::read_to_string(&path).unwrap();
+        for allowance in ["clippy::result_large_err", "clippy::excessive_nesting"] {
+            assert!(
+                !source.contains(allowance),
+                "{} allows {allowance} by hand",
+                path.display()
+            );
+        }
+    }
+}

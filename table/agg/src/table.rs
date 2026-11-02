@@ -22,7 +22,6 @@ use crate::failure::{domain, refused};
 use crate::hand::{value, Value};
 use crate::shoe;
 use crate::state::table_exists;
-use crate::table_aggregate::TableAggregate;
 
 /// A decision's result: its value, or its refusal or bug.
 type Decided<T> = Result<T, Failed<TableRefused>>;
