@@ -728,3 +728,73 @@ fn each_seat_is_told_its_result_then_its_points_in_seat_order() {
         ]
     );
 }
+
+// ================================================================ what the folds keep
+
+#[test]
+fn a_fact_of_another_buy_in_leaves_this_one_where_it_was() {
+    // buy_in.proto declares each fact to record one event, so it is
+    // recorded; the buy-in does not move (EU-1557's "still waiting").
+    let mut buy_in = buy_in(vec![started()]);
+
+    let (_, held) = wallet_reports(funds_held(0x07));
+    buy_in.when(held).expect("recorded");
+
+    assert_eq!(buy_in.state().phase(), Phase::AwaitingHold);
+}
+
+#[test]
+fn a_fact_out_of_turn_leaves_the_buy_in_where_it_was() {
+    let mut buy_in = buy_in(vec![started()]);
+
+    let (_, captured) = wallet_reports(funds_captured());
+    buy_in.when(captured).expect("recorded");
+
+    assert_eq!(buy_in.state().phase(), Phase::AwaitingHold);
+}
+
+#[test]
+fn a_started_buy_in_keeps_its_seat() {
+    let buy_in = buy_in(vec![ev(v1::BuyInStarted {
+        buy_in_id: bytes(B1),
+        player_root: bytes(ALICE),
+        table_root: bytes(MAIN),
+        seat: 2,
+        amount: 500,
+    })]);
+
+    assert_eq!(buy_in.state().seat, 2);
+}
+
+/// The wallet's refusal of the hold (pass-through, buy_in.proto): the
+/// buy-in fails, and the held seat is released.
+#[test]
+fn a_buy_in_failed_for_its_funds_releases_its_seat() {
+    let failed = v1::BuyInFailed {
+        buy_in_id: bytes(B1),
+        table_root: bytes(MAIN),
+        reason: "INSUFFICIENT_AVAILABLE_FUNDS".into(),
+        available: 300,
+        requested: 500,
+    };
+    let buy_in = buy_in(vec![started(), ev(failed.clone())]);
+
+    let state = buy_in.state();
+    assert_eq!(
+        (state.phase(), state.failure_reason.as_str()),
+        (Phase::Failed, "INSUFFICIENT_AVAILABLE_FUNDS")
+    );
+    assert_eq!(
+        asks(&[ev(failed)]),
+        (
+            vec![(
+                bytes(MAIN),
+                TableAggregateOutput::ReleaseSeat(domain(v1::ReleaseSeat {
+                    buy_in_id: bytes(B1),
+                    reason: "INSUFFICIENT_AVAILABLE_FUNDS".into(),
+                }))
+            )],
+            vec![]
+        )
+    );
+}

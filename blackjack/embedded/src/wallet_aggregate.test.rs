@@ -626,6 +626,33 @@ fn eu_1415_repeating_an_identical_hold_changes_nothing() {
     assert_funds(&wallet.state(), 1000, 500);
 }
 
+/// The same hold under another id: wallet.proto declares HoldFunds to
+/// record one event, so it is recorded again, and changes nothing.
+#[test]
+fn the_same_hold_under_another_id_changes_nothing() {
+    let mut events = alice_with_1000();
+    events.push(held(B1, 500));
+    let mut wallet = given(events);
+
+    let events = wallet.when(hold(B1, 500)).expect("the request succeeds");
+
+    assert_eq!(events, vec![held(B1, 500)]);
+    assert_funds(&wallet.state(), 1000, 500);
+}
+
+#[test]
+fn a_hold_id_reused_for_another_hold_is_the_buy_ins_bug() {
+    let mut events = alice_with_1000();
+    events.push(held(B1, 500));
+    let mut wallet = given(events);
+
+    assert_bug(wallet.when(hold(B1, 400)), "another amount");
+    let mut elsewhere = hold(B1, 500);
+    elsewhere.table_root = bytes(0x7b);
+    assert_bug(wallet.when(elsewhere), "another table");
+    assert_funds(&wallet.state(), 1000, 500);
+}
+
 #[test]
 fn a_hold_the_wallet_cannot_fund_is_refused_with_what_is_available() {
     let mut events = alice_with_1000();
