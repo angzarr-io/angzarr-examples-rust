@@ -5,7 +5,7 @@
 use angzarr_diagnostic::{Arg, Diagnostic};
 use angzarr_embedded::markup::PolicyContext;
 use angzarr_embedded::v1::{Cover, EventRef, Uuid};
-use angzarr_embedded::{pack, Any, Timestamp};
+use angzarr_embedded::{pack, Any, Timestamp, WireError};
 use examples_proto::v1::{self, MoveAction, Suit};
 
 use super::PlayerTablePolicy;
@@ -129,7 +129,10 @@ fn eu_1604_a_decision_with_no_action_is_not_a_move_decided() {
     // dead-lettered by the decoding's code and args.
     let error = MoveDecided::try_from(decided(MoveAction::Unspecified))
         .expect_err("no move is a bug, not a decision");
-    assert_eq!(error.code(), "angzarr-embedded-wire-unknown-enum");
+    assert!(
+        matches!(error, WireError::UnknownEnum { value: 0, .. }),
+        "{error:?}"
+    );
     let args = error.args();
     assert!(
         matches!(
