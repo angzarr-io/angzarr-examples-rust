@@ -26,7 +26,7 @@ angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "635
 # angzarr-cli's build.rs helpers: the generated wire types, domain layer,
 # adapters, register() and the remote player's stand-in, pinned by hash on
 # poc/local-wiring, at the angzarr-proto and angzarr-diagnostic above.
-angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "a2f8e0a437f4bf203bbe2f4f90519895b906b3a2" }
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli", rev = "c4a817183a2d4b211c015b303b3ea7e5a0034c5e" }
 prost = "0.14"
 prost-build = "0.14"
 # Matches the uuid angzarr-proto already brings into the graph.

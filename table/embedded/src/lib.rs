@@ -36,10 +36,7 @@ pub mod adapters {
     include!(concat!(env!("OUT_DIR"), "/angzarr-adapters.rs"));
 }
 
-/// The table's generated registration. While angzarr-build is pinned
-/// before the registration answered `Result`, its registrations' unused
-/// answers are allowed here.
-#[allow(unused_must_use)]
+/// The table's generated registration.
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/angzarr-register.rs"));
 }
@@ -64,7 +61,7 @@ pub use table_player_policy::TablePlayerPolicy;
 pub fn register(
     registry: &mut angzarr_embedded::Registry,
 ) -> Result<(), angzarr_embedded::Misconfigured> {
-    generated::register(registry);
+    generated::register(registry)?;
     registry
         .policy(TablePlayerPolicy)?
         .policy(PlayerTablePolicy)?;
