@@ -1,4 +1,7 @@
-use examples_proto::domain::{Card, CreateTable, Failed, ShoeShuffled, TableCreated};
+use examples_proto::domain::{
+    Card, CreateTable, CreateTableRefuses, Failed, InvalidTableConfig, ShoeShuffled,
+    TableAlreadyExists, TableCreated,
+};
 use examples_proto::v1::{self, table_state::Phase, TableState};
 
 use super::*;
@@ -34,7 +37,9 @@ fn wire(cards: &[Card]) -> Vec<v1::Card> {
 
 /// The refusal a decision failed with.
 #[track_caller]
-fn refusal<T: std::fmt::Debug>(decided: Result<T, Failed<TableRefused>>) -> TableRefused {
+fn refusal<T: std::fmt::Debug>(
+    decided: Result<T, Failed<CreateTableRefuses>>,
+) -> CreateTableRefuses {
     match decided {
         Err(Failed::Rejected { rejection, .. }) => rejection,
         other => panic!("expected a refusal, got {other:?}"),
@@ -137,10 +142,9 @@ fn with_config(row: (i32, i32, i64, i64, i64, i64)) -> CreateTable {
 fn eu_1441_a_table_configuration_outside_the_house_rules_is_refused() {
     for &row in INVALID_CONFIGS.iter().chain(INVALID_BOUNDARIES) {
         let refused = refusal(create_table(&TableState::default(), &with_config(row)));
-        assert_eq!(
-            refused.reason,
-            TableRefusedReason::InvalidTableConfig,
-            "config {row:?}"
+        assert!(
+            matches!(refused, CreateTableRefuses::InvalidTableConfig(_)),
+            "config {row:?}: {refused:?}"
         );
     }
 }
@@ -167,10 +171,9 @@ fn eu_1442_a_table_cannot_be_created_twice() {
 
     assert_eq!(
         refused,
-        TableRefused {
-            name: Some("Main".into()),
-            ..crate::failure::refused(TableRefusedReason::TableAlreadyExists)
-        }
+        CreateTableRefuses::TableAlreadyExists(TableAlreadyExists {
+            name: "Main".into()
+        })
     );
 }
 
@@ -188,10 +191,7 @@ fn eu_1441_an_invalid_configuration_names_the_rule_it_breaks_by_a_key() {
         let refused = refusal(create_table(&TableState::default(), &with_config(row)));
         assert_eq!(
             refused,
-            TableRefused {
-                rule: Some(rule.into()),
-                ..crate::failure::refused(TableRefusedReason::InvalidTableConfig)
-            },
+            CreateTableRefuses::InvalidTableConfig(InvalidTableConfig { rule: rule.into() }),
             "config {row:?}"
         );
     }

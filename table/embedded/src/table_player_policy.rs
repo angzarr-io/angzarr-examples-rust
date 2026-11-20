@@ -1,28 +1,28 @@
 //! policy-table-player: each TurnStarted asks the seat's player to decide,
-//! table-player-policies' [`TablePlayer`] in angzarr-embedded's markup. A
-//! refusal of DecideMove is translated into the table's
-//! RecordMoveUndecided (angzarr decision 14.76).
+//! table-player-policies' [`TablePlayer`] in angzarr-embedded's markup. The
+//! player's DecideMove refuses nothing (angzarr decision 14.99), so the
+//! policy has no refusal callback.
 
 use std::convert::Infallible;
 
-use angzarr_embedded::markup::{CommandContext, Commands, PolicyContext, Refusal};
+use angzarr_embedded::markup::{Commands, PolicyContext};
 use angzarr_embedded::v1::Uuid;
-use angzarr_embedded_macros::{on_event, on_refused, policy};
+use angzarr_embedded_macros::{on_event, policy};
 use table_player_policies::{Policies, TablePlayer};
 
-use crate::domain::{DecideMove, DecideMoveRefused, TableAggregateFact, TurnStarted};
-use crate::{PlayerAggregate, TableAggregate};
+use crate::domain::TurnStarted;
+use crate::{PlayerState, TableState};
 
 pub struct TablePlayerPolicy;
 
-#[policy(name = "policy-table-player", source = TableAggregate, target = PlayerAggregate)]
+#[policy(name = "policy-table-player", source = TableState, target = PlayerState)]
 impl TablePlayerPolicy {
     #[on_event(TurnStarted)]
     fn turn_started(
         &self,
         event: &TurnStarted,
         ctx: &PolicyContext,
-    ) -> Result<Commands<PlayerAggregate>, Infallible> {
+    ) -> Result<Commands<PlayerState>, Infallible> {
         let ask = Policies.turn_started(&ctx.source_root().value, event);
         Ok(Commands::none().to(
             Uuid {
@@ -30,17 +30,6 @@ impl TablePlayerPolicy {
             },
             ask.command,
         ))
-    }
-
-    #[on_refused(DecideMove)]
-    fn decide_move_refused(
-        &self,
-        refusal: &Refusal<DecideMove>,
-        _ctx: &CommandContext,
-    ) -> Result<TableAggregateFact, Infallible> {
-        let undecided =
-            Policies.decide_move_refused(refusal.command(), refusal.refusal::<DecideMoveRefused>());
-        Ok(undecided.into())
     }
 }
 

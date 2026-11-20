@@ -5,14 +5,15 @@
 //!
 //! - **Given** events are recorded as stored pages, then folded through the
 //!   registry's factory and the markup's appliers ([`given`]); events are
-//!   the domain layer's generated `TableAggregateEvent`.
+//!   the domain layer's generated `TableStateEvent`.
 //! - **When** a command is sent as a client sends it, packed in a
 //!   `CommandBook` ([`Harness::when`]), or a fact, as a policy's arrives
 //!   ([`Harness::when_fact`]: ReleaseSeat, a fact the table declares,
 //!   angzarr decision 14.69).
 //! - **Then** the events of that one decision, decoded back to the
-//!   generated types, or the refusal: the typed `TableRefused`'s reason
-//!   ([`refused`]) or ConfirmSeat's typed `SeatNotConfirmable`
+//!   generated types, or the refusal: the typed refusal message the
+//!   command was refused with ([`refused`] names its type;
+//!   [`refusal_of`] reads it) or ConfirmSeat's typed `SeatNotConfirmable`
 //!   ([`not_confirmable`]).
 //!
 //! The shoe is always seeded or written out, so every deal is
@@ -23,36 +24,31 @@
 //! `shoe.test.rs`; EU-1440's golden first twelve cards, and the seeds of
 //! EU-1502/1503, are pinned again here at the aggregate.
 
-// The harness's `Then`, and every test's closure returning it, carries
-// angzarr-embedded's `Failure`, what the pipeline returns, unboxed: as on the
-// generated adapters (lib.rs), its size is not this crate's to choose.
-#![allow(clippy::result_large_err)]
-
 use agg_table::shoe::{fresh_shoe, next_seed, shuffle};
 use agg_table::test_support::{card, cards, create_main, seed_21};
 use agg_table::Table;
-use angzarr_embedded::markup::{DomainMessage, Failed, Rejection, TypedRefusal};
+use angzarr_embedded::markup::{DomainMessage, Failed, Unrefusable};
 use angzarr_embedded::testing::{Harness as Kernel, Samples};
 use angzarr_embedded::v1::{
-    command_page, CommandBook, CommandPage, ConflictResolution, Cover, Fact, FactOrigin, Handling,
-    Uuid,
+    command_page, event_page, CommandBook, CommandPage, Cover, ExpectedSequenceMismatch, Fact,
+    FactOrigin, Uuid,
 };
 use angzarr_embedded::{
-    pack, type_name, CommandBookExt, Domain, Failure, KernelError, Payload, Registry, Rejected,
+    pack, type_name, CommandBookExt, Failure, KernelError, Payload, Registry, Rejected,
 };
 use examples_proto::v1::{
     self, seat_outcome::Outcome, table_state::Phase, Card, MoveAction, SeatHand,
 };
 use prost::{Message, Name};
 
-use crate::domain::{TableAggregateEvent, TableRefused, TableRefusedReason};
-use crate::TableAggregate;
+use crate::domain::{TableStateEvent, TableStateRefusal};
+use crate::TableState;
 use angzarr_diagnostic::{Arg, Diagnostic, Report};
 
 // ---------------------------------------------------------------- the events
 
 /// A table event: the domain layer's generated, nameable payload.
-type Ev = TableAggregateEvent;
+type Ev = TableStateEvent;
 
 /// `event` as the wire message it travels as: what a test compares with
 /// the wire values it writes.
@@ -67,7 +63,9 @@ fn ev<M: Message + Name>(event: M) -> Ev {
 
 // ---------------------------------------------------------------- the harness
 
-type Refusal = Failure<Rejected>;
+/// What the pipeline answered, boxed: its `Failure` is not this crate's to
+/// size.
+type Refusal = Box<Failure<Rejected>>;
 type Then = Result<Vec<Ev>, Refusal>;
 
 /// A **when** a test names among others: a command sent to the harness.
@@ -76,7 +74,7 @@ type When = dyn Fn(&mut Harness) -> Then;
 fn registry() -> Registry {
     let mut registry = Registry::new();
     registry
-        .aggregate::<TableAggregate>(TableAggregate::default)
+        .aggregate::<TableState>(TableState::default)
         .unwrap();
     registry
 }
@@ -97,10 +95,10 @@ fn id(n: u32) -> Uuid {
 /// The table stream with `events` already recorded, through
 /// angzarr-embedded's test support: the kernel over an in-memory store.
 struct Harness {
-    kernel: Kernel<TableAggregate>,
+    kernel: Kernel<TableState>,
     commands: u32,
     /// The table as the store now folds to.
-    table: TableAggregate,
+    table: TableState,
 }
 
 /// The table after `events`, recorded before any command a test sends.
@@ -119,18 +117,16 @@ impl Harness {
     /// Send `command` as a client does: the events of its one decision, or
     /// why it was refused.
     fn when<M: Message + Name>(&mut self, command: M) -> Then {
-        self.when_handled(command, None)
+        self.when_at(command, None)
     }
 
-    /// As [`Harness::when`], sent with `handling`: an expected sequence and
-    /// a conflict resolution.
-    fn when_handled<M: Message + Name>(&mut self, command: M, handling: Option<Handling>) -> Then {
+    /// As [`Harness::when`], sent at `head`, the expected sequence its
+    /// sender read (decision 14.94), when one is given.
+    fn when_at<M: Message + Name>(&mut self, command: M, head: Option<u64>) -> Then {
         self.commands += 1;
-        let book = CommandBook {
-            handling,
-            ..CommandBook::command(cover(), pack(&command)).with_id(id(self.commands))
-        };
-        let then = self.kernel.when_book(book).result();
+        let book = CommandBook::command(cover(), pack(&command)).with_id(id(self.commands));
+        let book = head.map_or(book.clone(), |head| book.at(head));
+        let then = self.kernel.when_book(book).result().map_err(Box::new);
         self.table = self.kernel.state();
         then
     }
@@ -145,16 +141,15 @@ impl Harness {
             page: Some(CommandPage {
                 body: Some(command_page::Body::Fact(Fact {
                     payload: Some(pack(&fact)),
+                    origin: Some(FactOrigin {
+                        external_id: format!("fact-{}", self.commands),
+                        description: "the buy-in's compensation".to_string(),
+                    }),
                 })),
-                fact_origin: Some(FactOrigin {
-                    external_id: format!("fact-{}", self.commands),
-                    description: "the buy-in's compensation".to_string(),
-                }),
                 ..CommandPage::default()
             }),
-            ..CommandBook::default()
         };
-        let then = self.kernel.when_book(book).result();
+        let then = self.kernel.when_book(book).result().map_err(Box::new);
         self.table = self.kernel.state();
         then
     }
@@ -164,7 +159,7 @@ impl Harness {
     }
 
     /// The table aggregate itself, as the store folds to.
-    fn aggregate(&self) -> TableAggregate {
+    fn aggregate(&self) -> TableState {
         self.table.clone()
     }
 
@@ -173,56 +168,80 @@ impl Harness {
         let pages = self.kernel.pages();
         pages
             .iter()
-            .map(|page| Ev::from_any(page.payload.as_ref().unwrap()).unwrap())
+            .filter_map(|page| match &page.body {
+                Some(event_page::Body::Event(any)) => Some(Ev::from_any(any).unwrap()),
+                _ => None,
+            })
             .collect()
     }
 }
 
-/// The table's typed refusal object, as the refused caller matches it:
-/// the table's own rejection, as its handler made it, a typed refusal of
-/// type `T`.
+/// The refusal the table answered a command with. Panics on anything else.
 #[track_caller]
-fn typed<T: DomainMessage>(then: Then) -> T {
+fn rejection_of(then: Then) -> Rejected {
     match then {
-        Err(failure @ Failure::Rejected(_)) => failure
-            .rejection::<<TableAggregate as Domain>::Rejection>()
-            .and_then(Rejection::typed)
-            .and_then(TypedRefusal::object::<T>)
-            .unwrap_or_else(|| panic!("a typed refusal of its type: {failure:?}")),
-        other => panic!("expected the table to refuse, got {other:?}"),
+        Err(failure) => match *failure {
+            Failure::Rejected(rejected) => rejected,
+            other => panic!("expected the table to refuse, got {other:?}"),
+        },
+        Ok(events) => panic!("expected the table to refuse, got {events:?}"),
     }
 }
 
-/// The table's typed refusal, `TableRefused`, as the refused caller
-/// receives it.
+/// The table's typed refusal, as the refused caller receives it: the
+/// message the command was refused with.
 #[track_caller]
-fn table_refused(then: Then) -> TableRefused {
-    typed(then)
+fn refusal_of(then: Then) -> TableStateRefusal {
+    let rejected = rejection_of(then);
+    TableStateRefusal::from_any(rejected.refusal_object())
+        .unwrap_or_else(|error| panic!("a typed table refusal: {error:?}"))
 }
 
-/// A diagnostic's `reason` arg: a table refusal's `ErrorInfo.reason`.
-#[track_caller]
-fn reason_of(refusal: &dyn Diagnostic) -> String {
-    refusal
-        .args()
-        .into_iter()
-        .find_map(|(name, arg)| match (name, arg) {
-            ("reason", Arg::Str(reason)) => Some(reason),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("a table refusal names its reason: {refusal:?}"))
+/// A table refusal's diagnostic: its message's code, its fields the args.
+fn diagnostic(refusal: &TableStateRefusal) -> &dyn Diagnostic {
+    use TableStateRefusal as R;
+    match refusal {
+        R::TableAlreadyExists(r) => r,
+        R::InvalidTableConfig(r) => r,
+        R::TableNotFound(r) => r,
+        R::SeatTaken(r) => r,
+        R::PlayerAlreadySeated(r) => r,
+        R::SeatOutOfRange(r) => r,
+        R::BuyInOutOfRange(r) => r,
+        R::NotSeated(r) => r,
+        R::WagerInPlay(r) => r,
+        R::RoundInProgress(r) => r,
+        R::AlreadyBet(r) => r,
+        R::InsufficientStack(r) => r,
+        R::BetOutOfRange(r) => r,
+        R::BetNotEven(r) => r,
+        R::NoBets(r) => r,
+        R::NoRoundInProgress(r) => r,
+        R::NotYourTurn(r) => r,
+        R::DoubleNotAllowed(r) => r,
+        R::SeatNotConfirmable(r) => r,
+    }
 }
 
-/// A table refusal's `ErrorInfo.reason`.
+/// The name of the refusal message a command was refused with
+/// (`NotYourTurn`): a refusal is its own type (decision 14.95).
 #[track_caller]
 fn refused(then: Then) -> String {
-    reason_of(&table_refused(then))
+    let rejected = rejection_of(then);
+    type_name(&rejected.refusal_object().type_url)
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// The reason of ConfirmSeat's typed refusal.
 #[track_caller]
 fn not_confirmable(then: Then) -> String {
-    typed::<crate::domain::SeatNotConfirmable>(then).reason
+    match refusal_of(then) {
+        TableStateRefusal::SeatNotConfirmable(refusal) => refusal.reason,
+        other => panic!("expected SeatNotConfirmable, got {other:?}"),
+    }
 }
 
 /// Ledger rule L2: `sum(stacks) + sum(wagers) + house_result = chips_in -
@@ -367,8 +386,7 @@ fn dealt(hands: Vec<SeatHand>, up: &str, hole: &str, turn: i32) -> Ev {
 }
 
 /// Seat `seat`'s turn in round 1, holding `text` (worth `total`) against
-/// the dealer's `up`.
-#[allow(clippy::too_many_arguments)]
+/// the dealer's `up`, with its `(stack, wager)`.
 fn turn(
     seat: i32,
     text: &str,
@@ -376,8 +394,7 @@ fn turn(
     soft: bool,
     up: &str,
     can_double: bool,
-    stack: i64,
-    wager: i64,
+    (stack, wager): (i64, i64),
 ) -> Ev {
     ev(v1::TurnStarted {
         round: 1,
@@ -486,14 +503,14 @@ fn eu_1441_a_configuration_outside_the_house_rules_is_refused() {
         ..create_main(42)
     };
 
-    assert_eq!(refused(table.when(eight_seats)), "INVALID_TABLE_CONFIG");
+    assert_eq!(refused(table.when(eight_seats)), "InvalidTableConfig");
 }
 
 #[test]
 fn eu_1442_a_table_cannot_be_created_twice() {
     let mut table = given(main_table());
 
-    assert_eq!(refused(table.when(create_main(42))), "TABLE_ALREADY_EXISTS");
+    assert_eq!(refused(table.when(create_main(42))), "TableAlreadyExists");
 }
 
 #[test]
@@ -506,18 +523,15 @@ fn a_command_to_a_table_that_does_not_exist_is_refused() {
         amount: 500,
         request_id: bytes(B1),
     };
-    assert_eq!(refused(table.when(request)), "TABLE_NOT_FOUND");
+    assert_eq!(refused(table.when(request)), "TableNotFound");
     let bet = v1::PlaceBet {
         seat: 0,
         amount: 20,
     };
-    assert_eq!(refused(table.when(bet)), "TABLE_NOT_FOUND");
-    assert_eq!(refused(table.when(v1::DealRound {})), "TABLE_NOT_FOUND");
-    assert_eq!(refused(table.when(v1::Hit { seat: 0 })), "TABLE_NOT_FOUND");
-    assert_eq!(
-        refused(table.when(v1::Stand { seat: 0 })),
-        "TABLE_NOT_FOUND"
-    );
+    assert_eq!(refused(table.when(bet)), "TableNotFound");
+    assert_eq!(refused(table.when(v1::DealRound {})), "TableNotFound");
+    assert_eq!(refused(table.when(v1::Hit { seat: 0 })), "TableNotFound");
+    assert_eq!(refused(table.when(v1::Stand { seat: 0 })), "TableNotFound");
 }
 
 // ================================================================ RequestSeat
@@ -566,7 +580,7 @@ fn eu_1445_a_seat_that_is_held_cannot_be_requested() {
 
     assert_eq!(
         refused(table.when(request(ALICE, 1, 500, 0x03))),
-        "SEAT_TAKEN"
+        "SeatTaken"
     );
 }
 
@@ -578,7 +592,7 @@ fn eu_1445_a_seat_that_is_taken_cannot_be_requested() {
 
     assert_eq!(
         refused(table.when(request(ALICE, 1, 500, 0x03))),
-        "SEAT_TAKEN"
+        "SeatTaken"
     );
 }
 
@@ -589,7 +603,7 @@ fn eu_1446_a_seat_outside_the_table_cannot_be_requested() {
 
         assert_eq!(
             refused(table.when(request(ALICE, seat, 500, B1))),
-            "SEAT_OUT_OF_RANGE",
+            "SeatOutOfRange",
             "seat {seat}"
         );
     }
@@ -602,7 +616,7 @@ fn eu_1447_a_buy_in_outside_the_tables_range_is_refused() {
 
         assert_eq!(
             refused(table.when(request(ALICE, 0, amount, B1))),
-            "BUY_IN_OUT_OF_RANGE",
+            "BuyInOutOfRange",
             "buy-in {amount}"
         );
     }
@@ -616,7 +630,7 @@ fn eu_1448_a_seated_player_cannot_ask_for_a_second_seat() {
 
     assert_eq!(
         refused(table.when(request(ALICE, 2, 500, B2))),
-        "PLAYER_ALREADY_SEATED"
+        "PlayerAlreadySeated"
     );
 }
 
@@ -709,7 +723,7 @@ fn eu_1471_a_bet_must_be_within_the_table_limits() {
 
         assert_eq!(
             refused(table.when(place(0, amount))),
-            "BET_OUT_OF_RANGE",
+            "BetOutOfRange",
             "bet {amount}"
         );
     }
@@ -719,7 +733,7 @@ fn eu_1471_a_bet_must_be_within_the_table_limits() {
 fn eu_1471_a_bet_must_be_even() {
     let mut table = given(background("2♣"));
 
-    assert_eq!(refused(table.when(place(0, 15))), "BET_NOT_EVEN");
+    assert_eq!(refused(table.when(place(0, 15))), "BetNotEven");
 }
 
 #[test]
@@ -728,21 +742,21 @@ fn eu_1472_a_seat_can_bet_only_once_per_round() {
     events.push(bet(0, 20, 480));
     let mut table = given(events);
 
-    assert_eq!(refused(table.when(place(0, 20))), "ALREADY_BET");
+    assert_eq!(refused(table.when(place(0, 20))), "AlreadyBet");
 }
 
 #[test]
 fn eu_1473_a_bet_cannot_exceed_the_stack() {
     let mut table = given(background_with("2♣", (500, 30)));
 
-    assert_eq!(refused(table.when(place(1, 40))), "INSUFFICIENT_STACK");
+    assert_eq!(refused(table.when(place(1, 40))), "InsufficientStack");
 }
 
 #[test]
 fn eu_1474_an_empty_seat_cannot_bet() {
     let mut table = given(background("2♣"));
 
-    assert_eq!(refused(table.when(place(2, 20))), "NOT_SEATED");
+    assert_eq!(refused(table.when(place(2, 20))), "NotSeated");
 }
 
 #[test]
@@ -751,11 +765,11 @@ fn eu_1475_no_bets_are_taken_once_the_cards_are_out() {
     events.extend([
         bet(0, 20, 480),
         dealt(vec![hand(0, "2♣ 4♣", 6, false, false)], "9♦", "7♠", 0),
-        turn(0, "2♣ 4♣", 6, false, "9♦", true, 480, 20),
+        turn(0, "2♣ 4♣", 6, false, "9♦", true, (480, 20)),
     ]);
     let mut table = given(events);
 
-    assert_eq!(refused(table.when(place(1, 20))), "ROUND_IN_PROGRESS");
+    assert_eq!(refused(table.when(place(1, 20))), "RoundInProgress");
 }
 
 #[test]
@@ -764,7 +778,7 @@ fn eu_1501_the_next_round_is_numbered_after_the_last() {
     events.extend([
         bet(0, 20, 480),
         dealt(vec![hand(0, "10♣ 9♥", 19, false, false)], "10♦", "7♠", 0),
-        turn(0, "10♣ 9♥", 19, false, "10♦", true, 480, 20),
+        turn(0, "10♣ 9♥", 19, false, "10♦", true, (480, 20)),
         stood(0, 19, -1),
         dealer("7♠", "", 17, false, false, false),
         settled(vec![outcome(0, 20, Outcome::Win, 40, 520)]),
@@ -785,7 +799,7 @@ fn eu_1501_the_next_round_is_numbered_after_the_last() {
 fn eu_1476_a_round_cannot_be_dealt_without_bets() {
     let mut table = given(background("2♣"));
 
-    assert_eq!(refused(table.when(v1::DealRound {})), "NO_BETS");
+    assert_eq!(refused(table.when(v1::DealRound {})), "NoBets");
 }
 
 #[test]
@@ -808,7 +822,7 @@ fn eu_1477_cards_go_to_each_seat_in_order_then_the_dealer_twice() {
                 "7♠",
                 0,
             ),
-            turn(0, "2♣ 4♣", 6, false, "9♦", true, 480, 20),
+            turn(0, "2♣ 4♣", 6, false, "9♦", true, (480, 20)),
         ]
     );
     let state = table.state();
@@ -830,7 +844,7 @@ fn eu_1478_a_seat_without_a_bet_is_dealt_no_cards() {
         events,
         vec![
             dealt(vec![hand(1, "5♣ 6♣", 11, false, false)], "9♦", "7♠", 1),
-            turn(1, "5♣ 6♣", 11, false, "9♦", true, 480, 20),
+            turn(1, "5♣ 6♣", 11, false, "9♦", true, (480, 20)),
         ]
     );
     let alice = &table.state().seated[&0];
@@ -860,7 +874,7 @@ fn eu_1481_a_player_blackjack_is_never_asked_to_act() {
                 "9♥",
                 1,
             ),
-            turn(1, "9♣ 7♣", 16, false, "8♦", true, 480, 20),
+            turn(1, "9♣ 7♣", 16, false, "8♦", true, (480, 20)),
         ]
     );
 }
@@ -877,7 +891,7 @@ fn eu_1494_a_dealer_showing_a_ten_without_blackjack_lets_play_go_on() {
         events,
         vec![
             dealt(vec![hand(0, "10♣ 8♥", 18, false, false)], "10♦", "6♠", 0),
-            turn(0, "10♣ 8♥", 18, false, "10♦", true, 480, 20),
+            turn(0, "10♣ 8♥", 18, false, "10♦", true, (480, 20)),
         ]
     );
 }
@@ -1086,7 +1100,7 @@ fn eu_1480_a_soft_hand_turns_hard_instead_of_busting() {
         events,
         vec![
             card_dealt(0, "10♥", 17, false, false, 0),
-            turn(0, "A♣ 6♣ 10♥", 17, false, "9♦", false, 480, 20),
+            turn(0, "A♣ 6♣ 10♥", 17, false, "9♦", false, (480, 20)),
         ]
     );
 }
@@ -1095,11 +1109,11 @@ fn eu_1480_a_soft_hand_turns_hard_instead_of_busting() {
 fn eu_1482_only_the_seat_on_turn_may_act() {
     let mut table = given(two_hands_low(""));
 
-    assert_eq!(refused(table.when(v1::Hit { seat: 1 })), "NOT_YOUR_TURN");
-    assert_eq!(refused(table.when(v1::Stand { seat: 1 })), "NOT_YOUR_TURN");
+    assert_eq!(refused(table.when(v1::Hit { seat: 1 })), "NotYourTurn");
+    assert_eq!(refused(table.when(v1::Stand { seat: 1 })), "NotYourTurn");
     assert_eq!(
         refused(table.when(v1::DoubleDown { seat: 1 })),
-        "NOT_YOUR_TURN"
+        "NotYourTurn"
     );
 }
 
@@ -1113,7 +1127,7 @@ fn eu_1483_hitting_below_21_keeps_the_turn() {
         events,
         vec![
             card_dealt(0, "6♥", 12, false, false, 0),
-            turn(0, "2♣ 4♣ 6♥", 12, false, "9♦", false, 480, 20),
+            turn(0, "2♣ 4♣ 6♥", 12, false, "9♦", false, (480, 20)),
         ]
     );
     let state = table.state();
@@ -1147,7 +1161,7 @@ fn eu_1484_busting_ends_the_hand_and_passes_the_turn() {
         events,
         vec![
             card_dealt(0, "K♥", 26, false, true, 1),
-            turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
+            turn(1, "3♣ 5♣", 8, false, "9♦", true, (480, 20)),
         ]
     );
     let state = table.state();
@@ -1165,7 +1179,7 @@ fn eu_1485_standing_passes_the_turn() {
         events,
         vec![
             stood(0, 6, 1),
-            turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
+            turn(1, "3♣ 5♣", 8, false, "9♦", true, (480, 20)),
         ]
     );
     assert_eq!(table.state().turn, 1);
@@ -1202,7 +1216,7 @@ fn eu_1486_doubling_doubles_the_wager_deals_one_card_and_ends_the_hand() {
                 next_turn: 1,
                 stack_after: 460,
             }),
-            turn(1, "3♣ 5♦", 8, false, "9♦", true, 480, 20),
+            turn(1, "3♣ 5♦", 8, false, "9♦", true, (480, 20)),
         ]
     );
     let state = table.state();
@@ -1216,13 +1230,13 @@ fn eu_1487_doubling_is_only_allowed_on_the_first_two_cards() {
     let mut events = two_hands_low("6♥");
     events.extend([
         card_dealt(0, "6♥", 12, false, false, 0),
-        turn(0, "2♣ 4♣ 6♥", 12, false, "9♦", false, 480, 20),
+        turn(0, "2♣ 4♣ 6♥", 12, false, "9♦", false, (480, 20)),
     ]);
     let mut table = given(events);
 
     assert_eq!(
         refused(table.when(v1::DoubleDown { seat: 0 })),
-        "DOUBLE_NOT_ALLOWED"
+        "DoubleNotAllowed"
     );
 }
 
@@ -1237,7 +1251,7 @@ fn eu_1488_doubling_needs_a_stack_that_covers_the_wager() {
 
     assert_eq!(
         refused(table.when(v1::DoubleDown { seat: 1 })),
-        "INSUFFICIENT_STACK"
+        "InsufficientStack"
     );
 }
 
@@ -1247,15 +1261,15 @@ fn eu_1489_nobody_can_act_between_rounds() {
 
     assert_eq!(
         refused(table.when(v1::Hit { seat: 0 })),
-        "NO_ROUND_IN_PROGRESS"
+        "NoRoundInProgress"
     );
     assert_eq!(
         refused(table.when(v1::Stand { seat: 0 })),
-        "NO_ROUND_IN_PROGRESS"
+        "NoRoundInProgress"
     );
     assert_eq!(
         refused(table.when(v1::DoubleDown { seat: 0 })),
-        "NO_ROUND_IN_PROGRESS"
+        "NoRoundInProgress"
     );
 }
 
@@ -1274,7 +1288,7 @@ fn nobody_can_act_once_every_hand_is_finished() {
 
     assert_eq!(
         refused(table.when(v1::Hit { seat: 0 })),
-        "NO_ROUND_IN_PROGRESS"
+        "NoRoundInProgress"
     );
 }
 
@@ -1457,7 +1471,7 @@ fn eu_1498_a_busted_hand_loses_even_when_the_dealer_busts_too() {
     );
     events.extend([
         card_dealt(0, "K♣", 26, false, true, 1),
-        turn(1, "10♥ 2♥", 12, false, "10♦", true, 480, 20),
+        turn(1, "10♥ 2♥", 12, false, "10♦", true, (480, 20)),
     ]);
     let mut table = given(events);
 
@@ -1502,7 +1516,7 @@ fn eu_1499_a_doubled_hand_is_paid_on_the_doubled_wager() {
         next_turn: 1,
         stack_after: 460,
     }));
-    events.push(turn(1, "3♣ 5♦", 8, false, "9♦", true, 480, 20));
+    events.push(turn(1, "3♣ 5♦", 8, false, "9♦", true, (480, 20)));
     let mut table = given(events);
 
     let events = table.when(v1::Stand { seat: 1 }).expect("stood");
@@ -1556,7 +1570,7 @@ fn eu_1500_the_last_action_plays_the_dealer_and_settles_in_the_same_step() {
 /// A shoe the dealer runs out of is a bug, never a business answer: a
 /// round never runs the shoe out (AHR-4: DealRound replaces a shoe that
 /// could). The step that settles fails the whole decision as a keyed bug,
-/// ROUTER_REASON_UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out`
+/// ANGZARR_REASON_UNHANDLED_HANDLER_ERROR with `examples-table-shoe-ran-out`
 /// as its cause and its round as `cause.round`, never English (decisions
 /// 14.44, 14.48), answered to the caller, which holds it, so not
 /// dead-lettered, and nothing is recorded.
@@ -1574,12 +1588,12 @@ fn a_dealer_who_runs_out_of_shoe_is_a_bug_answered_to_its_caller() {
     let mut table = given(events);
     let before = table.state().clone();
 
-    let failure = table.when(v1::Stand { seat: 0 }).expect_err("a bug");
+    let failure = *table.when(v1::Stand { seat: 0 }).expect_err("a bug");
 
     assert!(
         matches!(
             &failure,
-            Failure::Kernel(KernelError::Router(e)) if e.code == "ROUTER_REASON_UNHANDLED_HANDLER_ERROR"
+            Failure::Kernel(KernelError::Router(e)) if e.code == "ANGZARR_REASON_UNHANDLED_HANDLER_ERROR"
         ),
         "a bug, not a refusal: {failure:?}"
     );
@@ -1619,7 +1633,7 @@ fn eu_1505_the_deal_records_the_first_seats_turn_with_its_hand_and_the_up_card()
     // wager 20, and Alice named as the seat's player.
     assert_eq!(
         events.last(),
-        Some(&turn(0, "2♣ 4♣", 6, false, "9♦", true, 480, 20))
+        Some(&turn(0, "2♣ 4♣", 6, false, "9♦", true, (480, 20)))
     );
     assert!(matches!(events[events.len() - 2], Ev::RoundDealt(_)));
 }
@@ -1634,7 +1648,7 @@ fn eu_1506_standing_starts_the_next_seats_turn_with_that_seats_own_hand() {
         events,
         vec![
             stood(0, 6, 1),
-            turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
+            turn(1, "3♣ 5♣", 8, false, "9♦", true, (480, 20)),
         ]
     );
 }
@@ -1679,7 +1693,7 @@ fn eu_1508_a_hit_that_keeps_the_turn_starts_it_again_and_can_no_longer_double() 
 
     assert_eq!(
         events.last(),
-        Some(&turn(0, "2♣ 4♣ 6♥", 12, false, "9♦", false, 480, 20))
+        Some(&turn(0, "2♣ 4♣ 6♥", 12, false, "9♦", false, (480, 20)))
     );
 }
 
@@ -1693,7 +1707,7 @@ fn eu_1509_a_stack_smaller_than_the_wager_cannot_double() {
 
     assert_eq!(
         events.last(),
-        Some(&turn(0, "2♣ 4♣", 6, false, "9♦", false, 10, 20))
+        Some(&turn(0, "2♣ 4♣", 6, false, "9♦", false, (10, 20)))
     );
 }
 
@@ -1702,7 +1716,7 @@ fn eu_1510_the_action_that_settles_the_round_starts_no_turn() {
     let mut events = two_hands_low("10♥");
     events.extend([
         stood(0, 6, 1),
-        turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
+        turn(1, "3♣ 5♣", 8, false, "9♦", true, (480, 20)),
     ]);
     let mut table = given(events);
 
@@ -1739,7 +1753,7 @@ fn a_minimal_hand_plays_from_create_table_to_settlement_by_command() {
         dealing,
         vec![
             dealt(vec![hand(0, "7♣ K♣", 17, false, false)], "3♥", "A♠", 0),
-            turn(0, "7♣ K♣", 17, false, "3♥", true, 480, 20),
+            turn(0, "7♣ K♣", 17, false, "3♥", true, (480, 20)),
         ]
     );
 
@@ -1803,8 +1817,8 @@ fn eu_1504_every_round_keeps_the_tables_chips_in_balance() {
 /// settles. Returns the table after the first run.
 #[track_caller]
 fn assert_step_idempotent(
-    table: TableAggregate,
-    step: fn(&Table) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>,
+    table: TableState,
+    step: fn(&Table) -> Result<Vec<TableStateEvent>, Failed<Unrefusable>>,
 ) -> Table {
     let mut table = table.0;
     for event in step(&table).expect("the step decides") {
@@ -1816,7 +1830,7 @@ fn assert_step_idempotent(
 }
 
 /// The background with Alice and Bob's bets, from a shoe beginning `shoe`.
-fn bets_on(shoe: &str) -> TableAggregate {
+fn bets_on(shoe: &str) -> TableState {
     let mut events = background(shoe);
     events.extend([bet(0, 20, 480), bet(1, 20, 480)]);
     given(events).aggregate()
@@ -1847,7 +1861,7 @@ fn the_after_action_step_does_nothing_when_re_run_on_its_own_result() {
     let mut events = two_hands_low("10♥");
     events.extend([
         stood(0, 6, 1),
-        turn(1, "3♣ 5♣", 8, false, "9♦", true, 480, 20),
+        turn(1, "3♣ 5♣", 8, false, "9♦", true, (480, 20)),
         stood(1, 8, -1),
     ]);
     let settled = assert_step_idempotent(given(events).aggregate(), Table::after_action);
@@ -1893,34 +1907,6 @@ fn eu_1454_releasing_a_seat_that_is_no_longer_held_changes_nothing() {
         reason: "funds were refused".into(),
     };
     assert_eq!(table.when_fact(release).expect("ok"), vec![]);
-}
-
-// ================================================================ RecordMoveUndecided
-
-/// The player could not decide (policy-table-player's translation of a
-/// refused DecideMove, angzarr decision 14.76): the table records it and
-/// changes nothing else; it counts as an event folded.
-#[test]
-fn an_undecided_move_is_recorded_and_changes_nothing_else() {
-    let mut table = given(main_table());
-    let before = table.state().clone();
-
-    let undecided = v1::RecordMoveUndecided {
-        round: 1,
-        seat: 0,
-        reason: "NO_MODEL".into(),
-    };
-    let events = table.when_fact(undecided).expect("recorded");
-
-    assert_eq!(
-        events,
-        vec![ev(v1::MoveUndecided {
-            round: 1,
-            seat: 0,
-            reason: "NO_MODEL".into(),
-        })]
-    );
-    assert_eq!(table.state(), &before, "nothing else changes");
 }
 
 // ================================================================ LeaveTable
@@ -1972,26 +1958,6 @@ fn eu_1461_a_cash_out_is_identified_by_the_table_and_its_position_in_the_history
     // One event more before it: the cash-out is event 5, not 4.
     let mut events = alice_seated(640);
     events.push(held(B2, BOB, 1, 500));
-    let mut table = given(events);
-
-    let events = table.when(v1::LeaveTable { seat: 0 }).expect("left");
-
-    let [Ev::PlayerCashedOut(cashed)] = &events[..] else {
-        panic!("expected PlayerCashedOut, got {events:?}");
-    };
-    assert_eq!(cashed.cashout_id[..], cashout_id(5)[..]);
-}
-
-/// An undecided move occupies its place in the history: a cash-out after
-/// it is event 5, not 4 (angzarr decision 14.76's RecordMoveUndecided).
-#[test]
-fn an_undecided_move_counts_in_a_cash_outs_position() {
-    let mut events = alice_seated(640);
-    events.push(ev(v1::MoveUndecided {
-        round: 1,
-        seat: 0,
-        reason: "NO_MODEL".into(),
-    }));
     let mut table = given(events);
 
     let events = table.when(v1::LeaveTable { seat: 0 }).expect("left");
@@ -2105,7 +2071,7 @@ fn eu_1462_a_player_with_a_bet_in_play_cannot_leave() {
 
     assert_eq!(
         refused(table.when(v1::LeaveTable { seat: 0 })),
-        "WAGER_IN_PLAY"
+        "WagerInPlay"
     );
 }
 
@@ -2113,10 +2079,7 @@ fn eu_1462_a_player_with_a_bet_in_play_cannot_leave() {
 fn eu_1463_nobody_can_leave_an_empty_seat() {
     let mut table = given(main_table());
 
-    assert_eq!(
-        refused(table.when(v1::LeaveTable { seat: 2 })),
-        "NOT_SEATED"
-    );
+    assert_eq!(refused(table.when(v1::LeaveTable { seat: 2 })), "NotSeated");
 }
 
 #[test]
@@ -2125,27 +2088,18 @@ fn leaving_a_table_that_does_not_exist_is_refused() {
 
     assert_eq!(
         refused(table.when(v1::LeaveTable { seat: 0 })),
-        "TABLE_NOT_FOUND"
+        "TableNotFound"
     );
 }
 
 // ================================================================ two callers at once
 //
-// cluster.feature's conflict scenarios (EA-0022..0024), forced in process:
-// both commands are prepared from the same head (the same expected
-// sequence) and sent one after the other, so the second always meets the
-// first's events. table.proto: PlaceBet is sent with AGGREGATE_HANDLES,
-// the turn actions with STRICT. The table's PlaceBet handler acknowledges
-// the window it reads from its context (`ctx.command.conflict`) and decides
-// against its full history.
-
-/// Sent as prepared from the table at `head`, under `resolution`.
-fn prepared(head: u64, resolution: ConflictResolution) -> Option<Handling> {
-    Some(Handling {
-        expected_sequence: Some(head),
-        conflict_resolution: resolution.into(),
-    })
-}
+// cluster.feature's concurrency scenarios (EA-0022..0024), forced in process:
+// the commands are sent one after the other, so the second always meets the
+// first's events. A command sent with no expected sequence is decided
+// against the stream as it is when it is loaded (conflict resolution is
+// retired, decision 14.92); one sent at the head its sender read is refused
+// `ExpectedSequenceMismatch` unless that is still the head (decision 14.94).
 
 fn head(table: &Harness) -> u64 {
     table.recorded().len() as u64
@@ -2154,25 +2108,21 @@ fn head(table: &Harness) -> u64 {
 #[test]
 fn ea_0022_a_second_bet_for_the_same_seat_is_refused_by_the_table_itself() {
     let mut table = given(background("2♣"));
-    let at = head(&table);
-    let handles = || prepared(at, ConflictResolution::AggregateHandles);
 
-    let first = table.when_handled(place(0, 20), handles());
-    let second = table.when_handled(place(0, 20), handles());
+    let first = table.when(place(0, 20));
+    let second = table.when(place(0, 20));
 
     assert_eq!(first.expect("placed"), vec![bet(0, 20, 480)]);
-    assert_eq!(refused(second), "ALREADY_BET");
+    assert_eq!(refused(second), "AlreadyBet");
     assert_eq!(table.state().seated[&0].wager, 20);
 }
 
 #[test]
-fn ea_0023_bets_for_different_seats_prepared_at_the_same_moment_both_land() {
+fn ea_0023_bets_for_different_seats_sent_one_after_the_other_both_land() {
     let mut table = given(background("2♣"));
-    let at = head(&table);
-    let handles = || prepared(at, ConflictResolution::AggregateHandles);
 
-    table.when_handled(place(0, 20), handles()).expect("placed");
-    table.when_handled(place(1, 30), handles()).expect("placed");
+    table.when(place(0, 20)).expect("placed");
+    table.when(place(1, 30)).expect("placed");
 
     let state = table.state();
     assert_eq!((state.seated[&0].wager, state.seated[&1].wager), (20, 30));
@@ -2196,20 +2146,29 @@ fn ea_0024_two_hits_for_one_hand_at_the_same_moment_deal_exactly_one_card() {
         (cards("7♦ 4♦"), Some(card("9♣")))
     );
     let at = head(&table);
-    let strict = || prepared(at, ConflictResolution::Strict);
 
-    let first = table.when_handled(v1::Hit { seat: 0 }, strict());
-    let second = table.when_handled(v1::Hit { seat: 0 }, strict());
+    let first = table.when_at(v1::Hit { seat: 0 }, Some(at));
+    let second = table.when_at(v1::Hit { seat: 0 }, Some(at));
 
     let first = first.expect("one hit lands");
     assert!(
         matches!(&first[0], Ev::CardDealt(c) if wire(c).card == Some(card("8♦"))),
         "the 8♦: {first:?}"
     );
-    // Out of date, and retryable.
-    assert!(
-        matches!(second, Err(Failure::Kernel(KernelError::Stale { .. }))),
-        "refused as stale: {second:?}"
+    // Out of date: the head moved past the one the second hit was sent at.
+    let rejected = rejection_of(second);
+    assert_eq!(
+        type_name(&rejected.refusal_object().type_url),
+        ExpectedSequenceMismatch::full_name()
+    );
+    let mismatch = ExpectedSequenceMismatch::decode(&rejected.refusal_object().value[..])
+        .expect("an ExpectedSequenceMismatch");
+    assert_eq!(
+        mismatch,
+        ExpectedSequenceMismatch {
+            expected: at,
+            head: head(&table),
+        }
     );
 }
 
@@ -2286,32 +2245,12 @@ fn between_rounds_no_seat_is_on_turn() {
 
 // ================================================================ the refusals as diagnostics
 
-/// A table refusal's diagnostic: its code and its `reason` arg (decision
-/// 14.37: a key and args; English only from a catalog, where it is shown).
-#[track_caller]
-fn report_of(then: Then) -> (String, Option<String>) {
-    let refusal = table_refused(then);
-    (refusal.code().to_string(), Some(reason_of(&refusal)))
-}
-
-#[test]
-fn a_table_refusal_is_reported_by_its_code_and_its_reason() {
-    let mut table = given(background("2♣"));
-
-    assert_eq!(
-        report_of(table.when(place(0, 102))),
-        (
-            "io-angzarr-examples-v1-tablerefused-bet-out-of-range".to_string(),
-            Some("BET_OUT_OF_RANGE".to_string())
-        )
-    );
-}
-
 /// A table refusal as it is shown and logged: its diagnostic's code and
 /// args, the args in name order (as angzarr-router hands args back).
 #[track_caller]
 fn refusal_shown(then: Then) -> String {
-    let refusal = table_refused(then);
+    let refusal = refusal_of(then);
+    let refusal = diagnostic(&refusal);
     let mut args = refusal.args();
     args.sort_by_key(|(name, _)| *name);
     args.into_iter()
@@ -2324,10 +2263,11 @@ fn refusal_shown(then: Then) -> String {
 }
 
 /// Decision 14.37: a refusal is a key and its args, never English. Each
-/// table refusal carries its reason and the values it names, and no
-/// `message`; through the router its args come back in name order.
+/// table refusal is a message of its own (decision 14.95), keyed by its
+/// name, with the values it names as args, and no `message`; through the
+/// router its args come back in name order.
 #[test]
-fn a_table_refusal_is_its_code_reason_and_values_never_english() {
+fn a_table_refusal_is_its_code_and_values_never_english() {
     let shown = |events: Vec<Ev>, when: &When| refusal_shown(when(&mut given(events)));
     let mut taken = main_table();
     taken.push(held(B2, BOB, 1, 500));
@@ -2339,67 +2279,72 @@ fn a_table_refusal_is_its_code_reason_and_values_never_english() {
         (
             main_table(),
             &|t| t.when(create_main(42)),
-            "io-angzarr-examples-v1-tablerefused-table-already-exists name=Main reason=TABLE_ALREADY_EXISTS",
+            "io-angzarr-examples-v1-tablealreadyexists name=Main",
         ),
         (
             vec![],
-            &|t| t.when(v1::CreateTable { seats: 8, ..create_main(42) }),
-            "io-angzarr-examples-v1-tablerefused-invalid-table-config reason=INVALID_TABLE_CONFIG rule=seats",
+            &|t| {
+                t.when(v1::CreateTable {
+                    seats: 8,
+                    ..create_main(42)
+                })
+            },
+            "io-angzarr-examples-v1-invalidtableconfig rule=seats",
         ),
         (
             vec![],
             &|t| t.when(v1::Hit { seat: 0 }),
-            "io-angzarr-examples-v1-tablerefused-table-not-found reason=TABLE_NOT_FOUND",
+            "io-angzarr-examples-v1-tablenotfound",
         ),
         (
             main_table(),
             &|t| t.when(request(ALICE, 3, 500, B1)),
-            "io-angzarr-examples-v1-tablerefused-seat-out-of-range reason=SEAT_OUT_OF_RANGE seat=3",
+            "io-angzarr-examples-v1-seatoutofrange seat=3",
         ),
         (
             main_table(),
             &|t| t.when(request(ALICE, 0, 99, B1)),
-            "io-angzarr-examples-v1-tablerefused-buy-in-out-of-range max_buy_in=1000 min_buy_in=100 reason=BUY_IN_OUT_OF_RANGE",
+            "io-angzarr-examples-v1-buyinoutofrange max_buy_in=1000 min_buy_in=100",
         ),
         (
             taken,
             &|t| t.when(request(ALICE, 1, 500, 0x03)),
-            "io-angzarr-examples-v1-tablerefused-seat-taken reason=SEAT_TAKEN seat=1",
+            "io-angzarr-examples-v1-seattaken seat=1",
         ),
         (
             background("2♣"),
             &|t| t.when(place(0, 102)),
-            "io-angzarr-examples-v1-tablerefused-bet-out-of-range max_bet=100 min_bet=10 reason=BET_OUT_OF_RANGE",
+            "io-angzarr-examples-v1-betoutofrange max_bet=100 min_bet=10",
         ),
         (
             background("2♣"),
             &|t| t.when(place(0, 15)),
-            "io-angzarr-examples-v1-tablerefused-bet-not-even reason=BET_NOT_EVEN",
+            "io-angzarr-examples-v1-betnoteven",
         ),
         (
             bet_once,
             &|t| t.when(place(0, 20)),
-            "io-angzarr-examples-v1-tablerefused-already-bet reason=ALREADY_BET seat=0",
+            "io-angzarr-examples-v1-alreadybet seat=0",
         ),
         (
             background("2♣"),
             &|t| t.when(place(2, 20)),
-            "io-angzarr-examples-v1-tablerefused-not-seated reason=NOT_SEATED seat=2",
+            "io-angzarr-examples-v1-notseated seat=2",
         ),
         (
             main_table(),
             &|t| t.when(v1::LeaveTable { seat: 2 }),
-            "io-angzarr-examples-v1-tablerefused-not-seated reason=NOT_SEATED seat=2",
+            "io-angzarr-examples-v1-notseated seat=2",
         ),
         (
             two_hands_low(""),
             &|t| t.when(v1::Hit { seat: 1 }),
-            "io-angzarr-examples-v1-tablerefused-not-your-turn reason=NOT_YOUR_TURN seat=1",
+            "io-angzarr-examples-v1-notyourturn seat=1",
         ),
         (
             wagered,
             &|t| t.when(v1::LeaveTable { seat: 0 }),
-            "io-angzarr-examples-v1-tablerefused-wager-in-play reason=WAGER_IN_PLAY seat=0",
+            "io-angzarr-examples-v1-wagerinplay seat=0",
         ),
     ];
     for (events, when, expected) in cases {
@@ -2424,7 +2369,7 @@ fn a_table_refusal_displays_as_its_code_and_args() {
 
     assert_eq!(
         Report::of(&rejection).to_string(),
-        "io-angzarr-examples-v1-tablerefused-invalid-table-config reason=INVALID_TABLE_CONFIG rule=decks"
+        "io-angzarr-examples-v1-invalidtableconfig rule=decks"
     );
 }
 
@@ -2443,7 +2388,7 @@ fn a_table_bug_displays_as_its_code_and_args() {
     events.push(stood(0, 19, -1));
     let table = given(events).aggregate().0;
 
-    let Err(Failed::Bug(bug)) = table.after_action() else {
+    let Err(Failed::Bug(bug)) = table.after_action::<Unrefusable>() else {
         panic!("the dealer's draw from an empty shoe is a bug");
     };
     assert_eq!(bug.to_string(), "examples-table-shoe-ran-out round=1");
@@ -2463,24 +2408,24 @@ fn a_seat_not_confirmable_displays_as_its_code_and_args() {
     );
 }
 
-/// A typed refusal is keyed ROUTER_REASON_COMMAND_REFUSED, the spec key
+/// A typed refusal is keyed ANGZARR_REASON_COMMAND_REFUSED, the spec key
 /// (decision 14.60), with its object's type as
 /// `refusal_type` (decision 14.37); its reason travels in the object.
 #[test]
 fn a_seat_not_confirmable_is_reported_as_a_typed_refusal_with_its_reason() {
     let mut table = given(main_table());
 
-    let then = table.when(confirm(B1));
-    let Err(Failure::Rejected(rejected)) = &then else {
-        panic!("expected SeatNotConfirmable, got {then:?}");
-    };
+    let rejected = rejection_of(table.when(confirm(B1)));
     let report = rejected.report();
-    let reason = not_confirmable(then.clone());
-    assert_eq!(report.code(), "ROUTER_REASON_COMMAND_REFUSED");
+    let reason = rejected
+        .refusal::<crate::domain::SeatNotConfirmable>()
+        .expect("a SeatNotConfirmable")
+        .reason;
+    assert_eq!(report.code(), "ANGZARR_REASON_COMMAND_REFUSED");
     assert_eq!(
         report.to_string(),
         format!(
-            "ROUTER_REASON_COMMAND_REFUSED refusal_type={}",
+            "ANGZARR_REASON_COMMAND_REFUSED refusal_type={}",
             v1::SeatNotConfirmable::full_name()
         )
     );
@@ -2531,107 +2476,57 @@ fn seed_21_settles_alice_540_bob_520_house_minus_60() {
     assert_ledger_balances(table.state());
 }
 
-/// Characterization of the rejection codes declared in the proto
-/// (table.proto's TableRefused.Reason, red/table-generated): every one of
-/// the eighteen, its diagnostic code and its ErrorInfo.reason. The code is
-/// the generator's key, the refusal's full name and its reason (owner
-/// ruling, decision 14.50); the reasons are the ones table.proto lists.
+/// Characterization of the refusal messages declared in the proto
+/// (table.proto, decision 14.95): every one of the nineteen, its diagnostic
+/// code, the generator's key: the refusal's full name.
 #[test]
-fn every_rejection_code_keeps_its_diagnostic_code_and_reason() {
-    // Every Reason table.proto declares, in its order: 1, 2, .. until the
-    // first number it does not.
-    let shown: Vec<(String, String)> = (1..)
-        .map_while(|n| TableRefusedReason::try_from(n).ok())
-        .map(|reason| {
-            let refused = TableRefused {
-                reason,
-                name: None,
-                rule: None,
-                seat: None,
-                min_buy_in: None,
-                max_buy_in: None,
-                min_bet: None,
-                max_bet: None,
-            };
-            (refused.code().to_string(), reason_of(&refused))
-        })
-        .collect();
-    let shown: Vec<(&str, &str)> = shown
-        .iter()
-        .map(|(c, r)| (c.as_str(), r.as_str()))
-        .collect();
+fn every_refusal_keeps_its_diagnostic_code() {
+    use crate::domain as d;
+    use TableStateRefusal as R;
+    let refusals = [
+        R::TableAlreadyExists(d::TableAlreadyExists::default()),
+        R::InvalidTableConfig(d::InvalidTableConfig::default()),
+        R::TableNotFound(d::TableNotFound::default()),
+        R::SeatTaken(d::SeatTaken::default()),
+        R::PlayerAlreadySeated(d::PlayerAlreadySeated::default()),
+        R::SeatOutOfRange(d::SeatOutOfRange::default()),
+        R::BuyInOutOfRange(d::BuyInOutOfRange::default()),
+        R::NotSeated(d::NotSeated::default()),
+        R::WagerInPlay(d::WagerInPlay::default()),
+        R::RoundInProgress(d::RoundInProgress::default()),
+        R::AlreadyBet(d::AlreadyBet::default()),
+        R::InsufficientStack(d::InsufficientStack::default()),
+        R::BetOutOfRange(d::BetOutOfRange::default()),
+        R::BetNotEven(d::BetNotEven::default()),
+        R::NoBets(d::NoBets::default()),
+        R::NoRoundInProgress(d::NoRoundInProgress::default()),
+        R::NotYourTurn(d::NotYourTurn::default()),
+        R::DoubleNotAllowed(d::DoubleNotAllowed::default()),
+        R::SeatNotConfirmable(d::SeatNotConfirmable::default()),
+    ];
+    let codes: Vec<&str> = refusals.iter().map(|r| diagnostic(r).code()).collect();
     assert_eq!(
-        shown,
+        codes,
         [
-            (
-                "io-angzarr-examples-v1-tablerefused-table-already-exists",
-                "TABLE_ALREADY_EXISTS"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-invalid-table-config",
-                "INVALID_TABLE_CONFIG"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-table-not-found",
-                "TABLE_NOT_FOUND"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-seat-taken",
-                "SEAT_TAKEN"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-player-already-seated",
-                "PLAYER_ALREADY_SEATED"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-not-seated",
-                "NOT_SEATED"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-round-in-progress",
-                "ROUND_IN_PROGRESS"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-already-bet",
-                "ALREADY_BET"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-insufficient-stack",
-                "INSUFFICIENT_STACK"
-            ),
-            ("io-angzarr-examples-v1-tablerefused-no-bets", "NO_BETS"),
-            (
-                "io-angzarr-examples-v1-tablerefused-no-round-in-progress",
-                "NO_ROUND_IN_PROGRESS"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-not-your-turn",
-                "NOT_YOUR_TURN"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-double-not-allowed",
-                "DOUBLE_NOT_ALLOWED"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-seat-out-of-range",
-                "SEAT_OUT_OF_RANGE"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-buy-in-out-of-range",
-                "BUY_IN_OUT_OF_RANGE"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-bet-out-of-range",
-                "BET_OUT_OF_RANGE"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-bet-not-even",
-                "BET_NOT_EVEN"
-            ),
-            (
-                "io-angzarr-examples-v1-tablerefused-wager-in-play",
-                "WAGER_IN_PLAY"
-            ),
+            "io-angzarr-examples-v1-tablealreadyexists",
+            "io-angzarr-examples-v1-invalidtableconfig",
+            "io-angzarr-examples-v1-tablenotfound",
+            "io-angzarr-examples-v1-seattaken",
+            "io-angzarr-examples-v1-playeralreadyseated",
+            "io-angzarr-examples-v1-seatoutofrange",
+            "io-angzarr-examples-v1-buyinoutofrange",
+            "io-angzarr-examples-v1-notseated",
+            "io-angzarr-examples-v1-wagerinplay",
+            "io-angzarr-examples-v1-roundinprogress",
+            "io-angzarr-examples-v1-alreadybet",
+            "io-angzarr-examples-v1-insufficientstack",
+            "io-angzarr-examples-v1-betoutofrange",
+            "io-angzarr-examples-v1-betnoteven",
+            "io-angzarr-examples-v1-nobets",
+            "io-angzarr-examples-v1-noroundinprogress",
+            "io-angzarr-examples-v1-notyourturn",
+            "io-angzarr-examples-v1-doublenotallowed",
+            "io-angzarr-examples-v1-seatnotconfirmable",
         ]
     );
 }

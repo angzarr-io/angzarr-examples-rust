@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 use crate::domain::*;
 use crate::wire::{buy_in_state::Phase, BuyInState};
 
-type Events = Vec<BuyInProcessManagerEvent>;
+type Events = Vec<BuyInStateEvent>;
 
 /// Why the buy-in rolls back: the refusal its policy translated.
 #[derive(Clone, Debug)]
@@ -41,41 +41,43 @@ pub const HOLD_FUNDS: &str = "hold funds";
 pub const LATE_HOLD: &str = "late hold";
 
 /// The buy-in's steps and their undos, oldest first, and its rollback.
-pub fn compensation() -> &'static Compensation<BuyInState, BuyInProcessManagerEvent, Failure> {
-    static STEPS: OnceLock<Compensation<BuyInState, BuyInProcessManagerEvent, Failure>> =
-        OnceLock::new();
+pub fn compensation() -> &'static Compensation<BuyInState, BuyInStateEvent, Failure> {
+    static STEPS: OnceLock<Compensation<BuyInState, BuyInStateEvent, Failure>> = OnceLock::new();
     STEPS.get_or_init(|| {
-        Compensation::new(
-            failed,
-            |state: &BuyInState| state.phase() == Phase::Failed,
-            compensation_failed,
-        )
-        .step::<TableAggregateOutput, ReleaseSeat, _>(
-            HOLD_SEAT,
-            seat_held,
-            |started: &BuyInStarted| {
-                SeatReleaseDue {
-                    buy_in_id: started.buy_in_id.clone(),
-                    table_root: started.table_root.clone(),
-                }
-                .into()
-            },
-        )
-        .step::<WalletAggregateOutput, ReleaseHold, _>(
-            HOLD_FUNDS,
-            funds_held,
-            |held: &BuyInFundsHeld| hold_release(&held.buy_in_id, &held.player_root),
-        )
-        .step::<WalletAggregateOutput, ReleaseHold, _>(
-            LATE_HOLD,
-            |_: &BuyInState| None,
-            |late: &BuyInLateFundsHeld| hold_release(&late.buy_in_id, &late.player_root),
-        )
+        // Each undo is checked against its target (decision 14.83): both of
+        // the buy-in's are facts, so none is refused.
+        Compensation::new(failed, |state: &BuyInState| state.phase() == Phase::Failed)
+            .step::<TableStateOutput, ReleaseSeat, _>(
+                HOLD_SEAT,
+                seat_held,
+                |started: &BuyInStarted| {
+                    SeatReleaseDue {
+                        buy_in_id: started.buy_in_id.clone(),
+                        table_root: started.table_root.clone(),
+                    }
+                    .into()
+                },
+            )
+            .and_then(|steps| {
+                steps.step::<WalletStateOutput, ReleaseHold, _>(
+                    HOLD_FUNDS,
+                    funds_held,
+                    |held: &BuyInFundsHeld| hold_release(&held.buy_in_id, &held.player_root),
+                )
+            })
+            .and_then(|steps| {
+                steps.step::<WalletStateOutput, ReleaseHold, _>(
+                    LATE_HOLD,
+                    |_: &BuyInState| None,
+                    |late: &BuyInLateFundsHeld| hold_release(&late.buy_in_id, &late.player_root),
+                )
+            })
+            .unwrap_or_else(|refused| panic!("the buy-in's compensation: {refused:?}"))
     })
 }
 
 /// The rollback's failed event for `failure`.
-fn failed(state: &BuyInState, failure: Failure) -> BuyInProcessManagerEvent {
+fn failed(state: &BuyInState, failure: Failure) -> BuyInStateEvent {
     match failure {
         Failure::Funds(refused) => BuyInFailed {
             buy_in_id: refused.buy_in_id,
@@ -92,15 +94,6 @@ fn failed(state: &BuyInState, failure: Failure) -> BuyInProcessManagerEvent {
         }
         .into(),
     }
-}
-
-/// A step's undo refused: the alert (decision 38 (a)).
-fn compensation_failed(state: &BuyInState, step: &str) -> BuyInProcessManagerEvent {
-    CompensationFailed {
-        buy_in_id: state.buy_in_id.clone(),
-        step: step.to_string(),
-    }
-    .into()
 }
 
 /// The held seat, once the buy-in started: its BuyInStarted.
@@ -127,7 +120,7 @@ fn funds_held(state: &BuyInState) -> Option<BuyInFundsHeld> {
     })
 }
 
-fn hold_release(buy_in_id: &[u8], player_root: &[u8]) -> BuyInProcessManagerEvent {
+fn hold_release(buy_in_id: &[u8], player_root: &[u8]) -> BuyInStateEvent {
     HoldReleaseDue {
         buy_in_id: buy_in_id.to_vec(),
         player_root: player_root.to_vec(),
@@ -164,11 +157,11 @@ impl BuyInProcessManagerImpl {
     }
 }
 
-impl BuyInProcessManager for BuyInProcessManagerImpl {
+impl BuyInStateInterface for BuyInProcessManagerImpl {
     /// The buy-in started, once: a second start records nothing.
-    fn start_buy_in(&self, fact: &StartBuyIn, _ctx: &Context) -> Events {
+    fn start_buy_in(&self, fact: &StartBuyIn, _ctx: &Context) -> Result<Events, Bug> {
         if self.state.phase() != Phase::Unspecified {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let started = BuyInStarted {
             buy_in_id: fact.buy_in_id.clone(),
@@ -177,68 +170,80 @@ impl BuyInProcessManager for BuyInProcessManagerImpl {
             seat: fact.seat,
             amount: fact.amount,
         };
-        vec![started.into()]
+        Ok(vec![started.into()])
     }
 
     /// The hold step's reply in its turn; after the buy-in failed, the late
     /// record and its undo; anything else records nothing.
-    fn record_funds_held(&self, fact: &RecordFundsHeld, _ctx: &Context) -> Events {
+    fn record_funds_held(&self, fact: &RecordFundsHeld, _ctx: &Context) -> Result<Events, Bug> {
         if self.at(&fact.hold_id, Phase::AwaitingHold) {
             let held = BuyInFundsHeld {
                 buy_in_id: fact.hold_id.clone(),
                 table_root: fact.table_root.clone(),
                 player_root: self.state.player_root.clone(),
             };
-            return compensation().reply(&self.state, held);
+            return Ok(compensation().reply(&self.state, held));
         }
         if self.at(&fact.hold_id, Phase::Failed) {
             let late = BuyInLateFundsHeld {
                 buy_in_id: fact.hold_id.clone(),
                 player_root: self.state.player_root.clone(),
             };
-            return compensation().reply(&self.state, late);
+            return Ok(compensation().reply(&self.state, late));
         }
-        Vec::new()
+        Ok(Vec::new())
     }
 
-    fn record_player_seated(&self, fact: &RecordPlayerSeated, _ctx: &Context) -> Events {
+    fn record_player_seated(
+        &self,
+        fact: &RecordPlayerSeated,
+        _ctx: &Context,
+    ) -> Result<Events, Bug> {
         if !self.at(&fact.buy_in_id, Phase::AwaitingSeat) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let seated = BuyInSeated {
             buy_in_id: fact.buy_in_id.clone(),
             stack: fact.stack,
             player_root: fact.player_root.clone(),
         };
-        vec![seated.into()]
+        Ok(vec![seated.into()])
     }
 
-    fn record_funds_captured(&self, fact: &RecordFundsCaptured, _ctx: &Context) -> Events {
+    fn record_funds_captured(
+        &self,
+        fact: &RecordFundsCaptured,
+        _ctx: &Context,
+    ) -> Result<Events, Bug> {
         if !self.at(&fact.hold_id, Phase::AwaitingCapture) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        vec![BuyInCompleted {
+        Ok(vec![BuyInCompleted {
             buy_in_id: fact.hold_id.clone(),
         }
-        .into()]
+        .into()])
     }
 
     /// The wallet could not fund the buy-in: it rolls back, the seat
     /// released.
-    fn funds_hold_refused(&self, fact: &FundsHoldRefused, _ctx: &Context) -> Events {
+    fn funds_hold_refused(&self, fact: &FundsHoldRefused, _ctx: &Context) -> Result<Events, Bug> {
         if !self.at(&fact.buy_in_id, Phase::AwaitingHold) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        compensation().rollback(&self.state, Failure::Funds(fact.clone()))
+        Ok(compensation().rollback(&self.state, Failure::Funds(fact.clone())))
     }
 
     /// The table could not confirm the seat: it rolls back, the funds and
     /// then the seat released.
-    fn seat_confirmation_refused(&self, fact: &SeatConfirmationRefused, _ctx: &Context) -> Events {
+    fn seat_confirmation_refused(
+        &self,
+        fact: &SeatConfirmationRefused,
+        _ctx: &Context,
+    ) -> Result<Events, Bug> {
         if !self.at(&fact.buy_in_id, Phase::AwaitingSeat) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        compensation().rollback(&self.state, Failure::Seat(fact.clone()))
+        Ok(compensation().rollback(&self.state, Failure::Seat(fact.clone())))
     }
 
     fn apply_buy_in_started(&mut self, event: &BuyInStarted) {
@@ -288,7 +293,4 @@ impl BuyInProcessManager for BuyInProcessManagerImpl {
     fn apply_seat_release_due(&mut self, _event: &SeatReleaseDue) {}
 
     fn apply_hold_release_due(&mut self, _event: &HoldReleaseDue) {}
-
-    /// The alert changes nothing of the buy-in's own.
-    fn apply_compensation_failed(&mut self, _event: &CompensationFailed) {}
 }

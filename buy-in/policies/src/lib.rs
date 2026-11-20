@@ -7,7 +7,7 @@
 //! - [`BuyInWalletPolicyImpl`] and [`BuyInTablePolicyImpl`]: the buy-in's
 //!   steps, as what the wallet and the table declare (HoldFunds and
 //!   ConfirmSeat commands; CaptureFunds, ReleaseHold and ReleaseSeat facts),
-//!   every refusal translated (angzarr decision 14.76): HoldFunds' into the
+//!   every refusal translated by the policy's one callback (angzarr decision 14.89): HoldFunds' into the
 //!   buy-in's FundsHoldRefused, ConfirmSeat's into its
 //!   SeatConfirmationRefused, any command they never send a bug.
 //!

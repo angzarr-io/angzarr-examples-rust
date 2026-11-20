@@ -12,13 +12,13 @@ use crate::table_buy_in_policy_impl::buy_in_of;
 #[derive(Clone, Debug, Default)]
 pub struct WalletBuyInPolicyImpl;
 
-impl WalletBuyInPolicy for WalletBuyInPolicyImpl {
+impl WalletBuyInPolicyInterface for WalletBuyInPolicyImpl {
     fn funds_held(
         &self,
         _source: &[u8],
         event: &FundsHeld,
         ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, BuyInStateOutput)>, Bug> {
         let held = RecordFundsHeld {
             hold_id: event.hold_id.clone(),
             table_root: event.table_root.clone(),
@@ -32,7 +32,7 @@ impl WalletBuyInPolicy for WalletBuyInPolicyImpl {
         _source: &[u8],
         event: &FundsCaptured,
         ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, BuyInStateOutput)>, Bug> {
         let captured = RecordFundsCaptured {
             hold_id: event.hold_id.clone(),
             table_root: event.table_root.clone(),

@@ -1,30 +1,14 @@
-//! How the table fails a decision: refused with the spec's `TableRefused`
-//! (its reason code, and the values it names as its other fields), or a
-//! bug.
+//! How the table fails a decision with a bug: a refusal is the spec's typed
+//! message of its own (table.proto), returned through `Failed::rejected`.
 
 use angzarr_diagnostic::Diagnostic;
-use examples_proto::domain::{Failed, TableRefused, TableRefusedReason};
-
-/// A refusal for `reason`, naming no value yet: set the fields it names
-/// with struct update syntax, `TableRefused { seat: Some(n), ..refused(r) }`.
-pub(crate) fn refused(reason: TableRefusedReason) -> TableRefused {
-    TableRefused {
-        reason,
-        name: None,
-        rule: None,
-        seat: None,
-        min_buy_in: None,
-        max_buy_in: None,
-        min_bet: None,
-        max_bet: None,
-    }
-}
+use examples_proto::domain::Failed;
 
 /// A message the table decided over its wire state, as the domain type
 /// its event carries. Every card the table holds came from a shuffle or a
 /// recorded event, so one the domain type cannot hold is a bug, reported
 /// by the conversion's own code.
-pub(crate) fn domain<W, D>(wire: W) -> Result<D, Failed<TableRefused>>
+pub(crate) fn domain<W, D, R>(wire: W) -> Result<D, Failed<R>>
 where
     D: TryFrom<W>,
     D::Error: Diagnostic,

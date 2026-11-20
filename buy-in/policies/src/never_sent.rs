@@ -1,6 +1,6 @@
-//! A refusal of a command the policy never sends: its generated interface
-//! has a callback for every command of its target (angzarr decision 14.76),
-//! and answering one it never sends is a bug, never a fact.
+//! A refusal of a command the policy never sends: its one refusal callback
+//! (angzarr decision 14.89) is handed every command of its target, and
+//! answering one it never sends is a bug, never a fact.
 
 use angzarr_diagnostic::code;
 

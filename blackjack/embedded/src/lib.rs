@@ -15,14 +15,14 @@
 pub use examples_proto::domain;
 
 /// Each component's implementation, as the generated adapters name it.
-pub mod table_aggregate_impl {
-    pub use agg_table::Table as TableAggregateImpl;
+pub mod table_state_impl {
+    pub use agg_table::Table as TableStateImpl;
 }
-pub mod wallet_aggregate_impl {
-    pub use agg_wallet::WalletAggregateImpl;
+pub mod wallet_state_impl {
+    pub use agg_wallet::WalletAggregateImpl as WalletStateImpl;
 }
-pub mod buy_in_process_manager_impl {
-    pub use pm_buy_in::BuyInProcessManagerImpl;
+pub mod buy_in_state_impl {
+    pub use pm_buy_in::BuyInProcessManagerImpl as BuyInStateImpl;
 }
 pub mod buy_in_wallet_policy_impl {
     pub use buy_in_policies::BuyInWalletPolicyImpl;
@@ -61,7 +61,7 @@ pub fn register(
 }
 
 /// The wallet's domain.
-const WALLET: &str = <adapters::WalletAggregate as angzarr_embedded::Domain>::NAME;
+const WALLET: &str = <adapters::WalletState as angzarr_embedded::Domain>::NAME;
 
 /// What the wallet reads its older history through: agg-wallet's rules.
 pub fn wallet_upcaster() -> angzarr_embedded::Upcaster {

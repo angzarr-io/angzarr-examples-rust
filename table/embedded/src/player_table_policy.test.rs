@@ -4,12 +4,12 @@
 
 use angzarr_diagnostic::{Arg, Diagnostic};
 use angzarr_embedded::markup::PolicyContext;
-use angzarr_embedded::v1::{Cover, EventRef, Uuid};
-use angzarr_embedded::{pack, Any, Timestamp, WireError};
+use angzarr_embedded::v1::{reaction_delivery, Cover, EventMeta, EventRef, ReactionDelivery, Uuid};
+use angzarr_embedded::{pack, Any, Payload as _, Timestamp, WireError};
 use examples_proto::v1::{self, MoveAction, Suit};
 
 use super::PlayerTablePolicy;
-use crate::domain::MoveDecided;
+use crate::domain::{MoveDecided, PlayerStateFact, Refused, TableStateCommand, TableStateRefusal};
 
 const ALICE: u8 = 0xa1;
 const TABLE: u8 = 0x7a;
@@ -149,26 +149,35 @@ fn eu_1604_a_decision_with_no_action_is_not_a_move_decided() {
 
 // ================================================================ a refused move
 
-/// The table's refusal of `command`, typed with `reason` when one is given.
-fn refusal_of<C>(
-    command: C,
-    reason: Option<v1::table_refused::Reason>,
-) -> angzarr_embedded::markup::Refusal<C> {
-    use angzarr_embedded::v1::{refusal_response, EventBook, RefusalResponse};
-    let response = RefusalResponse {
-        reason: reason.map(|r| {
-            refusal_response::Reason::Refusal(pack(&v1::TableRefused {
-                reason: r.into(),
-                seat: Some(0),
-                ..v1::TableRefused::default()
-            }))
-        }),
+/// The table's refusal of `command`, as its policy's refusal callback is
+/// handed it: the command packed, the typed refusal under its own status.
+fn refused_with<C, R>(command: C, refusal: R) -> Refused
+where
+    C: Into<TableStateCommand>,
+    R: crate::domain::Refusal + Into<TableStateRefusal>,
+{
+    let command = match command.into() {
+        TableStateCommand::Hit(hit) => pack(&v1::Hit::from(hit)),
+        TableStateCommand::Stand(stand) => pack(&v1::Stand::from(stand)),
+        TableStateCommand::DoubleDown(double) => pack(&v1::DoubleDown::from(double)),
+        TableStateCommand::LeaveTable(leave) => pack(&v1::LeaveTable::from(leave)),
+        other => panic!("not a command a test refuses: {other:?}"),
     };
-    angzarr_embedded::markup::Refusal::new(EventBook::default(), command, response)
+    let refusal: TableStateRefusal = refusal.into();
+    Refused::new(
+        ReactionDelivery {
+            body: Some(reaction_delivery::Body::Command(command)),
+            ..ReactionDelivery::default()
+        },
+        R::REFUSAL_STATUS,
+        refusal.to_any(),
+        EventRef::default(),
+        EventMeta::default(),
+    )
 }
 
 /// The player's fact of the refusal of `action` at seat 0, for `reason`.
-fn move_refused(action: MoveAction, reason: &str) -> crate::domain::PlayerAggregateFact {
+fn move_refused(action: MoveAction, reason: &str) -> PlayerStateFact {
     crate::domain::RecordMoveRefused::try_from(v1::RecordMoveRefused {
         seat: 0,
         action: action.into(),
@@ -179,44 +188,37 @@ fn move_refused(action: MoveAction, reason: &str) -> crate::domain::PlayerAggreg
 }
 
 /// The table refusing a move the player decided (it never does in play)
-/// is translated into the player's RecordMoveRefused, with the table's
-/// code (angzarr decision 14.76).
+/// is translated into the player's RecordMoveRefused, with the refusal's
+/// type name (angzarr decisions 14.76, 14.89).
 #[test]
 fn a_refused_move_is_the_players_record_of_it() {
-    use angzarr_embedded::markup::CommandContext;
-    use v1::table_refused::Reason;
+    use crate::domain::{DoubleDown, DoubleNotAllowed, Hit, NoRoundInProgress, NotYourTurn, Stand};
 
-    use crate::domain::{DoubleDown, Hit, Stand};
+    let hit = refused_with(Hit { seat: 0 }, NotYourTurn { seat: 0 });
+    assert_eq!(
+        PlayerTablePolicy.refused(&hit).expect("translated"),
+        move_refused(MoveAction::Hit, "NotYourTurn")
+    );
+    let stand = refused_with(Stand { seat: 0 }, NoRoundInProgress {});
+    assert_eq!(
+        PlayerTablePolicy.refused(&stand).expect("translated"),
+        move_refused(MoveAction::Stand, "NoRoundInProgress")
+    );
+    let double = refused_with(DoubleDown { seat: 0 }, DoubleNotAllowed {});
+    assert_eq!(
+        PlayerTablePolicy.refused(&double).expect("translated"),
+        move_refused(MoveAction::DoubleDown, "DoubleNotAllowed")
+    );
+}
 
-    let ctx = CommandContext::default();
-    let not_your_turn = Some(Reason::NotYourTurn);
-    let hit = refusal_of(Hit { seat: 0 }, not_your_turn);
-    assert_eq!(
-        PlayerTablePolicy
-            .hit_refused(&hit, &ctx)
-            .expect("translated"),
-        move_refused(MoveAction::Hit, "NOT_YOUR_TURN")
-    );
-    let stand = refusal_of(Stand { seat: 0 }, Some(Reason::NoRoundInProgress));
-    assert_eq!(
-        PlayerTablePolicy
-            .stand_refused(&stand, &ctx)
-            .expect("translated"),
-        move_refused(MoveAction::Stand, "NO_ROUND_IN_PROGRESS")
-    );
-    let double = refusal_of(DoubleDown { seat: 0 }, Some(Reason::DoubleNotAllowed));
-    assert_eq!(
-        PlayerTablePolicy
-            .double_down_refused(&double, &ctx)
-            .expect("translated"),
-        move_refused(MoveAction::DoubleDown, "DOUBLE_NOT_ALLOWED")
-    );
-    // No typed refusal: the move refused, no code.
-    let untyped = refusal_of(Hit { seat: 0 }, None);
-    assert_eq!(
-        PlayerTablePolicy
-            .hit_refused(&untyped, &ctx)
-            .expect("translated"),
-        move_refused(MoveAction::Hit, "")
-    );
+/// A refusal of a command the policy never sends is a bug, not a record.
+#[test]
+fn a_refusal_of_a_command_the_policy_never_sent_is_a_bug() {
+    use crate::domain::{LeaveTable, NotSeated};
+
+    let leave = refused_with(LeaveTable { seat: 0 }, NotSeated { seat: 0 });
+    let bug = PlayerTablePolicy
+        .refused(&leave)
+        .expect_err("not a move the policy sends");
+    assert_eq!(bug.key, "refused-command-not-sent");
 }

@@ -19,15 +19,15 @@ pub const ROLLED_BACK: &str = "BUY_IN_ROLLED_BACK";
 #[derive(Clone, Debug, Default)]
 pub struct BuyInTablePolicyImpl;
 
-type Fact = Result<BuyInProcessManagerFact, Bug>;
+type Fact = Result<BuyInStateFact, Bug>;
 
-impl BuyInTablePolicy for BuyInTablePolicyImpl {
+impl BuyInTablePolicyInterface for BuyInTablePolicyImpl {
     fn buy_in_funds_held(
         &self,
         _source: &[u8],
         event: &BuyInFundsHeld,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, TableAggregateOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, TableStateOutput)>, Bug> {
         let confirm = ConfirmSeat {
             buy_in_id: event.buy_in_id.clone(),
         };
@@ -39,7 +39,7 @@ impl BuyInTablePolicy for BuyInTablePolicyImpl {
         _source: &[u8],
         event: &SeatReleaseDue,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, TableAggregateOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, TableStateOutput)>, Bug> {
         let release = ReleaseSeat {
             buy_in_id: event.buy_in_id.clone(),
             reason: ROLLED_BACK.to_string(),
@@ -47,88 +47,25 @@ impl BuyInTablePolicy for BuyInTablePolicyImpl {
         Ok(vec![(event.table_root.clone(), release.into())])
     }
 
-    fn create_table_refused(
+    /// The one refusal callback (angzarr decision 14.89). The table could
+    /// not confirm the seat: the buy-in's own fact of it. Every other table
+    /// command this policy never sends.
+    fn refused(
         &self,
-        command: &CreateTable,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
+        command: TableStateCommand,
+        refusal: TableStateRefusal,
+        _ctx: &Refused,
     ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn request_seat_refused(
-        &self,
-        command: &RequestSeat,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn leave_table_refused(
-        &self,
-        command: &LeaveTable,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn place_bet_refused(
-        &self,
-        command: &PlaceBet,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn deal_round_refused(
-        &self,
-        command: &DealRound,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn hit_refused(
-        &self,
-        command: &Hit,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn stand_refused(
-        &self,
-        command: &Stand,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn double_down_refused(
-        &self,
-        command: &DoubleDown,
-        _refusal: Option<TableRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    /// The table could not confirm the seat: the buy-in's own fact of it.
-    fn confirm_seat_refused(
-        &self,
-        command: &ConfirmSeat,
-        refusal: Option<SeatNotConfirmable>,
-        _ctx: &CommandContext,
-    ) -> Fact {
+        let TableStateCommand::ConfirmSeat(command) = command else {
+            return Err(never_sent(&command));
+        };
+        let reason = match refusal {
+            TableStateRefusal::SeatNotConfirmable(r) => r.reason,
+            _ => String::new(),
+        };
         let refused = SeatConfirmationRefused {
-            buy_in_id: command.buy_in_id.clone(),
-            reason: refusal.map(|r| r.reason).unwrap_or_default(),
+            buy_in_id: command.buy_in_id,
+            reason,
         };
         Ok(refused.into())
     }

@@ -7,8 +7,8 @@
 //! in seat order, to that outcome's player root (the wallet's) its
 //! RecordRoundResult, then its AwardLoyaltyPoints, one point per chip
 //! wagered: both facts, which the wallet records and never refuses. It
-//! sends no command, so each refusal callback its generated interface
-//! requires (angzarr decision 14.76) answers a bug.
+//! sends no command, so its one refusal callback (angzarr decision 14.89)
+//! answers a bug.
 
 use angzarr_diagnostic::code;
 
@@ -19,18 +19,18 @@ fn never_sent<C>(_command: &C) -> Bug {
     Bug::new(code!("never-sent")).arg("command", std::any::type_name::<C>())
 }
 
-type Fact = Result<TableAggregateFact, Bug>;
+type Fact = Result<TableStateFact, Bug>;
 
 #[derive(Clone, Debug, Default)]
 pub struct TableWalletPolicyImpl;
 
-impl TableWalletPolicy for TableWalletPolicyImpl {
+impl TableWalletPolicyInterface for TableWalletPolicyImpl {
     fn round_settled(
         &self,
         source: &[u8],
         event: &RoundSettled,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, WalletAggregateOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, WalletStateOutput)>, Bug> {
         let news = event.outcomes.iter().flat_map(|outcome| {
             let result = RecordRoundResult {
                 table_root: source.to_vec(),
@@ -52,66 +52,14 @@ impl TableWalletPolicy for TableWalletPolicyImpl {
         Ok(news.collect())
     }
 
-    fn register_wallet_refused(
+    /// The one refusal callback: this policy sends no command, so no
+    /// refusal reaches it.
+    fn refused(
         &self,
-        command: &RegisterWallet,
-        _refusal: Option<WalletRefused>,
-        _ctx: &CommandContext,
+        command: WalletStateCommand,
+        _refusal: WalletStateRefusal,
+        _ctx: &Refused,
     ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn import_wallet_refused(
-        &self,
-        command: &ImportWallet,
-        _refusal: Option<WalletRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn update_profile_refused(
-        &self,
-        command: &UpdateProfile,
-        _refusal: Option<WalletRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn deposit_funds_refused(
-        &self,
-        command: &DepositFunds,
-        _refusal: Option<WalletRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn withdraw_funds_refused(
-        &self,
-        command: &WithdrawFunds,
-        _refusal: Option<WalletRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn enroll_loyalty_refused(
-        &self,
-        command: &EnrollLoyalty,
-        _refusal: Option<WalletRefused>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
-    }
-
-    fn hold_funds_refused(
-        &self,
-        command: &HoldFunds,
-        _refusal: Option<InsufficientFunds>,
-        _ctx: &CommandContext,
-    ) -> Fact {
-        Err(never_sent(command))
+        Err(never_sent(&command))
     }
 }

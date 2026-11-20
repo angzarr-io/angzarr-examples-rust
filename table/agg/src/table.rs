@@ -1,7 +1,7 @@
 //! [`Table`]: the table's decisions and folds, as the implementation of its
-//! generated interface, [`TableAggregate`]. Commands and events are the
-//! generated domain layer's; the state is the spec's `TableState`, and a
-//! refusal the spec's `TableRefused`.
+//! generated interface, [`TableStateInterface`]. Commands and events are the
+//! generated domain layer's; the state is the spec's `TableState`, and each
+//! refusal a typed message of its own.
 //!
 //! A decision reads the state before its events. Where a later event is
 //! decided from the state after an earlier one (table.proto's MANY
@@ -18,16 +18,16 @@ use examples_proto::v1::{self, TableSeat, TableSeatHold, TableState};
 
 use crate::cashout::cashout_id;
 use crate::domain::*;
-use crate::failure::{domain, refused};
+use crate::failure::domain;
 use crate::hand::{value, Value};
 use crate::shoe;
 use crate::state::table_exists;
 
-/// A decision's result: its value, or its refusal or bug.
-type Decided<T> = Result<T, Failed<TableRefused>>;
-
 /// What a MANY decision, or one of its steps, records.
-type Events = Vec<TableAggregateEvent>;
+type Events = Vec<TableStateEvent>;
+
+/// What a step decides: its events, or a bug (a step refuses nothing).
+type Step<R> = Result<Events, Failed<R>>;
 
 /// The table: the spec's `TableState`, and [`TableAggregate`] over it.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -49,8 +49,8 @@ impl Table {
     }
 
     /// Fold any table event.
-    pub fn fold(&mut self, event: &TableAggregateEvent) {
-        use TableAggregateEvent as E;
+    pub fn fold(&mut self, event: &TableStateEvent) {
+        use TableStateEvent as E;
         match event {
             E::TableCreated(e) => self.apply_table_created(e),
             E::ShoeShuffled(e) => self.apply_shoe_shuffled(e),
@@ -66,13 +66,12 @@ impl Table {
             E::HandDoubled(e) => self.apply_hand_doubled(e),
             E::DealerPlayed(e) => self.apply_dealer_played(e),
             E::RoundSettled(e) => self.apply_round_settled(e),
-            E::MoveUndecided(e) => self.apply_move_undecided(e),
         }
     }
 
     /// DealRound's second step: the opening deal from the current shoe, or
     /// nothing once the round is dealt (re-run on its own result).
-    pub fn deal(&self) -> Decided<Events> {
+    pub fn deal<R>(&self) -> Step<R> {
         // Only bets wait to be dealt: once dealt the phase is PlayerTurns,
         // and once settled Idle.
         if self.state.phase() != Phase::Betting {
@@ -108,7 +107,7 @@ impl Table {
     /// The dealer's play running the shoe out is a bug, keyed
     /// `examples-table-shoe-ran-out` with its round: a round never runs the
     /// shoe out (AHR-4: DealRound replaces a shoe that could).
-    pub fn after_action(&self) -> Decided<Events> {
+    pub fn after_action<R>(&self) -> Step<R> {
         if self.state.phase() != Phase::PlayerTurns {
             return Ok(Vec::new());
         }
@@ -118,9 +117,9 @@ impl Table {
                 false => vec![TurnStarted::into(domain(self.turn_started())?)],
             });
         }
-        let (dealer, settled) = self
-            .settle()
-            .map_err(|round| Bug::new("examples-table-shoe-ran-out").arg("round", round))?;
+        let (dealer, settled) = self.settle().map_err(|round| {
+            Failed::bug(&Bug::new("examples-table-shoe-ran-out").arg("round", round))
+        })?;
         Ok(vec![
             DealerPlayed::into(domain(dealer)?),
             RoundSettled::into(domain(settled)?),
@@ -129,7 +128,7 @@ impl Table {
 
     /// `first`, then each step's events, each step decided on the table
     /// after everything before it.
-    fn and_then(&self, first: Events, steps: &[fn(&Table) -> Decided<Events>]) -> Decided<Events> {
+    fn and_then<R>(&self, first: Events, steps: &[fn(&Table) -> Step<R>]) -> Step<R> {
         let mut working = self.clone();
         let mut events = Vec::new();
         let mut record = |working: &mut Table, decided: Events| {
@@ -146,10 +145,10 @@ impl Table {
         Ok(events)
     }
 
-    fn exists(&self) -> Result<(), TableRefused> {
+    fn exists<R: From<TableNotFound>>(&self) -> Result<(), Failed<R>> {
         match table_exists(&self.state) {
             true => Ok(()),
-            false => Err(refused(TableRefusedReason::TableNotFound)),
+            false => Err(Failed::rejected(TableNotFound {})),
         }
     }
 
@@ -175,16 +174,16 @@ impl Table {
     }
 
     /// The seat on turn, if it is `seat`: a turn action's precondition.
-    fn on_turn(&self, seat: i32) -> Result<&TableSeat, TableRefused> {
+    fn on_turn<R>(&self, seat: i32) -> Result<&TableSeat, Failed<R>>
+    where
+        R: From<TableNotFound> + From<NoRoundInProgress> + From<NotYourTurn>,
+    {
         self.exists()?;
         if self.state.phase() != Phase::PlayerTurns || self.state.turn < 0 {
-            return Err(refused(TableRefusedReason::NoRoundInProgress));
+            return Err(Failed::rejected(NoRoundInProgress {}));
         }
         if self.state.turn != seat {
-            return Err(TableRefused {
-                seat: Some(seat),
-                ..refused(TableRefusedReason::NotYourTurn)
-            });
+            return Err(Failed::rejected(NotYourTurn { seat }));
         }
         Ok(&self.state.seated[&seat])
     }
@@ -326,15 +325,23 @@ fn wire(card: &Card) -> v1::Card {
     card.clone().into()
 }
 
-impl TableAggregate for Table {
-    fn create_table(&self, cmd: &CreateTable, _ctx: &Context) -> Decided<Events> {
+impl TableStateInterface for Table {
+    fn create_table(
+        &self,
+        cmd: &CreateTable,
+        _ctx: &Context,
+    ) -> Result<Events, Failed<CreateTableRefuses>> {
         let (created, shuffled) = crate::create_table(&self.state, cmd)?;
         Ok(vec![created.into(), shuffled.into()])
     }
 
     /// The seat held, or nothing when this buy-in already holds or seated
     /// it (a repeat).
-    fn request_seat(&self, cmd: &RequestSeat, _ctx: &Context) -> Decided<Events> {
+    fn request_seat(
+        &self,
+        cmd: &RequestSeat,
+        _ctx: &Context,
+    ) -> Result<Events, Failed<RequestSeatRefuses>> {
         self.exists()?;
         let key = hex(&cmd.request_id);
         if self.state.seat_holds.contains_key(&key) || self.state.confirmed_buy_ins.contains(&key) {
@@ -342,30 +349,20 @@ impl TableAggregate for Table {
         }
         let state = &self.state;
         if cmd.seat < 0 || cmd.seat >= state.seats {
-            return Err(TableRefused {
-                seat: Some(cmd.seat),
-                ..refused(TableRefusedReason::SeatOutOfRange)
-            }
-            .into());
+            return Err(Failed::rejected(SeatOutOfRange { seat: cmd.seat }));
         }
         if cmd.amount < state.min_buy_in || cmd.amount > state.max_buy_in {
-            return Err(TableRefused {
-                min_buy_in: Some(state.min_buy_in),
-                max_buy_in: Some(state.max_buy_in),
-                ..refused(TableRefusedReason::BuyInOutOfRange)
-            }
-            .into());
+            return Err(Failed::rejected(BuyInOutOfRange {
+                min_buy_in: state.min_buy_in,
+                max_buy_in: state.max_buy_in,
+            }));
         }
         if self.seat_of(&cmd.player_root).is_some() {
-            return Err(refused(TableRefusedReason::PlayerAlreadySeated).into());
+            return Err(Failed::rejected(PlayerAlreadySeated {}));
         }
         let held = state.seat_holds.values().any(|h| h.seat == cmd.seat);
         if held || state.seated.contains_key(&cmd.seat) {
-            return Err(TableRefused {
-                seat: Some(cmd.seat),
-                ..refused(TableRefusedReason::SeatTaken)
-            }
-            .into());
+            return Err(Failed::rejected(SeatTaken { seat: cmd.seat }));
         }
         let held = SeatHeld {
             buy_in_id: cmd.request_id.clone(),
@@ -376,7 +373,11 @@ impl TableAggregate for Table {
         Ok(vec![held.into()])
     }
 
-    fn leave_table(&self, cmd: &LeaveTable, ctx: &Context) -> Decided<Events> {
+    fn leave_table(
+        &self,
+        cmd: &LeaveTable,
+        ctx: &Context,
+    ) -> Result<Events, Failed<LeaveTableRefuses>> {
         self.exists()?;
         // The cash-out id is derived from the table's root, the command's
         // stream's: the kernel only runs a handler for a well-formed root
@@ -388,17 +389,13 @@ impl TableAggregate for Table {
             .and_then(|cover| cover.root.as_ref())
             .and_then(|root| root.value[..].try_into().ok())
             .unwrap_or_default();
-        let not_seated = || TableRefused {
-            seat: Some(cmd.seat),
-            ..refused(TableRefusedReason::NotSeated)
-        };
-        let seat = self.state.seated.get(&cmd.seat).ok_or_else(not_seated)?;
+        let seat = self
+            .state
+            .seated
+            .get(&cmd.seat)
+            .ok_or_else(|| Failed::rejected(NotSeated { seat: cmd.seat }))?;
         if seat.wager > 0 {
-            return Err(TableRefused {
-                seat: Some(cmd.seat),
-                ..refused(TableRefusedReason::WagerInPlay)
-            }
-            .into());
+            return Err(Failed::rejected(WagerInPlay { seat: cmd.seat }));
         }
         let cashed_out = PlayerCashedOut {
             cashout_id: cashout_id(&table_root, self.events).to_vec(),
@@ -409,44 +406,32 @@ impl TableAggregate for Table {
         Ok(vec![cashed_out.into()])
     }
 
-    fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Decided<Events> {
-        // PlaceBet is sent with AGGREGATE_HANDLES (table.proto). The table
-        // decides against its full history, the window the bet did not see
-        // included, so a second bet on the seat is its own ALREADY_BET; it
-        // acknowledges the window it was handed.
-        if let Some(conflict) = &ctx.command.conflict {
-            conflict.resolve_conflicts(conflict.window(), conflict.nonce());
-        }
+    fn place_bet(&self, cmd: &PlaceBet, _ctx: &Context) -> Result<Events, Failed<PlaceBetRefuses>> {
+        // The table decides against its full history: a second bet on the
+        // seat is its own ALREADY_BET.
         self.exists()?;
         let state = &self.state;
         if state.phase() == Phase::PlayerTurns {
-            return Err(refused(TableRefusedReason::RoundInProgress).into());
+            return Err(Failed::rejected(RoundInProgress {}));
         }
-        let not_seated = || TableRefused {
-            seat: Some(cmd.seat),
-            ..refused(TableRefusedReason::NotSeated)
-        };
-        let seat = state.seated.get(&cmd.seat).ok_or_else(not_seated)?;
+        let seat = state
+            .seated
+            .get(&cmd.seat)
+            .ok_or_else(|| Failed::rejected(NotSeated { seat: cmd.seat }))?;
         if cmd.amount < state.min_bet || cmd.amount > state.max_bet {
-            return Err(TableRefused {
-                min_bet: Some(state.min_bet),
-                max_bet: Some(state.max_bet),
-                ..refused(TableRefusedReason::BetOutOfRange)
-            }
-            .into());
+            return Err(Failed::rejected(BetOutOfRange {
+                min_bet: state.min_bet,
+                max_bet: state.max_bet,
+            }));
         }
         if cmd.amount % 2 != 0 {
-            return Err(refused(TableRefusedReason::BetNotEven).into());
+            return Err(Failed::rejected(BetNotEven {}));
         }
         if seat.wager > 0 {
-            return Err(TableRefused {
-                seat: Some(cmd.seat),
-                ..refused(TableRefusedReason::AlreadyBet)
-            }
-            .into());
+            return Err(Failed::rejected(AlreadyBet { seat: cmd.seat }));
         }
         if cmd.amount > seat.stack {
-            return Err(refused(TableRefusedReason::InsufficientStack).into());
+            return Err(Failed::rejected(InsufficientStack {}));
         }
         let placed = BetPlaced {
             round: state.round + 1,
@@ -460,15 +445,19 @@ impl TableAggregate for Table {
 
     /// Whether the round can be dealt, and the new shoe first when it could
     /// run the old one out (AHR-4); then the deal and the step after it.
-    fn deal_round(&self, _cmd: &DealRound, _ctx: &Context) -> Decided<Events> {
+    fn deal_round(
+        &self,
+        _cmd: &DealRound,
+        _ctx: &Context,
+    ) -> Result<Events, Failed<DealRoundRefuses>> {
         self.exists()?;
         let state = &self.state;
         if state.phase() == Phase::PlayerTurns {
-            return Err(refused(TableRefusedReason::RoundInProgress).into());
+            return Err(Failed::rejected(RoundInProgress {}));
         }
         let wagered = self.wagered().len();
         if wagered == 0 {
-            return Err(refused(TableRefusedReason::NoBets).into());
+            return Err(Failed::rejected(NoBets {}));
         }
         // AHR-4: 11 cards for each wagered seat and 11 for the dealer.
         let mut reshuffle = Vec::new();
@@ -485,7 +474,7 @@ impl TableAggregate for Table {
         self.and_then(reshuffle, &[Table::deal, Table::after_action])
     }
 
-    fn hit(&self, cmd: &Hit, _ctx: &Context) -> Decided<Events> {
+    fn hit(&self, cmd: &Hit, _ctx: &Context) -> Result<Events, Failed<HitRefuses>> {
         let seat = self.on_turn(cmd.seat)?;
         let card = self.top();
         let mut cards = seat.hand.clone().unwrap_or_default().cards;
@@ -505,7 +494,7 @@ impl TableAggregate for Table {
         self.and_then(vec![dealt.into()], &[Table::after_action])
     }
 
-    fn stand(&self, cmd: &Stand, _ctx: &Context) -> Decided<Events> {
+    fn stand(&self, cmd: &Stand, _ctx: &Context) -> Result<Events, Failed<StandRefuses>> {
         let seat = self.on_turn(cmd.seat)?;
         let stood = HandStood {
             seat: cmd.seat,
@@ -515,14 +504,18 @@ impl TableAggregate for Table {
         self.and_then(vec![stood.into()], &[Table::after_action])
     }
 
-    fn double_down(&self, cmd: &DoubleDown, _ctx: &Context) -> Decided<Events> {
+    fn double_down(
+        &self,
+        cmd: &DoubleDown,
+        _ctx: &Context,
+    ) -> Result<Events, Failed<DoubleDownRefuses>> {
         let seat = self.on_turn(cmd.seat)?;
         let mut cards = seat.hand.clone().unwrap_or_default().cards;
         if cards.len() != 2 {
-            return Err(refused(TableRefusedReason::DoubleNotAllowed).into());
+            return Err(Failed::rejected(DoubleNotAllowed {}));
         }
         if seat.stack < seat.wager {
-            return Err(refused(TableRefusedReason::InsufficientStack).into());
+            return Err(Failed::rejected(InsufficientStack {}));
         }
         let card = self.top();
         cards.push(card);
@@ -574,8 +567,9 @@ impl TableAggregate for Table {
     /// The hold freed, or nothing when it no longer exists: a fact, the
     /// buy-in's compensation of its held seat, recorded and never refused
     /// (angzarr decision 14.69).
-    fn release_seat(&self, fact: &ReleaseSeat, _ctx: &Context) -> Events {
-        self.state
+    fn release_seat(&self, fact: &ReleaseSeat, _ctx: &Context) -> Result<Events, Bug> {
+        Ok(self
+            .state
             .seat_holds
             .get(&hex(&fact.buy_in_id))
             .map(|hold| SeatReleased {
@@ -586,20 +580,7 @@ impl TableAggregate for Table {
             })
             .into_iter()
             .map(Into::into)
-            .collect()
-    }
-
-    /// The seat's player could not decide (policy-table-player's
-    /// translation of a refused DecideMove, angzarr decision 14.76):
-    /// recorded, and nothing else changes; what the table does then waits
-    /// on a ruling (table.proto).
-    fn record_move_undecided(&self, fact: &RecordMoveUndecided, _ctx: &Context) -> Events {
-        let undecided = MoveUndecided {
-            round: fact.round,
-            seat: fact.seat,
-            reason: fact.reason.clone(),
-        };
-        vec![undecided.into()]
+            .collect())
     }
 
     fn apply_table_created(&mut self, event: &TableCreated) {
@@ -623,10 +604,6 @@ impl TableAggregate for Table {
                 amount: event.amount,
             },
         );
-    }
-
-    fn apply_move_undecided(&mut self, _event: &MoveUndecided) {
-        self.events += 1;
     }
 
     fn apply_seat_released(&mut self, event: &SeatReleased) {

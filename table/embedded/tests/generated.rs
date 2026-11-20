@@ -70,7 +70,7 @@ fn the_legacy_table_event_enum_is_gone() {
 }
 
 /// The table's interface is the generated domain layer's
-/// (`examples_proto::domain::TableAggregate`), regenerated with the protos:
+/// (`examples_proto::domain::TableStateInterface`), regenerated with the protos:
 /// no hand-kept copy of it remains beside its implementation (item S).
 #[test]
 fn the_tables_interface_is_generated_not_kept_by_hand() {

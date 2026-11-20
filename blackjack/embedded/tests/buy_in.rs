@@ -21,14 +21,15 @@ use std::sync::{Arc, Mutex};
 
 use angzarr_embedded::testing::{block_on_ready, At, FaultyStore, MemoryStore};
 use angzarr_embedded::v1::{
-    command_page, CommandBook, CommandPage, Cover, EventMeta, EventPage, Fact, FactOrigin, Uuid,
+    command_page, event_page, CommandBook, CommandPage, Cover, EventMeta, EventPage, Fact,
+    FactOrigin, Uuid,
 };
 use angzarr_embedded::{
     pack, type_name, Any, CommandBookExt, EventStore, Registry, Sampled, Stream, StreamRef,
     Timestamp, Write,
 };
 use angzarr_embedded_host::{App, OneStore};
-use blackjack_embedded::adapters::{BuyInProcessManager, WalletAggregate};
+use blackjack_embedded::adapters::{BuyInState, WalletState};
 use blackjack_embedded::register;
 use examples_proto::v1::{self, buy_in_state::Phase};
 use prost::{Message, Name};
@@ -129,15 +130,14 @@ impl<'a> Client<'a> {
             page: Some(CommandPage {
                 body: Some(command_page::Body::Fact(Fact {
                     payload: Some(pack(&fact)),
+                    origin: Some(FactOrigin {
+                        external_id: format!("client-{n}"),
+                        description: "an outside writer".into(),
+                    }),
                 })),
-                fact_origin: Some(FactOrigin {
-                    external_id: format!("client-{n}"),
-                    description: "an outside writer".into(),
-                }),
                 correlation_id: correlation.map(root),
                 ..CommandPage::default()
             }),
-            ..CommandBook::default()
         };
         if let Err(failure) = self.app.handle(book, &sampled).await {
             panic!("fact {n} ({}) failed: {failure:?}", M::full_name());
@@ -193,7 +193,13 @@ async fn pages(app: &TheApp, cover: &Cover) -> Vec<EventPage> {
 }
 
 fn payloads(pages: &[EventPage]) -> Vec<Any> {
-    pages.iter().filter_map(|p| p.payload.clone()).collect()
+    pages
+        .iter()
+        .filter_map(|p| match &p.body {
+            Some(event_page::Body::Event(any)) => Some(any.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Each payload's short type name, in order.
@@ -230,7 +236,7 @@ async fn replayed<D: angzarr_embedded::Domain>(app: &TheApp, cover: Cover) -> D:
 
 /// The buy-in of conversation `c`.
 async fn buy_in(app: &TheApp, c: u8) -> v1::BuyInState {
-    replayed::<BuyInProcessManager>(app, cover("buy-in", c))
+    replayed::<BuyInState>(app, cover("buy-in", c))
         .await
         .0
         .state
@@ -238,7 +244,7 @@ async fn buy_in(app: &TheApp, c: u8) -> v1::BuyInState {
 
 /// The wallet of `player`.
 async fn wallet(app: &TheApp, player: u8) -> v1::WalletState {
-    replayed::<WalletAggregate>(app, cover("wallet", player))
+    replayed::<WalletState>(app, cover("wallet", player))
         .await
         .0
         .state
@@ -317,9 +323,7 @@ async fn eu_1561_the_buy_ins_requests_carry_the_conversation_they_belong_to() {
         pages
             .into_iter()
             .find(|p| {
-                p.payload
-                    .as_ref()
-                    .is_some_and(|a| a.type_url.ends_with(name))
+                matches!(&p.body, Some(event_page::Body::Event(a)) if a.type_url.ends_with(name))
             })
             .and_then(|p| p.meta)
             .and_then(|m: EventMeta| m.correlation_id)
@@ -342,7 +346,7 @@ fn append(store: &MemoryStore, cover: &Cover, event: &impl Name) {
         .next_sequence;
     let page = EventPage {
         sequence: head,
-        payload: Some(pack(event)),
+        body: Some(event_page::Body::Event(pack(event))),
         meta: Some(EventMeta {
             rules_version: env!("CARGO_PKG_VERSION").to_string(),
             ..EventMeta::default()
@@ -540,7 +544,7 @@ async fn eu_1559_two_buy_ins_in_different_conversations_do_not_interfere() {
     // the policies' outputs not delivered.
     let mut registry = Registry::new();
     registry
-        .process_manager::<BuyInProcessManager>(BuyInProcessManager::default)
+        .process_manager::<BuyInState>(BuyInState::default)
         .expect("registers");
     let app = app_with(registry).await;
     let mut client = Client::new(&app);

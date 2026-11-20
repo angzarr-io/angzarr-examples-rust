@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 
 use agg_table::test_support::seed_21::{self, ALICE, BOB};
-use angzarr_embedded::v1::{CommandBook, Cover, Uuid};
+use angzarr_embedded::v1::{event_page, CommandBook, Cover, Uuid};
 use angzarr_embedded::{pack, type_name, Any, CommandBookExt, Sampled, Timestamp};
 use angzarr_embedded_host::{run_with, App, HostConfig, Languages};
 use examples_proto::v1::{self, MoveAction};
@@ -164,7 +164,10 @@ async fn payloads(app: &App, cover: &Cover) -> Vec<Any> {
         .await
         .expect("the stream reads")
         .into_iter()
-        .filter_map(|page| page.payload)
+        .filter_map(|page| match page.body {
+            Some(event_page::Body::Event(any)) => Some(any),
+            _ => None,
+        })
         .collect()
 }
 

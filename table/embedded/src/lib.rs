@@ -5,12 +5,12 @@
 //!   command, event and typed refusal as the type the markup takes;
 //! - [`adapters`]: the table's markup, generated from table.proto
 //!   (`build.rs`), every handler and applier delegating to its interface,
-//!   the domain layer's [`domain::TableAggregate`], on its implementation,
-//!   agg-table's `Table`; [`TableAggregate`] is the domain registered;
+//!   the domain layer's [`domain::TableStateInterface`], on its implementation,
+//!   agg-table's `Table`; [`TableState`] is the domain registered;
 //! - [`TablePlayerPolicy`] and [`PlayerTablePolicy`]: TurnStarted to the
 //!   player bot's DecideMove, and its MoveDecided back to Hit, Stand or
 //!   DoubleDown, over table-player-policies;
-//! - [`PlayerAggregate`]: the player bot's domain as the policies name
+//! - [`PlayerState`]: the player bot's domain as the policies name
 //!   it, its command set and its event set, a stand-in generated from
 //!   player.proto (`build.rs`, angzarr-build's `stand_ins`): the bot is
 //!   Python, run as a child process by angzarr-embedded-host
@@ -22,8 +22,8 @@
 pub use examples_proto::domain;
 
 /// The table's implementation, as the generated adapter names it.
-pub mod table_aggregate_impl {
-    pub use agg_table::Table as TableAggregateImpl;
+pub mod table_state_impl {
+    pub use agg_table::Table as TableStateImpl;
 }
 
 // The table's angzarr-embedded markup, generated from table.proto: the
@@ -44,9 +44,9 @@ mod stand_ins {
 mod player_table_policy;
 mod table_player_policy;
 
-pub use adapters::TableAggregate;
+pub use adapters::TableState;
 pub use player_table_policy::PlayerTablePolicy;
-pub use stand_ins::PlayerAggregate;
+pub use stand_ins::PlayerState;
 pub use table_player_policy::TablePlayerPolicy;
 
 /// Registers the table (its generated registration) and both policies. The

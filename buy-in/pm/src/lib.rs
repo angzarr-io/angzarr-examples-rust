@@ -1,7 +1,7 @@
 //! The buy-in process manager (buy_in.proto): a buy-in holds the seat, then
 //! the funds, then confirms the seat, then spends the funds, tracked under
 //! the conversation it started in. [`BuyInProcessManagerImpl`] implements
-//! the PM's generated interface, [`domain::BuyInProcessManager`], over the
+//! the PM's generated interface, [`domain::BuyInStateInterface`], over the
 //! generated domain layer; its state is the spec's `BuyInState`.
 //!
 //! blackjack-embedded's generated adapter carries the markup and calls the

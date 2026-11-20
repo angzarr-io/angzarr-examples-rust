@@ -11,28 +11,25 @@
 //! event into what it asks of the table or the wallet. The whole flow, the
 //! kernel delivering each link, is `tests/buy_in.rs`.
 
-// The harness's `Then` carries angzarr-embedded's `Failure` unboxed: its
-// size is not this crate's to choose.
-#![allow(clippy::result_large_err)]
-
-use angzarr_embedded::markup::{CommandContext, PolicyContext};
+use angzarr_embedded::markup::{DomainMessage, PolicyContext};
 use angzarr_embedded::testing::{Harness as Kernel, Samples};
 use angzarr_embedded::v1::{
-    command_page, CommandBook, CommandPage, Cover, EventRef, Fact, FactOrigin, Uuid,
+    command_page, reaction_delivery, CommandBook, CommandPage, Cover, EventMeta, EventRef, Fact,
+    FactOrigin, ReactionDelivery, Uuid,
 };
 use angzarr_embedded::{pack, Failure, Handled, Payload, Registry, Rejected, Timestamp};
-use examples_proto::v1::{self, buy_in_state::Phase, BuyInState};
+use examples_proto::v1::{self, buy_in_state::Phase};
 use prost::{Message, Name};
 
 use angzarr_embedded::markup::CommandTarget;
-use pm_buy_in::compensation;
 
-use crate::adapters::{BuyInProcessManager, TableAggregate};
+use crate::adapters::{BuyInState, TableState};
 use crate::domain::{
-    BuyInProcessManagerEvent, BuyInProcessManagerFact, BuyInProcessManagerOutput,
-    BuyInTablePolicy as _, BuyInWalletPolicy as _, ReleaseHold, TableAggregateEvent,
-    TableAggregateOutput, TableBuyInPolicy as _, TableWalletPolicy as _, WalletAggregateOutput,
-    WalletBuyInPolicy as _,
+    BuyInStateEvent, BuyInStateFact, BuyInStateOutput, BuyInTablePolicyInterface as _,
+    BuyInWalletPolicyInterface as _, Refusal, Refused, TableBuyInPolicyInterface as _,
+    TableStateCommand, TableStateEvent, TableStateOutput, TableStateRefusal,
+    TableWalletPolicyInterface as _, WalletBuyInPolicyInterface as _, WalletStateCommand,
+    WalletStateOutput, WalletStateRefusal,
 };
 use crate::{
     buy_in_table_policy_impl::BuyInTablePolicyImpl,
@@ -57,8 +54,10 @@ fn root(b: u8) -> Uuid {
     Uuid::from_bytes([b; 16])
 }
 
-type Ev = BuyInProcessManagerEvent;
-type Then = Result<Vec<Ev>, Failure<Rejected>>;
+type Ev = BuyInStateEvent;
+/// What the pipeline answered, boxed: its `Failure` is not this crate's to
+/// size.
+type Then = Result<Vec<Ev>, Box<Failure<Rejected>>>;
 
 fn ev<M: Message + Name>(event: M) -> Ev {
     Ev::from_any(&pack(&event)).expect("a buy-in event")
@@ -96,7 +95,7 @@ fn context(domain: &str, stream: u8, correlation: u8) -> PolicyContext {
 fn registry() -> Registry {
     let mut registry = Registry::new();
     registry
-        .process_manager::<BuyInProcessManager>(BuyInProcessManager::default)
+        .process_manager::<BuyInState>(BuyInState::default)
         .expect("the buy-in registers");
     registry
 }
@@ -105,7 +104,7 @@ fn registry() -> Registry {
 fn table_registry() -> Registry {
     let mut registry = Registry::new();
     registry
-        .aggregate::<TableAggregate>(TableAggregate::default)
+        .aggregate::<TableState>(TableState::default)
         .expect("the table registers");
     registry
 }
@@ -120,7 +119,7 @@ fn cover(domain: &str, b: u8) -> Cover {
 
 /// The buy-in of conversation `C1`, its history `events`.
 struct BuyIn {
-    kernel: Kernel<BuyInProcessManager>,
+    kernel: Kernel<BuyInState>,
     facts: u32,
 }
 
@@ -134,45 +133,47 @@ fn buy_in(events: Vec<Ev>) -> BuyIn {
 impl BuyIn {
     /// The book delivering `fact` to the buy-in, as a policy's arrives:
     /// in the Fact arm, under the test's next origin.
-    fn book(&mut self, fact: BuyInProcessManagerOutput) -> CommandBook {
+    fn book(&mut self, fact: BuyInStateOutput) -> CommandBook {
         self.facts += 1;
         CommandBook {
             cover: Some(cover("buy-in", C1)),
             page: Some(CommandPage {
                 body: Some(command_page::Body::Fact(Fact {
                     payload: Some(output_any(&fact)),
+                    origin: Some(FactOrigin {
+                        external_id: format!("report-{}", self.facts),
+                        description: "a policy's report".to_string(),
+                    }),
                 })),
-                fact_origin: Some(FactOrigin {
-                    external_id: format!("report-{}", self.facts),
-                    description: "a policy's report".to_string(),
-                }),
                 // The conversation the buy-in is tracked under.
                 correlation_id: Some(root(C1)),
                 ..CommandPage::default()
             }),
-            ..CommandBook::default()
         }
     }
 
     /// Deliver `fact`: the events the buy-in records.
-    fn when(&mut self, fact: BuyInProcessManagerOutput) -> Then {
+    fn when(&mut self, fact: BuyInStateOutput) -> Then {
         let book = self.book(fact);
         self.again(&book)
     }
 
     /// Deliver `book` (again) exactly as it was.
     fn again(&mut self, book: &CommandBook) -> Then {
-        self.kernel.when_book(book.clone()).result()
+        self.kernel
+            .when_book(book.clone())
+            .result()
+            .map_err(Box::new)
     }
 
-    fn state(&self) -> BuyInState {
+    fn state(&self) -> v1::BuyInState {
         self.kernel.state().0.state.clone()
     }
 }
 
 /// A buy-in input, packed as its wire message.
-fn output_any(fact: &BuyInProcessManagerOutput) -> angzarr_embedded::Any {
-    use BuyInProcessManagerOutput as O;
+fn output_any(fact: &BuyInStateOutput) -> angzarr_embedded::Any {
+    use BuyInStateOutput as O;
     match fact {
         O::StartBuyIn(f) => pack(&f.to_wire()),
         O::RecordFundsHeld(f) => pack(&f.to_wire()),
@@ -182,8 +183,6 @@ fn output_any(fact: &BuyInProcessManagerOutput) -> angzarr_embedded::Any {
         O::FundsHoldRefused(f) => pack(&f.to_wire()),
     }
 }
-
-use angzarr_embedded::markup::DomainMessage as _;
 
 // ---------------------------------------------------------------- the news
 
@@ -278,10 +277,10 @@ fn b1_seat_lost() -> Ev {
 }
 
 /// The table told to release B1's seat, a fact it cannot refuse.
-fn release_seat() -> (Vec<u8>, TableAggregateOutput) {
+fn release_seat() -> (Vec<u8>, TableStateOutput) {
     (
         bytes(MAIN),
-        TableAggregateOutput::ReleaseSeat(domain(v1::ReleaseSeat {
+        TableStateOutput::ReleaseSeat(domain(v1::ReleaseSeat {
             buy_in_id: bytes(B1),
             reason: "BUY_IN_ROLLED_BACK".into(),
         })),
@@ -289,10 +288,10 @@ fn release_seat() -> (Vec<u8>, TableAggregateOutput) {
 }
 
 /// Alice's wallet told to release B1's hold, a fact it cannot refuse.
-fn release_hold() -> (Vec<u8>, WalletAggregateOutput) {
+fn release_hold() -> (Vec<u8>, WalletStateOutput) {
     (
         bytes(ALICE),
-        WalletAggregateOutput::ReleaseHold(domain(v1::ReleaseHold {
+        WalletStateOutput::ReleaseHold(domain(v1::ReleaseHold {
             hold_id: bytes(B1),
             reason: "BUY_IN_ROLLED_BACK".into(),
         })),
@@ -311,11 +310,11 @@ fn b1_seated() -> Ev {
 
 /// policy-table-buy-in on the table's `event`, recorded in conversation C1:
 /// the one fact it sends, with its root.
-fn table_reports(event: TableAggregateEvent) -> (Vec<u8>, BuyInProcessManagerOutput) {
+fn table_reports(event: TableStateEvent) -> (Vec<u8>, BuyInStateOutput) {
     let ctx = context("table", MAIN, C1);
     let sent = match event {
-        TableAggregateEvent::SeatHeld(e) => TableBuyInPolicyImpl.seat_held(&bytes(MAIN), &e, &ctx),
-        TableAggregateEvent::PlayerSeated(e) => {
+        TableStateEvent::SeatHeld(e) => TableBuyInPolicyImpl.seat_held(&bytes(MAIN), &e, &ctx),
+        TableStateEvent::PlayerSeated(e) => {
             TableBuyInPolicyImpl.player_seated(&bytes(MAIN), &e, &ctx)
         }
         other => panic!("policy-table-buy-in does not react to {other:?}"),
@@ -324,7 +323,7 @@ fn table_reports(event: TableAggregateEvent) -> (Vec<u8>, BuyInProcessManagerOut
 }
 
 /// policy-wallet-buy-in on Alice's `event`, recorded in conversation C1.
-fn wallet_reports<E>(event: E) -> (Vec<u8>, BuyInProcessManagerOutput)
+fn wallet_reports<E>(event: E) -> (Vec<u8>, BuyInStateOutput)
 where
     E: Into<WalletNews>,
 {
@@ -354,6 +353,25 @@ impl From<v1::FundsCaptured> for WalletNews {
     }
 }
 
+/// What a policy's refusal callback is handed besides the command and its
+/// refusal: the answer, `refusal` under its own status.
+fn refused_with<R>(refusal: &R) -> Refused
+where
+    R: Refusal + DomainMessage,
+    R::Wire: Message + Name,
+{
+    Refused::new(
+        ReactionDelivery {
+            body: Some(reaction_delivery::Body::Command(pack(&v1::Hit::default()))),
+            ..ReactionDelivery::default()
+        },
+        R::REFUSAL_STATUS,
+        pack(&refusal.to_wire()),
+        EventRef::default(),
+        EventMeta::default(),
+    )
+}
+
 #[track_caller]
 fn one<T: std::fmt::Debug>(mut sent: Vec<T>) -> T {
     assert_eq!(sent.len(), 1, "one output: {sent:?}");
@@ -361,7 +379,7 @@ fn one<T: std::fmt::Debug>(mut sent: Vec<T>) -> T {
 }
 
 /// What policy-buy-in-wallet asks of the wallet on the buy-in's `event`.
-fn asks_wallet(event: &Ev) -> Vec<(Vec<u8>, WalletAggregateOutput)> {
+fn asks_wallet(event: &Ev) -> Vec<(Vec<u8>, WalletStateOutput)> {
     let ctx = context("buy-in", C1, C1);
     let source = bytes(C1);
     let sent = match event {
@@ -374,7 +392,7 @@ fn asks_wallet(event: &Ev) -> Vec<(Vec<u8>, WalletAggregateOutput)> {
 }
 
 /// What policy-buy-in-table asks of the table on the buy-in's `event`.
-fn asks_table(event: &Ev) -> Vec<(Vec<u8>, TableAggregateOutput)> {
+fn asks_table(event: &Ev) -> Vec<(Vec<u8>, TableStateOutput)> {
     let ctx = context("buy-in", C1, C1);
     let source = bytes(C1);
     let sent = match event {
@@ -387,8 +405,8 @@ fn asks_table(event: &Ev) -> Vec<(Vec<u8>, TableAggregateOutput)> {
 
 /// What the buy-in asks of the table, and of the wallet.
 type Asks = (
-    Vec<(Vec<u8>, TableAggregateOutput)>,
-    Vec<(Vec<u8>, WalletAggregateOutput)>,
+    Vec<(Vec<u8>, TableStateOutput)>,
+    Vec<(Vec<u8>, WalletStateOutput)>,
 );
 
 /// Every event's asks, of the table and of the wallet.
@@ -420,7 +438,7 @@ fn eu_1550_a_held_seat_starts_a_buy_in_and_asks_the_wallet_to_hold_the_money() {
             vec![],
             vec![(
                 bytes(ALICE),
-                WalletAggregateOutput::HoldFunds(domain(v1::HoldFunds {
+                WalletStateOutput::HoldFunds(domain(v1::HoldFunds {
                     hold_id: bytes(B1),
                     table_root: bytes(MAIN),
                     amount: 500,
@@ -445,7 +463,7 @@ fn eu_1551_held_money_leads_to_confirming_the_seat() {
         (
             vec![(
                 bytes(MAIN),
-                TableAggregateOutput::ConfirmSeat(domain(v1::ConfirmSeat {
+                TableStateOutput::ConfirmSeat(domain(v1::ConfirmSeat {
                     buy_in_id: bytes(B1)
                 }))
             )],
@@ -471,9 +489,7 @@ fn eu_1552_a_confirmed_seat_leads_to_spending_the_money() {
             vec![],
             vec![(
                 bytes(ALICE),
-                WalletAggregateOutput::CaptureFunds(domain(v1::CaptureFunds {
-                    hold_id: bytes(B1)
-                }))
+                WalletStateOutput::CaptureFunds(domain(v1::CaptureFunds { hold_id: bytes(B1) }))
             )]
         )
     );
@@ -511,14 +527,19 @@ fn eu_1562_a_wallet_that_cannot_fund_the_buy_in_fails_it_and_frees_the_seat() {
         table_root: bytes(MAIN),
         amount: 500,
     });
-    let refusal = domain(v1::InsufficientFunds {
+    let refusal = domain::<_, crate::domain::InsufficientFunds>(v1::InsufficientFunds {
         available: 300,
         requested: 500,
     });
+    let ctx = refused_with(&refusal);
     let translated = BuyInWalletPolicyImpl
-        .hold_funds_refused(&hold, Some(refusal), &CommandContext::default())
+        .refused(
+            WalletStateCommand::HoldFunds(hold),
+            WalletStateRefusal::InsufficientFunds(refusal),
+            &ctx,
+        )
         .expect("translated, never declined");
-    let BuyInProcessManagerFact::FundsHoldRefused(fact) = translated else {
+    let BuyInStateFact::FundsHoldRefused(fact) = translated else {
         panic!("FundsHoldRefused, not {translated:?}");
     };
     assert_eq!(
@@ -531,7 +552,7 @@ fn eu_1562_a_wallet_that_cannot_fund_the_buy_in_fails_it_and_frees_the_seat() {
         }
     );
     let events = buy_in
-        .when(BuyInProcessManagerOutput::FundsHoldRefused(fact))
+        .when(BuyInStateOutput::FundsHoldRefused(fact))
         .expect("recorded");
 
     // It fails, and its one completed step, the held seat, is undone.
@@ -542,17 +563,23 @@ fn eu_1562_a_wallet_that_cannot_fund_the_buy_in_fails_it_and_frees_the_seat() {
     assert_eq!(asks(&events), (vec![release_seat()], vec![]));
 }
 
-/// A hold refused with no typed refusal is a bug: HoldFunds refuses with
-/// InsufficientFunds alone.
+/// HoldFunds refuses with InsufficientFunds alone: any other refusal of it
+/// is a bug.
 #[test]
-fn a_hold_refused_untyped_is_the_policys_bug() {
+fn a_hold_refused_otherwise_is_the_policys_bug() {
     let hold = domain(v1::HoldFunds {
         hold_id: bytes(B1),
         table_root: bytes(MAIN),
         amount: 500,
     });
+    let refusal = crate::domain::WalletNotFound::default();
+    let ctx = refused_with(&refusal);
     let bug = BuyInWalletPolicyImpl
-        .hold_funds_refused(&hold, None, &CommandContext::default())
+        .refused(
+            WalletStateCommand::HoldFunds(hold),
+            WalletStateRefusal::WalletNotFound(refusal),
+            &ctx,
+        )
         .expect_err("a bug");
     assert_eq!(bug.key, buy_in_policies::HOLD_REFUSED_UNTYPED);
 }
@@ -566,13 +593,18 @@ fn eu_1563_a_table_that_cannot_confirm_the_seat_fails_the_buy_in_and_frees_the_m
     let confirm = domain(v1::ConfirmSeat {
         buy_in_id: bytes(B1),
     });
-    let refusal = domain(v1::SeatNotConfirmable {
+    let refusal = domain::<_, crate::domain::SeatNotConfirmable>(v1::SeatNotConfirmable {
         reason: "SEAT_HOLD_NOT_FOUND".into(),
     });
+    let ctx = refused_with(&refusal);
     let translated = BuyInTablePolicyImpl
-        .confirm_seat_refused(&confirm, Some(refusal), &CommandContext::default())
+        .refused(
+            TableStateCommand::ConfirmSeat(confirm),
+            TableStateRefusal::SeatNotConfirmable(refusal),
+            &ctx,
+        )
         .expect("translated, never declined");
-    let BuyInProcessManagerFact::SeatConfirmationRefused(fact) = translated else {
+    let BuyInStateFact::SeatConfirmationRefused(fact) = translated else {
         panic!("SeatConfirmationRefused, not {translated:?}");
     };
     assert_eq!(
@@ -583,7 +615,7 @@ fn eu_1563_a_table_that_cannot_confirm_the_seat_fails_the_buy_in_and_frees_the_m
         }
     );
     let events = buy_in
-        .when(BuyInProcessManagerOutput::SeatConfirmationRefused(fact))
+        .when(BuyInStateOutput::SeatConfirmationRefused(fact))
         .expect("recorded");
 
     assert_eq!(events[0], b1_seat_lost());
@@ -602,7 +634,7 @@ fn eu_1610_a_failed_buy_in_undoes_every_step_it_completed_newest_first() {
     });
 
     let events = buy_in
-        .when(BuyInProcessManagerOutput::SeatConfirmationRefused(refused))
+        .when(BuyInStateOutput::SeatConfirmationRefused(refused))
         .expect("recorded");
 
     // The failed event, then the funds' undo, then the seat's.
@@ -626,10 +658,9 @@ fn eu_1610_a_failed_buy_in_undoes_every_step_it_completed_newest_first() {
     );
     // Neither can refuse what it is told: each undo is a fact of its
     // destination, never one of its commands (decision 14.74).
-    assert!(compensation().warnings().is_empty());
-    assert!(!WalletAggregateOutput::command_types()
+    assert!(!WalletStateOutput::command_types()
         .contains(&"io.angzarr.examples.v1.ReleaseHold".to_string()));
-    assert!(!TableAggregateOutput::command_types()
+    assert!(!TableStateOutput::command_types()
         .contains(&"io.angzarr.examples.v1.ReleaseSeat".to_string()));
 }
 
@@ -665,34 +696,23 @@ fn a_failed_event_asks_nothing() {
     assert_eq!(asks(&[b1_failed(), b1_seat_lost()]), (vec![], vec![]));
 }
 
-/// A refused undo records CompensationFailed for its step, the alert
-/// (decision 14.74, decision 38 (a)); the buy-in's undos are facts, so
-/// none is refused in play.
-#[test]
-fn a_refused_undo_records_compensation_failed_for_its_step() {
-    let buy_in = buy_in(vec![started(), b1_funds_held()]);
-
-    let alert = compensation().undo_refused::<ReleaseHold>(&buy_in.state());
-
-    assert_eq!(
-        alert,
-        Some(ev(v1::CompensationFailed {
-            buy_in_id: bytes(B1),
-            step: "hold funds".into(),
-        }))
-    );
-}
-
 /// A refusal of a table command the buy-in never sends is the policy's
-/// bug, naming the command: every command has a callback (decision 14.76).
+/// bug: its one callback is handed every command of the table (decision
+/// 14.89).
 #[test]
 fn a_refusal_of_a_command_never_sent_is_a_bug() {
     let hit = domain(v1::Hit { seat: 0 });
+    let refusal = crate::domain::NotYourTurn::default();
+    let ctx = refused_with(&refusal);
     let bug = BuyInTablePolicyImpl
-        .hit_refused(&hit, None, &CommandContext::default())
+        .refused(
+            TableStateCommand::Hit(hit),
+            TableStateRefusal::NotYourTurn(refusal),
+            &ctx,
+        )
         .expect_err("never sent");
     assert_eq!(bug.key, buy_in_policies::NEVER_SENT);
-    assert!(bug.args[0].1.ends_with("::Hit"), "{:?}", bug.args);
+    assert_eq!(bug.args[0].0, "command");
 }
 
 // ================================================================ robustness
@@ -766,9 +786,9 @@ fn eu_1612_a_seat_released_twice_is_released_once() {
         decks: 1,
     };
     let table_ev = |m: &dyn Fn() -> angzarr_embedded::Any| {
-        TableAggregateEvent::from_any(&m()).expect("a table event")
+        TableStateEvent::from_any(&m()).expect("a table event")
     };
-    let mut table = Kernel::<TableAggregate>::new(table_registry(), cover("table", MAIN));
+    let mut table = Kernel::<TableState>::new(table_registry(), cover("table", MAIN));
     table.given([
         table_ev(&|| pack(&created)),
         table_ev(&|| pack(&seat_held())),
@@ -789,14 +809,13 @@ fn eu_1612_a_seat_released_twice_is_released_once() {
                     buy_in_id: bytes(B1),
                     reason: "SEAT_HOLD_NOT_FOUND".into(),
                 })),
+                origin: Some(FactOrigin {
+                    external_id: "release-again".into(),
+                    description: "the buy-in's undo, again".into(),
+                }),
             })),
-            fact_origin: Some(FactOrigin {
-                external_id: "release-again".into(),
-                description: "the buy-in's undo, again".into(),
-            }),
             ..CommandPage::default()
         }),
-        ..CommandBook::default()
     };
 
     let events = table.when_book(release).result().expect("recorded");
@@ -833,7 +852,7 @@ fn round_1_settled() -> crate::domain::RoundSettled {
     })
 }
 
-fn settlement_news() -> Vec<(Vec<u8>, WalletAggregateOutput)> {
+fn settlement_news() -> Vec<(Vec<u8>, WalletStateOutput)> {
     TableWalletPolicyImpl
         .round_settled(
             &bytes(MAIN),
@@ -848,7 +867,7 @@ fn eu_1541_a_settled_round_becomes_a_round_result_for_each_seat() {
     let results: Vec<_> = settlement_news()
         .into_iter()
         .filter_map(|(to, out)| match out {
-            WalletAggregateOutput::RecordRoundResult(r) => Some((to, r.to_wire())),
+            WalletStateOutput::RecordRoundResult(r) => Some((to, r.to_wire())),
             _ => None,
         })
         .collect();
@@ -872,7 +891,7 @@ fn eu_1542_a_settled_round_awards_loyalty_points_for_each_seat() {
     let awards: Vec<_> = settlement_news()
         .into_iter()
         .filter_map(|(to, out)| match out {
-            WalletAggregateOutput::AwardLoyaltyPoints(a) => Some((to, a.to_wire())),
+            WalletStateOutput::AwardLoyaltyPoints(a) => Some((to, a.to_wire())),
             _ => None,
         })
         .collect();
@@ -896,8 +915,8 @@ fn each_seat_is_told_its_result_then_its_points_in_seat_order() {
         .into_iter()
         .map(|(to, out)| {
             let kind = match out {
-                WalletAggregateOutput::RecordRoundResult(_) => "result",
-                WalletAggregateOutput::AwardLoyaltyPoints(_) => "points",
+                WalletStateOutput::RecordRoundResult(_) => "result",
+                WalletStateOutput::AwardLoyaltyPoints(_) => "points",
                 other => panic!("only news: {other:?}"),
             };
             (to[0], kind)

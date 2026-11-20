@@ -17,14 +17,14 @@ pub(crate) fn buy_in_of(ctx: &PolicyContext) -> Vec<u8> {
     ctx.correlation_id().value.to_vec()
 }
 
-impl TableBuyInPolicy for TableBuyInPolicyImpl {
+impl TableBuyInPolicyInterface for TableBuyInPolicyImpl {
     /// A held seat starts the buy-in, at this table (the event's own root).
     fn seat_held(
         &self,
         source: &[u8],
         event: &SeatHeld,
         ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, BuyInStateOutput)>, Bug> {
         let start = StartBuyIn {
             buy_in_id: event.buy_in_id.clone(),
             player_root: event.player_root.clone(),
@@ -40,7 +40,7 @@ impl TableBuyInPolicy for TableBuyInPolicyImpl {
         _source: &[u8],
         event: &PlayerSeated,
         ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInProcessManagerOutput)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, BuyInStateOutput)>, Bug> {
         let seated = RecordPlayerSeated {
             buy_in_id: event.buy_in_id.clone(),
             player_root: event.player_root.clone(),

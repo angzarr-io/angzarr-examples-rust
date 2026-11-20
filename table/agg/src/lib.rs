@@ -1,9 +1,8 @@
 //! The blackjack table aggregate: [`Table`], implementing the table's
-//! generated interface, [`domain::TableAggregate`] (examples-proto's
+//! generated interface, [`domain::TableStateInterface`] (examples-proto's
 //! generated domain layer's, one method per command and per event), over
 //! that domain layer ([`domain`]). Its state is the
-//! spec's `TableState`; its refusal, the spec's `TableRefused`, a reason
-//! code from table.proto and the values it names.
+//! spec's `TableState`; each refusal is a typed message of table.proto's.
 //!
 //! - [`create_table`]: CreateTable's decision, TableCreated and the first
 //!   ShoeShuffled, and the two appliers that open the table
@@ -14,11 +13,6 @@
 //!
 //! table-embedded's generated adapter carries the markup and calls the
 //! interface on [`Table`].
-
-// The interface's error, `Failed<TableRefused>`, is the generated layer's
-// (angzarr-embedded's `Failed` over the spec's refusal): its size is not
-// this crate's to choose.
-#![allow(clippy::result_large_err)]
 
 pub mod cashout;
 mod create_table;

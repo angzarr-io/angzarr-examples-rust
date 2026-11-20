@@ -11,31 +11,32 @@
 //!   policy's arrives ([`Harness::when_fact`]).
 //! - **Then** the events of that one handling (a list, none included:
 //!   angzarr decision 14.75), or its refusal: a client command's typed
-//!   `WalletRefused` ([`refusal`]) or HoldFunds' typed `InsufficientFunds`.
+//!   refusal message ([`refusal`], decision 14.95) or HoldFunds' typed
+//!   `InsufficientFunds`.
 
-// The harness's `Then` carries angzarr-embedded's `Failure` unboxed: its
-// size is not this crate's to choose.
-#![allow(clippy::result_large_err)]
-
-use angzarr_embedded::markup::{BusinessStatus, Rejection};
+use angzarr_embedded::markup::BusinessStatus;
 use angzarr_embedded::testing::{Harness as Kernel, Samples};
 use angzarr_embedded::v1::event_meta::Causation;
 use angzarr_embedded::v1::{
-    command_page, CommandBook, CommandPage, Cover, EventMeta, EventPage, Fact, FactOrigin, Uuid,
+    command_page, event_page, CommandBook, CommandCause, CommandPage, Cover, EventMeta, EventPage,
+    Fact, FactOrigin, Uuid,
 };
 use angzarr_embedded::{
     pack, CommandBookExt, Domain, EventStore, Failure, Handled, Payload, Registry, Rejected,
     StreamRef, Write,
 };
-use examples_proto::v1::{self, hold::Status, WalletState};
+use examples_proto::v1::{self, hold::Status};
 use prost::{Message, Name};
 
-use crate::adapters::WalletAggregate;
-use crate::domain::{InsufficientFunds, WalletAggregateEvent, WalletRefused, WalletRefusedReason};
+use crate::adapters::WalletState;
+use crate::domain::{
+    AmountNotPositive, DisplayNameRequired, EmailRequired, InsufficientAvailableFunds,
+    InsufficientFunds, WalletAlreadyExists, WalletNotFound, WalletStateEvent, WalletStateRefusal,
+};
 
 // ---------------------------------------------------------------- the events
 
-type Ev = WalletAggregateEvent;
+type Ev = WalletStateEvent;
 
 /// The wallet event a wire message is, as the store reads it back.
 fn ev<M: Message + Name>(event: M) -> Ev {
@@ -44,7 +45,9 @@ fn ev<M: Message + Name>(event: M) -> Ev {
 
 // ---------------------------------------------------------------- the harness
 
-type Then = Result<Vec<Ev>, Failure<Rejected>>;
+/// What the pipeline answered, boxed: its `Failure` is not this crate's to
+/// size.
+type Then = Result<Vec<Ev>, Box<Failure<Rejected>>>;
 
 const ALICE: u8 = 0xa1;
 const CAROL: u8 = 0xca;
@@ -65,7 +68,7 @@ fn hex(b: u8) -> String {
 fn registry() -> Registry {
     let mut registry = Registry::new();
     registry
-        .aggregate::<WalletAggregate>(WalletAggregate::default)
+        .aggregate::<WalletState>(WalletState::default)
         .and_then(|r| r.upcast_with("wallet", crate::wallet_upcaster()))
         .expect("the wallet registers");
     registry
@@ -86,7 +89,7 @@ fn id(n: u32) -> Uuid {
 
 /// The wallet of `player` with `events` already recorded.
 struct Harness {
-    kernel: Kernel<WalletAggregate>,
+    kernel: Kernel<WalletState>,
     player: u8,
     inputs: u32,
 }
@@ -121,13 +124,19 @@ impl Harness {
 
     /// `book` sent (again) exactly as it was: the kernel's whole answer.
     fn when_again(&mut self, book: &CommandBook) -> Then {
-        self.kernel.when_book(book.clone()).result()
+        self.kernel
+            .when_book(book.clone())
+            .result()
+            .map_err(Box::new)
     }
 
     /// `book` sent (again) exactly as it was: the kernel's answer, a
     /// duplicate included.
-    fn handled(&mut self, book: &CommandBook) -> Result<Handled, Failure<Rejected>> {
-        self.kernel.when_book(book.clone()).handled()
+    fn handled(&mut self, book: &CommandBook) -> Result<Handled, Box<Failure<Rejected>>> {
+        self.kernel
+            .when_book(book.clone())
+            .handled()
+            .map_err(Box::new)
     }
 
     /// Deliver `fact` as its policy's arrives: in the Fact arm, its origin
@@ -139,16 +148,15 @@ impl Harness {
             page: Some(CommandPage {
                 body: Some(command_page::Body::Fact(Fact {
                     payload: Some(pack(&fact)),
+                    origin: Some(FactOrigin {
+                        external_id: format!("fact-{}", self.inputs),
+                        description: "the buy-in's report".to_string(),
+                    }),
                 })),
-                fact_origin: Some(FactOrigin {
-                    external_id: format!("fact-{}", self.inputs),
-                    description: "the buy-in's report".to_string(),
-                }),
                 ..CommandPage::default()
             }),
-            ..CommandBook::default()
         };
-        self.kernel.when_book(book).result()
+        self.kernel.when_book(book).result().map_err(Box::new)
     }
 
     /// **Given** a page as an older version stored it: `payload` packed as
@@ -163,16 +171,17 @@ impl Harness {
             .next_sequence;
         let page = EventPage {
             sequence: head,
-            payload: Some(pack(&payload)),
+            body: Some(event_page::Body::Event(pack(&payload))),
             meta: Some(EventMeta {
-                causation: Some(Causation::CommandId(id(900))),
+                causation: Some(Causation::Command(CommandCause {
+                    command_id: Some(id(900)),
+                })),
                 correlation_id: Some(id(900)),
                 recorded_at: Some(angzarr_embedded::Timestamp {
                     seconds: 900,
                     nanos: 0,
                 }),
-                rules_version: <WalletAggregate as Domain>::RULES_VERSION.to_string(),
-                ..EventMeta::default()
+                rules_version: <WalletState as Domain>::RULES_VERSION.to_string(),
             }),
         };
         store
@@ -181,7 +190,7 @@ impl Harness {
             .expect("the older page is written");
     }
 
-    fn state(&self) -> WalletState {
+    fn state(&self) -> v1::WalletState {
         self.kernel.state().0.state.clone()
     }
 }
@@ -195,48 +204,39 @@ trait ReadyNow: std::future::Future + Sized {
 
 impl<F: std::future::Future> ReadyNow for F {}
 
-/// A client command's typed refusal, as the refused caller receives it.
+/// The refusal the wallet answered with. Panics on anything else.
 #[track_caller]
-fn refusal(then: Then) -> WalletRefused {
+fn rejection_of(then: Then) -> Rejected {
     match then {
-        Err(failure @ Failure::Rejected(_)) => failure
-            .rejection::<<WalletAggregate as Domain>::Rejection>()
-            .and_then(Rejection::typed)
-            .and_then(|typed| typed.object::<WalletRefused>())
-            .unwrap_or_else(|| panic!("a WalletRefused: {failure:?}")),
-        other => panic!("expected the wallet to refuse, got {other:?}"),
+        Err(failure) => match *failure {
+            Failure::Rejected(rejected) => rejected,
+            other => panic!("expected the wallet to refuse, got {other:?}"),
+        },
+        Ok(events) => panic!("expected the wallet to refuse, got {events:?}"),
     }
+}
+
+/// A client command's typed refusal, as the refused caller receives it:
+/// the message it was refused with.
+#[track_caller]
+fn refusal(then: Then) -> WalletStateRefusal {
+    let rejected = rejection_of(then);
+    WalletStateRefusal::from_any(rejected.refusal_object())
+        .unwrap_or_else(|error| panic!("a typed wallet refusal: {error:?}"))
 }
 
 /// The status a refusal is answered under.
 #[track_caller]
 fn status(then: Then) -> BusinessStatus {
-    match then {
-        Err(Failure::Rejected(rejected)) => rejected.status(),
-        other => panic!("expected the wallet to refuse, got {other:?}"),
-    }
-}
-
-/// A refusal for `reason`, naming no value.
-fn refused(reason: WalletRefusedReason) -> WalletRefused {
-    WalletRefused {
-        reason,
-        amount: None,
-        available: None,
-        requested: None,
-    }
+    rejection_of(then).status()
 }
 
 /// HoldFunds' typed refusal, as the refused policy receives it.
 #[track_caller]
 fn insufficient(then: Then) -> InsufficientFunds {
-    match then {
-        Err(failure @ Failure::Rejected(_)) => failure
-            .rejection::<<WalletAggregate as Domain>::Rejection>()
-            .and_then(Rejection::typed)
-            .and_then(|typed| typed.object::<InsufficientFunds>())
-            .unwrap_or_else(|| panic!("an InsufficientFunds: {failure:?}")),
-        other => panic!("expected the wallet to refuse, got {other:?}"),
+    match refusal(then) {
+        WalletStateRefusal::InsufficientFunds(refusal) => refusal,
+        other => panic!("an InsufficientFunds, not {other:?}"),
     }
 }
 
@@ -244,18 +244,21 @@ fn insufficient(then: Then) -> InsufficientFunds {
 #[track_caller]
 fn assert_bug(then: Then, what: &str) {
     match then {
-        Err(Failure::Rejected(rejected)) => panic!("{what} is a bug, not refused: {rejected:?}"),
-        Err(_) => {}
+        Err(failure) => {
+            if let Failure::Rejected(rejected) = *failure {
+                panic!("{what} is a bug, not refused: {rejected:?}");
+            }
+        }
         Ok(events) => panic!("{what} is a bug, not recorded: {events:?}"),
     }
 }
 
 /// The bankroll minus the open holds.
-fn available(state: &WalletState) -> i64 {
+fn available(state: &v1::WalletState) -> i64 {
     state.bankroll - open_holds(state)
 }
 
-fn open_holds(state: &WalletState) -> i64 {
+fn open_holds(state: &v1::WalletState) -> i64 {
     state
         .holds
         .values()
@@ -266,7 +269,7 @@ fn open_holds(state: &WalletState) -> i64 {
 
 /// "X has a bankroll of B with A available".
 #[track_caller]
-fn assert_funds(state: &WalletState, bankroll: i64, available_: i64) {
+fn assert_funds(state: &v1::WalletState, bankroll: i64, available_: i64) {
     assert_eq!(
         (state.bankroll, available(state)),
         (bankroll, available_),
@@ -278,7 +281,7 @@ fn assert_funds(state: &WalletState, bankroll: i64, available_: i64) {
 /// positive, and `bankroll = deposited - withdrawn - to_tables +
 /// from_tables`.
 #[track_caller]
-fn assert_balances(state: &WalletState) {
+fn assert_balances(state: &v1::WalletState) {
     let open = open_holds(state);
     assert!(state.bankroll >= open && open >= 0, "L1 holds: {state:?}");
     assert!(
@@ -369,7 +372,7 @@ fn eu_1401_a_player_cannot_register_twice() {
 
     assert_eq!(
         refusal(then),
-        refused(WalletRefusedReason::WalletAlreadyExists)
+        WalletStateRefusal::WalletAlreadyExists(WalletAlreadyExists::default())
     );
 }
 
@@ -381,7 +384,7 @@ fn eu_1402_a_player_needs_a_display_name() {
 
     assert_eq!(
         refusal(then),
-        refused(WalletRefusedReason::DisplayNameRequired)
+        WalletStateRefusal::DisplayNameRequired(DisplayNameRequired::default())
     );
     assert!(!wallet.state().registered, "nothing is recorded");
 }
@@ -392,7 +395,10 @@ fn a_player_needs_an_email() {
 
     let then = wallet.when(register("Alice", ""));
 
-    assert_eq!(refusal(then), refused(WalletRefusedReason::EmailRequired));
+    assert_eq!(
+        refusal(then),
+        WalletStateRefusal::EmailRequired(EmailRequired::default())
+    );
 }
 
 #[test]
@@ -422,7 +428,10 @@ fn eu_1404_an_unregistered_player_cannot_change_their_profile() {
         display_name: "Ace".into(),
     });
 
-    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
+    assert_eq!(
+        refusal(then),
+        WalletStateRefusal::WalletNotFound(WalletNotFound::default())
+    );
 }
 
 #[test]
@@ -435,7 +444,7 @@ fn a_display_name_cannot_be_changed_to_nothing() {
 
     assert_eq!(
         refusal(then),
-        refused(WalletRefusedReason::DisplayNameRequired)
+        WalletStateRefusal::DisplayNameRequired(DisplayNameRequired::default())
     );
 }
 
@@ -480,7 +489,7 @@ fn eu_1406_an_existing_player_cannot_be_imported_over() {
 
     assert_eq!(
         refusal(then),
-        refused(WalletRefusedReason::WalletAlreadyExists)
+        WalletStateRefusal::WalletAlreadyExists(WalletAlreadyExists::default())
     );
 }
 
@@ -490,10 +499,13 @@ fn an_import_needs_a_display_name_and_an_email() {
     let then = wallet.when(import("", "carol@example.com", "L-77"));
     assert_eq!(
         refusal(then),
-        refused(WalletRefusedReason::DisplayNameRequired)
+        WalletStateRefusal::DisplayNameRequired(DisplayNameRequired::default())
     );
     let then = wallet.when(import("Carol", "", "L-77"));
-    assert_eq!(refusal(then), refused(WalletRefusedReason::EmailRequired));
+    assert_eq!(
+        refusal(then),
+        WalletStateRefusal::EmailRequired(EmailRequired::default())
+    );
 }
 
 // ================================================================ deposits and withdrawals
@@ -521,10 +533,7 @@ fn eu_1408_a_deposit_must_be_positive() {
 
         assert_eq!(
             refusal(then),
-            WalletRefused {
-                amount: Some(amount),
-                ..refused(WalletRefusedReason::AmountNotPositive)
-            },
+            WalletStateRefusal::AmountNotPositive(AmountNotPositive { amount }),
             "a deposit of {amount}"
         );
     }
@@ -548,7 +557,10 @@ fn eu_1409_an_unregistered_player_cannot_deposit() {
 
     let then = wallet.when(v1::DepositFunds { amount: 1000 });
 
-    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
+    assert_eq!(
+        refusal(then),
+        WalletStateRefusal::WalletNotFound(WalletNotFound::default())
+    );
 }
 
 #[test]
@@ -575,11 +587,10 @@ fn eu_1411_a_withdrawal_cannot_touch_held_funds() {
 
     assert_eq!(
         refusal(then),
-        WalletRefused {
-            available: Some(300),
-            requested: Some(400),
-            ..refused(WalletRefusedReason::InsufficientAvailableFunds)
-        }
+        WalletStateRefusal::InsufficientAvailableFunds(InsufficientAvailableFunds {
+            available: 300,
+            requested: 400,
+        })
     );
     assert_funds(&wallet.state(), 1000, 300);
 }
@@ -605,10 +616,7 @@ fn eu_1412_a_withdrawal_must_be_positive() {
 
     assert_eq!(
         refusal(then),
-        WalletRefused {
-            amount: Some(0),
-            ..refused(WalletRefusedReason::AmountNotPositive)
-        }
+        WalletStateRefusal::AmountNotPositive(AmountNotPositive { amount: 0 })
     );
 }
 
@@ -618,7 +626,10 @@ fn an_unregistered_player_cannot_withdraw() {
 
     let then = wallet.when(v1::WithdrawFunds { amount: 10 });
 
-    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
+    assert_eq!(
+        refusal(then),
+        WalletStateRefusal::WalletNotFound(WalletNotFound::default())
+    );
 }
 
 // ================================================================ buy-in holds
@@ -855,7 +866,10 @@ fn an_unregistered_player_cannot_join_the_loyalty_programme() {
 
     let then = wallet.when(v1::EnrollLoyalty {});
 
-    assert_eq!(refusal(then), refused(WalletRefusedReason::WalletNotFound));
+    assert_eq!(
+        refusal(then),
+        WalletStateRefusal::WalletNotFound(WalletNotFound::default())
+    );
 }
 
 fn award(round: u32, points: i64) -> v1::AwardLoyaltyPoints {
@@ -976,11 +990,10 @@ fn eu_1437_a_deposit_recorded_by_an_older_version_still_counts() {
     let then = wallet.when(v1::WithdrawFunds { amount: 501 });
     assert_eq!(
         refusal(then),
-        WalletRefused {
-            available: Some(500),
-            requested: Some(501),
-            ..refused(WalletRefusedReason::InsufficientAvailableFunds)
-        }
+        WalletStateRefusal::InsufficientAvailableFunds(InsufficientAvailableFunds {
+            available: 500,
+            requested: 501,
+        })
     );
     wallet
         .when(v1::WithdrawFunds { amount: 500 })
